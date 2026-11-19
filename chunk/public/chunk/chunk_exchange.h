@@ -154,7 +154,7 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
         }
         if (ChunkType::is_constant_ptr(vals))
         {
-            if (chunk.is_const_val2_ptr_of(vals))
+            if (chunk.is_second_value_ptr_of(vals))
             {
                 return {ChunkKind::second_value, chunk.second_value_from_ptr(vals), nullptr};
             }
@@ -163,14 +163,14 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
     }
     else if constexpr (internal::is_v2_v<Arr>)
     {
-        if (chunk.is_const_val1(vals))
+        if (chunk.is_first_value(vals))
         {
             return first;
         }
         // A second load in both branches: quiescent, the same pointer.
         if constexpr (std::is_same_v<T, bool>)
         {
-            if (chunk.is_const_val2())
+            if (chunk.is_second_value())
             {
                 return {ChunkKind::second_value, true, nullptr};
             }
@@ -178,13 +178,13 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
         else
         {
             const int idx = arr.get_idx_second_value();
-            if (idx >= 0 && chunk.is_const_val2(idx))
+            if (idx >= 0 && chunk.is_second_value(idx))
             {
                 return {ChunkKind::second_value, static_cast<T>(arr.second_value()), nullptr};
             }
         }
     }
-    else if (chunk.is_const_val1(vals))
+    else if (chunk.is_first_value(vals))
     {
         return first; // zero
     }
@@ -218,7 +218,7 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
     using ProxyType = Arr::ProxyType;
 
     auto& chunk = arr.chunk_ref(index);
-    if (!chunk.is_const_val1())
+    if (!chunk.is_first_value())
     {
         return false;
     }
@@ -267,16 +267,16 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
     {
         // What a type-2 compression commits (find_or_set on the chunk's
         // second-value slot, type table, values pointer), minus the buffer:
-        // array_chunk_rechunk_refill_inline.h, Refill::install_const2(). bool registers
+        // array_chunk_rechunk_refill_inline.h, Refill::install_second_value(). bool registers
         // nothing: its one second value is a shared block of true.
         const int  array_id = arr.array_id_;
         const auto psv      = ProxyType::BaseSpec::get_array_second_value(array_id, static_cast<int>(index));
         ConstSlot* ptc      = &ProxyType::array_type_const_val[array_id][index];
         if constexpr (!std::is_same_v<T, bool>)
         {
-            (void)chunk.find_or_set_idx_const_val2(state.value, psv);
+            (void)chunk.find_or_register_second_value(state.value, psv);
         }
-        ChunkType::set_const_val_to_const_val2(ptc);
+        ChunkType::set_to_second_value(ptc);
         chunk.init_values_const_val(ptc, psv);
         return true;
     }

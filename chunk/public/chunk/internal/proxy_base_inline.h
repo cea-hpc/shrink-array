@@ -23,7 +23,7 @@
  * Holds the parts of the proxy write engine that are too large to sit in the
  * class body, and the free helpers they use. Three concerns live here:
  *
- *  - **compression bookkeeping**: add_to_compression_list() and its async /
+ *  - **compression bookkeeping**: queue_as_candidate() and its async /
  *    sentinel variants, which flag a chunk as a compression candidate exactly
  *    once and push it onto the per-thread candidate list;
  *  - **the write engine**: write_with_optional_lock_impl(), the Dekker
@@ -87,7 +87,7 @@ namespace shrink_array
  * @param size      Chunk geometry, dropped when the tuple has only 3 fields.
  */
 template <typename Vec, typename ChunkPtr>
-void push_to_compress_list(Vec& vec, ChunkPtr chunk, int chunk_index, int array_id, ChunkElems size)
+void push_candidate(Vec& vec, ChunkPtr chunk, int chunk_index, int array_id, ChunkElems size)
 {
     using Tup = Vec::value_type; // C++20: typename not needed in an alias declaration
     if constexpr (std::tuple_size_v<Tup> == 4)
@@ -138,14 +138,14 @@ constexpr int get_array_id_async_helper(auto* ctx, const ProxyT& proxy, auto ptr
 /**
  * @brief Arms the "already queued" flag pointer from a replay context.
  *
- * Async counterpart of set_ptr_is_inside_chunk_list_to_compress(): the
+ * Async counterpart of bind_candidate_flag(): the
  * (array_id, chunk_index) pair comes from the recorded context instead of the live
  * array, since the replay may run long after the write was issued.
  *
  * @param ctx Deferred-operation context carrying array_id and chunk_index.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::set_ptr_is_inside_chunk_list_to_compress_async(auto* ctx)
+void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::bind_candidate_flag_async(auto* ctx)
 {
     const int arr_id      = ctx->array_id;
     const int chunk_index = ctx->chunk_index;
@@ -170,7 +170,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::set_ptr_is_inside_chu
  *      ran on this write path (checked under `build_config::any_check`).
  */
 template <typename Derived, typename T, typename ChunkT>
-void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] auto& vec_tuple) const
+void ProxyBase<Derived, T, ChunkT>::queue_as_candidate([[maybe_unused]] auto& vec_tuple) const
 {
     if constexpr (build_config::threaded)
     {
@@ -178,9 +178,9 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
         {
             if (ptr_is_inside_chunk_list_to_compress_ == nullptr) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("add_to_compression_list(vec_tuple): chunk={} elem_offset={} "
+                CHUNK_INVARIANT_FAILED("queue_as_candidate(vec_tuple): chunk={} elem_offset={} "
                                        "chunk_index={} array_id={} "
-                                       "ptr_is_inside_chunk_list_to_compress is null "
+                                       "candidate_flag_ is null "
                                        "(set_info_on_chunk not called on this write path?)",
                                        &chunk_, elem_offset_, chunk_index_, array_id_);
             }
@@ -199,7 +199,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
                     static_cast<std::size_t>(chunk_index_) >= flags[static_cast<std::size_t>(array_id_)].size())
                     [[unlikely]]
                 {
-                    CHUNK_INVARIANT_FAILED("add_to_compression_list: chunk_index={} array_id={} outside the flag table "
+                    CHUNK_INVARIANT_FAILED("queue_as_candidate: chunk_index={} array_id={} outside the flag table "
                                            "({} tables)",
                                            chunk_index_, array_id_, flags.size());
                 }
@@ -209,7 +209,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
                 inc_chunk_mark_ok<ChunkT>();
             }
             internal::ArrayUsers<ChunkT>::note(array_id_, get_thr_rank_fast());
-            push_to_compress_list(vec_tuple, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
+            push_candidate(vec_tuple, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
         }
         else if constexpr (chunk_config::stats)
         {
@@ -236,7 +236,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
  *      `build_config::any_check`).
  */
 template <typename Derived, typename T, typename ChunkT>
-void ProxyBase<Derived, T, ChunkT>::add_to_compression_list(this const Derived& self)
+void ProxyBase<Derived, T, ChunkT>::queue_as_candidate(this const Derived& self)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -244,9 +244,9 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list(this const Derived& 
         {
             if (self.ptr_is_inside_chunk_list_to_compress_ == nullptr) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("add_to_compression_list (fast-block): chunk={} elem_offset={} "
+                CHUNK_INVARIANT_FAILED("queue_as_candidate (fast-block): chunk={} elem_offset={} "
                                        "chunk_index={} array_id={} "
-                                       "ptr_is_inside_chunk_list_to_compress is null "
+                                       "candidate_flag_ is null "
                                        "(set_info_on_chunk not called on this write path?)",
                                        &self.chunk_, self.elem_offset_, self.chunk_index_, self.array_id_);
             }
@@ -268,7 +268,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list(this const Derived& 
                     inc_chunk_mark_ok<ChunkT>();
                 }
                 const int thr = get_thr_rank_fast();
-                auto&     vec = self.get_vec_tuple_to_compress_potentially_thr(thr);
+                auto&     vec = self.candidates_of_thread(thr);
 
                 if constexpr (build_config::is_debug)
                 {
@@ -280,14 +280,14 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list(this const Derived& 
                             flags[static_cast<std::size_t>(self.array_id_)].size()) [[unlikely]]
                     {
                         CHUNK_INVARIANT_FAILED(
-                            "add_to_compression_list: chunk_index={} array_id={} outside the flag table "
+                            "queue_as_candidate: chunk_index={} array_id={} outside the flag table "
                             "({} tables)",
                             self.chunk_index_, self.array_id_, flags.size());
                     }
                 }
 
                 internal::ArrayUsers<ChunkT>::note(self.array_id_, thr);
-                push_to_compress_list(vec, &self.chunk_, self.chunk_index_, self.array_id_,
+                push_candidate(vec, &self.chunk_, self.chunk_index_, self.array_id_,
                                       ChunkElems{self.chunk_size()});
                 if constexpr (IsZeroOrValue<ChunkTemplateOf<ChunkT>::template type, T>)
                 {
@@ -303,8 +303,8 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list(this const Derived& 
             if (!(*self.ptr_is_inside_chunk_list_to_compress_))
             {
                 *self.ptr_is_inside_chunk_list_to_compress_ = 1;
-                auto& vec                                   = self.get_vec_tuple_to_compress_potentially();
-                push_to_compress_list(vec, &self.chunk_, self.chunk_index_, self.array_id_,
+                auto& vec                                   = self.serial_candidates();
+                push_candidate(vec, &self.chunk_, self.chunk_index_, self.array_id_,
                                       ChunkElems{self.chunk_size()});
             }
         }
@@ -366,7 +366,7 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
 
     proxy.set_chunk_index(ctx->chunk_index);
 
-    proxy.Base::set_ptr_is_inside_chunk_list_to_compress_async(ctx);
+    proxy.Base::bind_candidate_flag_async(ctx);
 
     return proxy;
 }
@@ -374,7 +374,7 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
 /**
  * @brief Flags a chunk as a compression candidate from a replayed deferred op.
  *
- * Async counterpart of add_to_compression_list(): everything it needs — chunk,
+ * Async counterpart of queue_as_candidate(): everything it needs — chunk,
  * offset, chunk index, array pointer — is read from the context rather than
  * from the proxy's own state, because the write is being applied long after it
  * was issued. Same once-only CAS discipline, same relaxed-load fast path.
@@ -388,7 +388,7 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
 // Deducing this: `self` replaces the CRTP down-cast. The class keeps its
 // Derived parameter; the calls go through the explicit object parameter.
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_list_async(this const auto& self,
+void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::queue_as_candidate_async(this const auto& self,
                                                                                          auto*            ctx)
 {
     auto&     chunk       = ctx->chunk;
@@ -412,16 +412,16 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
         {
             if constexpr (IsZeroOrValue<ChunkTemplateOf<ChunkT>::template type, T>)
             {
-                return self.get_vec_tuple_to_compress_potentially_async_thr(ctx, thr);
+                return self.candidates_of_thread_async(ctx, thr);
             }
             else
             {
-                return self.get_vec_tuple_to_compress_potentially_thr(thr);
+                return self.candidates_of_thread(thr);
             }
         }();
 
         internal::ArrayUsers<ChunkT>::note(array_id, thr); // a replay queues on the replaying rank
-        push_to_compress_list(vec, &ctx->chunk, ctx->chunk_index, array_id, self.chunk_size());
+        push_candidate(vec, &ctx->chunk, ctx->chunk_index, array_id, self.chunk_size());
         if constexpr (IsZeroOrValue<ChunkTemplateOf<ChunkT>::template type, T>)
         {
             Derived::note_candidate_pushed(vec); // the threshold test (zero_or_value::Proxy trigger)
@@ -866,19 +866,19 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(this Derived& self,
 /**
  * @brief Tests a proxy's second-constant state, false for proxies that have none.
  *
- * Lets the shared invariant checks below name is_const_val2() unconditionally:
+ * Lets the shared invariant checks below name is_second_value() unconditionally:
  * only zero_or_value / zero_any carry a second constant value, and zero
  * proxy simply answers false.
  *
  * @param proxy Proxy to test.
- * @return True if @p proxy exposes is_const_val2() and it holds.
+ * @return True if @p proxy exposes is_second_value() and it holds.
  */
 template <typename P>
-constexpr bool check_is_const_val2([[maybe_unused]] const P& proxy)
+constexpr bool check_is_second_value([[maybe_unused]] const P& proxy)
 {
-    if constexpr (requires { proxy.is_const_val2(); })
+    if constexpr (requires { proxy.is_second_value(); })
     {
-        return proxy.is_const_val2();
+        return proxy.is_second_value();
     }
     else
     {
@@ -932,16 +932,16 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(this Derived& self, Op opera
                 // ─── Pre-store check: const_val should not be visible here under Dekker ───
                 if constexpr (build_config::any_check)
                 {
-                    if (self.is_const_val1())
+                    if (self.is_first_value())
                     {
-                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_const_val1 BEFORE "
+                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_first_value BEFORE "
                                                "store_value (Dekker breach?)",
                                                &self.chunk_, self.elem_offset_);
                     }
 
-                    if (check_is_const_val2(self))
+                    if (check_is_second_value(self))
                     {
-                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_const_val2 BEFORE "
+                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_second_value BEFORE "
                                                "store_value (Dekker breach?)",
                                                &self.chunk_, self.elem_offset_);
                     }
@@ -988,17 +988,17 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(this Derived& self, Op opera
                             //     wrapper called create_value upstream). ───
                             if constexpr (build_config::any_check)
                             {
-                                if (proxy.is_const_val1())
+                                if (proxy.is_first_value())
                                 {
                                     CHUNK_INVARIANT_FAILED(
-                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_const_val1 "
+                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_first_value "
                                         "before read+store (decompression skipped?)",
                                         &ctx->chunk, ctx->elem_offset);
                                 }
-                                if (check_is_const_val2(proxy))
+                                if (check_is_second_value(proxy))
                                 {
                                     CHUNK_INVARIANT_FAILED(
-                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_const_val2 "
+                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_second_value "
                                         "before read+store (decompression skipped?)",
                                         &ctx->chunk, ctx->elem_offset);
                                 }
@@ -1126,19 +1126,19 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U>
                                         static_cast<const void*>(values), static_cast<const void*>(current_chunk_ptr),
                                         &ctx->chunk, ctx->elem_offset);
                                 }
-                                if (proxy.is_const_val1())
+                                if (proxy.is_first_value())
                                 {
                                     invariant_failed(
                                         std::source_location::current(),
-                                        "Lambda async ARITH: chunk={} elem_offset={} is_const_val1 just before store!",
+                                        "Lambda async ARITH: chunk={} elem_offset={} is_first_value just before store!",
                                         &ctx->chunk, ctx->elem_offset);
                                 }
-                                if constexpr (requires { proxy.is_const_val2(); })
+                                if constexpr (requires { proxy.is_second_value(); })
                                 {
-                                    if (proxy.is_const_val2())
+                                    if (proxy.is_second_value())
                                     {
                                         invariant_failed(std::source_location::current(),
-                                                         "Lambda async ARITH: chunk={} elem_offset={} is_const_val2 "
+                                                         "Lambda async ARITH: chunk={} elem_offset={} is_second_value "
                                                          "just before store!",
                                                          &ctx->chunk, ctx->elem_offset);
                                     }
@@ -1155,17 +1155,17 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U>
 
                                 // Race detector: values pointing to const_val here means a
                                 // re-compression since create_value.
-                                T* const const1 = chunk_ref.get_const_val1();
+                                T* const const1 = chunk_ref.first_value_ptr();
 
-                                bool is_const2 = false;
+                                bool is_second = false;
                                 if constexpr (requires {
-                                                  chunk_ref.array_const_val2_holder::is_const_val2_ptr(values);
+                                                  chunk_ref.second_value_registry::is_second_value_ptr(values);
                                               })
                                 {
-                                    is_const2 = chunk_ref.array_const_val2_holder::is_const_val2_ptr(values);
+                                    is_second = chunk_ref.second_value_registry::is_second_value_ptr(values);
                                 }
 
-                                if (values == const1 || is_const2)
+                                if (values == const1 || is_second)
                                 {
                                     ring_log(get_tid(), EventCode::values_load_is_const, info);
                                     return; // skip the write: keep const_val clean

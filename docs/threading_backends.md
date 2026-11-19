@@ -106,7 +106,7 @@ one, on a team of the backend. `phases.h` states the contract.
    `current_team()`), their `clear_core()` teams, and the loop of
    `write_range_by_chunks`. *4b done*: `team_any(opt, body)` (the
    `parallel reduction(|| : ...)` region of the deferred flush); converted
-   the per-rank sweeps of `compress_chunk_to_compress` (`chunk*_std_inline.h`),
+   the per-rank sweeps of `compress_queued` (`chunk*_std_inline.h`),
    the manager drains (`type_state.h`, `type_state_inline.h`, its
    orphaned `single` on `current_team()`), the sweep and the teardown free
    team of `type_state_registry.cpp`, and the size advisor's region. *4c done*:

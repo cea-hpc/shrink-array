@@ -207,19 +207,19 @@ struct TypeStateInterface : public virtual TypeStateDynInterface<>, public virtu
     /// @brief Release this type's allocation blocks.
     virtual void destroy_block_chunk() = 0;
     /// @brief Size the per-rank candidate lists to the team.
-    virtual void resize_chunk_to_compress_potentially() const = 0;
+    virtual void resize_candidate_lists() const = 0;
     /// @brief Compress every compressible chunk of this type now, ignoring the
     ///        candidate lists.
-    virtual void force_chunk_to_compress() const = 0;
+    virtual void force_compress_all() const = 0;
     /// @brief Does any of the @p n_thr per-rank candidate lists hold a chunk?
-    [[nodiscard]] virtual bool have_chunk_to_compress_potentially(int n_thr) const = 0;
+    [[nodiscard]] virtual bool has_candidates(int n_thr) const = 0;
     /// @brief Drain this type's compression-candidate backlog.
     /// @param apply true: compress the candidates found constant; false: walk
     ///        the lists without compressing (see TypeStateRegistry's).
-    virtual void compress_chunk_to_compress_potentially(bool apply) = 0;
+    virtual void run_compress_pass(bool apply) = 0;
 
-    /// @name The single sweep region (TypeStateRegistry::compress_chunk_to_compress_potentially)
-    /// The pass compress_chunk_to_compress_potentially() makes, split so that
+    /// @name The single sweep region (TypeStateRegistry::run_compress_pass)
+    /// The pass run_compress_pass() makes, split so that
     /// every type runs in ONE region: prepare serially, then each thread runs
     /// sweep_rank() for its rank, then the mop-up of the ranks past the team
     /// if sweep_mops_up(). Outside a region only; no-ops without fast block

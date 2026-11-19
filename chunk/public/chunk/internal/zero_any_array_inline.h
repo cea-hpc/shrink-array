@@ -41,7 +41,7 @@
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/type_state.h"                  // TypeState: per-size free lists, candidate filter
 #include "chunk/internal/pmp_chunk.h"                   // CHUNK_PMP_*, get_size_max_array_omp, pmp loops
-#include "chunk/internal/singleton.h"                   // SingletonChk<TypeStateRegistry>::get_ref
+#include "chunk/internal/singleton.h"                   // Singleton<TypeStateRegistry>::get_ref
 #include "chunk/internal/type_name.h"                   // type_name<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h"                // read_reclaim::PassScope (drain_own_candidates)
@@ -78,7 +78,7 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
             Manager::compute_size_buffer_reuse();
             Manager::compute_size_max_number_of_chunk_to_check_compress();
 
-            acquire_const2_registry();
+            acquire_second_value_registry();
             this->acquire_chunk_list(static_cast<std::size_t>(chunk_count_));
 
             this->alloc_dirty_bitset(chunk_count_);
@@ -97,7 +97,7 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
             // parallel_storage_init::parallel_init_min_chunks.
             const auto init_chunk = [&](int chunk_index)
             {
-                ProxyType::Base::set_array_is_inside_chunk_list_to_compress(array_id_, chunk_index, 0);
+                ProxyType::Base::set_candidate_flag(array_id_, chunk_index, 0);
                 ProxyType::array_type_const_val[array_id_][chunk_index] = ConstSlot::first;
                 ProxyType::BaseSpec::set(array_id_, chunk_index, T{});
                 this->construct_chunk(chunk_index).init_after_constructor();
@@ -109,12 +109,12 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
     m_size_ = sz;
 }
 
-/// @brief Print the demangled name of T and @p n_val2 on stdout.
-/// @param n_val2 Number of compression values to report.
+/// @brief Print the demangled name of T and @p n_second_values on stdout.
+/// @param n_second_values Number of compression values to report.
 template <ArrayChunkElement T>
-void print_type_name(int n_val2)
+void print_type_name(int n_second_values)
 {
-    std::println("{:<30} → Number of compression values : {}", "Type: " + type_name<T>(), n_val2);
+    std::println("{:<30} → Number of compression values : {}", "Type: " + type_name<T>(), n_second_values);
 }
 
 template <typename Derived>
@@ -128,7 +128,7 @@ void zero_any::ArrayImpl<Derived>::print_compression_stats(std::ostream& os) con
     // Do not classify from array_type_const_val alone: it is written only at
     // construction and never reset on materialisation, so a MATERIALISED chunk
     // would be counted as compressed. written() tests the LIVE state
-    // (values_load() != const_val1 && is_not_const_val2()); array_type_const_val is
+    // (values_load() != const_val1 && is_not_second_value()); array_type_const_val is
     // trusted only for chunks that are NOT written.
     // A written chunk is then re-tested on its CONTENT (constant_value(), the
     // same scan as the size predictor): written() only says whether the
@@ -216,8 +216,8 @@ void zero_any::ArrayImpl<Derived>::clear()
                                       }
                                       summary[static_cast<std::size_t>(j)] = ck.constant_value(csz);
                                   });
-                const auto& sh_inf      = *ProxyType::array_registry;
-                const int   array_index = sh_inf.get_array_id(this->registry_key());
+                const auto& registry      = *ProxyType::array_registry;
+                const int   array_index = registry.get_array_id(this->registry_key());
                 report_size_prediction<T>(summary, csz, array_index, "zero_any",
                                           sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
             }
@@ -329,13 +329,13 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         // that dominates the profile.
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+            const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
 
             // Not for a work array torn down in a region: that pass walks every
             // rank's list, of every type.
-            if (!own_rank && type_registry.have_chunk_to_compress_potentially())
+            if (!own_rank && type_registry.has_candidates())
             {
-                type_registry.compress_chunk_to_compress_potentially(false);
+                type_registry.run_compress_pass(false);
             }
         }
 
@@ -365,7 +365,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
             if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
             {
                 const auto  csz           = static_cast<unsigned int>(this->size_policy_.size());
-                const auto& inside        = ProxyType::get_array_is_inside_list_to_compress(array_id_);
+                const auto& inside        = ProxyType::candidate_flag_row(array_id_);
                 std::size_t missed_first  = 0;
                 std::size_t missed_second = 0;
                 std::size_t missed_other  = 0;
@@ -382,7 +382,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                         continue; // legitimately queued (a straggler the pass left) — not "missed"
                     }
 
-                    // Is it actually constant? (same notion fill_list_to_compress uses:
+                    // Is it actually constant? (same notion classify_candidate uses:
                     // every element equal to the block's first element.)
                     const auto constant = ck.constant_value(csz);
                     if (!constant)
@@ -437,16 +437,16 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         }
 
         // Give back the registry reference this array took
-        // (acquire_const2_registry), as the OpenMP branch does after its barrier;
+        // (acquire_second_value_registry), as the OpenMP branch does after its barrier;
         // without it the last array out never frees the registry.
-        if (holds_const2_registry_)
+        if (holds_second_value_registry_)
         {
-            int n_val2 = 0;
-            ChunkType::Holder::clear(n_val2); // single thread here
-            holds_const2_registry_ = false;
-            if (n_val2 != 0)
+            int n_second_values = 0;
+            ChunkType::Holder::clear(n_second_values); // single thread here
+            holds_second_value_registry_ = false;
+            if (n_second_values != 0)
             {
-                print_type_name<T>(n_val2);
+                print_type_name<T>(n_second_values);
             }
         }
     }
@@ -457,7 +457,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         const bool time_registry = probe.on;
         double     registry_ms   = 0.0;
         // acc[0]: the second values the registry release counted (one thread's).
-        const int n_val2 = pmp::team_sum<int, 1>(
+        const int n_second_values = pmp::team_sum<int, 1>(
             pmp::Options{},
             [&](pmp::Team& team, auto& acc)
             {
@@ -508,26 +508,26 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                         // buffer again (double-free). With const_val1 stored, every compress
                         // path short-circuits (the CAS reads values == const_val1 and
                         // returns nullptr). Mirrors the non-OMP clear_st path.
-                        ll_chunk_loc[k]->values_store(ChunkBase<T, ChunkType>::get_const_val1());
+                        ll_chunk_loc[k]->values_store(ChunkBase<T, ChunkType>::first_value_ptr());
                     }
                 }
 
                 // BARRIER REQUIRED: the loop above is a for_static(..., nowait), so other threads may
                 // still be in it writing values_, whose slow path (make_block_compression ->
-                // find_or_set_idx_const_val2) SCANS the shared segment list. clear() below tears
+                // find_or_register_second_value) SCANS the shared segment list. clear() below tears
                 // that list down (head.exchange(nullptr) + delete of every Segment); without
                 // the barrier the teardown races the scan (freed-Segment dereference).
                 team.barrier();
                 team.single(
                     [&]
                     {
-                        // Only the reference this array took (acquire_const2_registry).
-                        if (holds_const2_registry_)
+                        // Only the reference this array took (acquire_second_value_registry).
+                        if (holds_second_value_registry_)
                         {
                             const auto r0 = time_registry ? std::chrono::steady_clock::now()
                                                           : std::chrono::steady_clock::time_point{};
                             ChunkType::Holder::clear(acc[0]);
-                            holds_const2_registry_ = false;
+                            holds_second_value_registry_ = false;
                             if (time_registry)
                             {
                                 registry_ms =
@@ -540,9 +540,9 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         probe.mark(internal::TeardownStep::park);
         probe.transfer(internal::TeardownStep::park, internal::TeardownStep::registry, registry_ms);
 
-        if (n_val2 != 0)
+        if (n_second_values != 0)
         {
-            print_type_name<T>(n_val2);
+            print_type_name<T>(n_second_values);
         }
     }
 
@@ -741,7 +741,7 @@ void zero_any::ArrayImpl<Derived>::release_chunk_range(int first, int last)
                     lbf.push_back(values_loc);
                     // Neutralise, as clear_core(): the buffer belongs to the
                     // reuse list now.
-                    chunk_list_[j].values_store(ChunkBase<T, ChunkType>::get_const_val1());
+                    chunk_list_[j].values_store(ChunkBase<T, ChunkType>::first_value_ptr());
                 }
             });
     }
@@ -753,16 +753,16 @@ void zero_any::ArrayImpl<Derived>::resize(this Derived& self, const IntType news
     self.check_length(newsz, "resize");
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     self.invalidate_proxies();
-    const auto& sh_inf = *ProxyType::array_registry;
+    const auto& registry = *ProxyType::array_registry;
 
-    const int     array_id        = sh_inf.get_array_id(self.registry_key());
+    const int     array_id        = registry.get_array_id(self.registry_key());
     const int     old_chunk_count = self.chunk_count_;
     const IntType old_size        = self.m_size_; // the stale-tail reset at the end
 
     self.SecondValueBase::resize_common(newsz);
     if (self.chunk_count_ > 0)
     {
-        self.acquire_const2_registry(); // an array built empty gets its chunks here
+        self.acquire_second_value_registry(); // an array built empty gets its chunks here
     }
 
     ProxyType::resize_array_is_int(array_id, old_chunk_count, self.chunk_count_);
@@ -776,7 +776,7 @@ void zero_any::ArrayImpl<Derived>::resize(this Derived& self, const IntType news
                                           {
                                               const int chunk_index = old_chunk_count + k;
                                               self.construct_chunk(chunk_index).init_after_constructor();
-                                              ProxyType::Base::set_array_is_inside_chunk_list_to_compress(
+                                              ProxyType::Base::set_candidate_flag(
                                                   array_id, chunk_index, 0);
                                               ProxyType::array_type_const_val[array_id][chunk_index] = ConstSlot::first;
                                               // T{}: the struct elements have no conversion from 0
@@ -850,7 +850,7 @@ std::expected<std::size_t, ReclaimRefusal> zero_any::ArrayImpl<Derived>::try_rec
 {
     if constexpr (std::is_same_v<T, bool>)
     {
-        return 0; // one shared constant array, no registry (ArrayConstVal2Holder<bool>)
+        return 0; // one shared constant array, no registry (SecondValueRegistry<bool>)
     }
     else
     {
@@ -923,16 +923,16 @@ template <typename Derived>
 }
 
 template <typename Derived>
-inline void zero_any::ArrayImpl<Derived>::acquire_const2_registry()
+inline void zero_any::ArrayImpl<Derived>::acquire_second_value_registry()
 {
-    if (!holds_const2_registry_)
+    if (!holds_second_value_registry_)
     {
         if constexpr (!std::is_same_v<T, bool>)
         {
             GlobalVecHolder<T>::register_marker(&mark_second_values<T, ProxyType, ChunkType>);
         }
         ChunkType::Holder::create();
-        holds_const2_registry_ = true;
+        holds_second_value_registry_ = true;
     }
 }
 
@@ -947,7 +947,7 @@ void zero_any::ArrayImpl<Derived>::gc_collect_live(std::unordered_set<const void
             for (int j = 0; j < nc; ++j)
             {
                 const auto& ch = arr->chunk_ref(static_cast<std::size_t>(j));
-                if (ch.is_const_val2())
+                if (ch.is_second_value())
                 {
                     live.insert(static_cast<const void*>(ch.values_load()));
                 }

@@ -355,7 +355,7 @@ template <typename Arr>
 /**
  * @brief Does this chunk own a buffer the bulk store may write into?
  *
- * @details NOT `!is_const_val1()`. A zero_any chunk parked on its SECOND constant is
+ * @details NOT `!is_first_value()`. A zero_any chunk parked on its SECOND constant is
  *          not const_val1 either, and its values pointer is a second-value slot,
  *          not a buffer: stores through it are lost, and the chunk keeps
  *          reading its constant.
@@ -402,16 +402,16 @@ template <typename Arr, typename ChunkClass>
     else if constexpr (is_v1_v<Arr>)
     {
         c = static_cast<T>(ChunkClass::first_value);
-        return ch.is_const_val1();
+        return ch.is_first_value();
     }
     else if constexpr (is_v2_v<Arr> && requires { arr.second_value(); })
     {
-        if (ch.is_const_val1())
+        if (ch.is_first_value())
         {
             c = static_cast<T>(ChunkClass::first_value);
             return true;
         }
-        if (idx2 >= 0 && ch.is_const_val2(idx2))
+        if (idx2 >= 0 && ch.is_second_value(idx2))
         {
             c = static_cast<T>(arr.second_value());
             return true;
@@ -458,7 +458,7 @@ template <typename Arr, typename ChunkClass>
                 return false;
             }
         }
-        return ch.is_const_val2_ptr_of(vals) &&
+        return ch.is_second_value_ptr_of(vals) &&
                same_value(static_cast<T>(ch.second_value_from_ptr(vals)), static_cast<T>(value));
     }
     else
@@ -515,7 +515,7 @@ void queue_for_compression(Arr& arr, std::size_t index)
         {
             proxy.set_info_on_chunk(); // zero_or_value::Proxy, zero::Proxy
         }
-        proxy.add_to_compression_list();
+        proxy.queue_as_candidate();
     }
 }
 
@@ -660,7 +660,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         set_thread_chunk_size(chunk_sz);
     }
 
-    const bool value_is_const1 = same_value(static_cast<T>(value), static_cast<T>(ChunkType::first_value));
+    const bool value_is_first = same_value(static_cast<T>(value), static_cast<T>(ChunkType::first_value));
 
     // zero_or_value::Chunk: which of the array'chunk_sz constants the value is -- 0 the first, 1
     // the second (index idx2), -1 neither. A whole chunk filled with one of
@@ -668,7 +668,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
     [[maybe_unused]] int chunk2_const = -1;
     if constexpr (internal::is_v2_v<Arr> && internal::raw_fillable_v<T> && requires { arr.second_value(); })
     {
-        if (value_is_const1)
+        if (value_is_first)
         {
             chunk2_const = 0;
         }
@@ -716,9 +716,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
                     requires(ChunkType& chunk) { chunk.clear_st(); },
                     "fill_range: zero's serial policy no longer offers clear_st()");
             }
-            if (whole && value_is_const1)
+            if (whole && value_is_first)
             {
-                if (!ch.is_const_val1())
+                if (!ch.is_first_value())
                 {
                     // CHUNK_STATS: a compression reached without a scan -- count
                     // its (trivially successful) attempt with it, so the
@@ -744,7 +744,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         if constexpr (is_packed_bit_v<T>)
         {
             // Whole chunk already at that constant: nothing to write.
-            if (whole && (value_is_const1 ? ch.is_const_val1() : ch.is_const_val2()))
+            if (whole && (value_is_first ? ch.is_first_value() : ch.is_second_value()))
             {
                 continue;
             }
@@ -761,7 +761,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // proxy's early-out, so none is made (the raw path's test below).
             // The first constant only: bool has no second-value index
             // (held_constant()).
-            bool at_value = value_is_const1 && ch.is_const_val1();
+            bool at_value = value_is_first && ch.is_first_value();
             if constexpr (requires { ch.pending_any(); })
             {
                 at_value = at_value && !ch.pending_any();
@@ -827,7 +827,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // buffer and registers the compression bookkeeping. If the loop
             // walks the whole range without materialising, the chunk is
             // constant and nothing is left to do. "Materialises" is written(),
-            // not !is_const_val1(): see internal::materialised.
+            // not !is_first_value(): see internal::materialised.
             //
             // zero_any family, part of a chunk at its own second constant and
             // filled with it: every one of those writes would take the proxy's
@@ -880,7 +880,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
 
             // The chunk may be constant now: a fill of first_value, or on
             // zero_any of any value (a uniform run is its second constant).
-            bool compressible_value = value_is_const1 || internal::is_v2a_family_v<Arr>;
+            bool compressible_value = value_is_first || internal::is_v2a_family_v<Arr>;
             if constexpr (internal::is_v2_v<Arr> && requires { arr.second_value(); })
             {
                 compressible_value =

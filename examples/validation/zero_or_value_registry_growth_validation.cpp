@@ -25,7 +25,7 @@
 // THE DEFECT
 //
 //   Every distinct value given to zero_or_value::Array::set_second_value() gets a
-//   constant array in zero_or_value::Chunk<T>::array_m_ptr_const_val2, and a chunk compressed to
+//   constant array in zero_or_value::Chunk<T>::second_value_buffers, and a chunk compressed to
 //   it stores that array's address as its `values`. The table was a
 //   std::vector<std::array<T, const_buffer_size>> grown by resize(): past its
 //   capacity the vector MOVED every array and freed the old storage. Every

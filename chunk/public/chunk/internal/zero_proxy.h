@@ -51,7 +51,7 @@ namespace zero
 
 /**
  * @brief Registry mapping array-element keys (pointers) to their table
- *        number. Unlike zero_or_value::PointerMap, it has no value -> inf_array
+ *        number. Unlike zero_or_value::PointerMap, it has no value -> array_info
  *        lookup: zero's compression does not group chunks by value.
  * @tparam T Element type this registry is keyed on.
  */
@@ -99,10 +99,10 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
 
   private:
     /// What a key maps to: its table number.
-    using InfArrayT = int;
+    using ArrayInfo = int;
 
     // Storage: a std::vector (zero_or_value::PointerMap uses a std::deque, see there).
-    using Linear = PointerMapLinear<InfArrayT, std::vector<std::pair<Key, InfArrayT>>>;
+    using Linear = PointerMapLinear<ArrayInfo, std::vector<std::pair<Key, ArrayInfo>>>;
     /// Brings the base's storage back into this class's scope (dependent base).
     using Linear::vec_;
 };
@@ -138,7 +138,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param thr Thread rank whose candidate list to fetch.
      * @return Reference to thread thr's candidate list.
      */
-    auto& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+    auto& candidates_of_thread(int thr) const noexcept
     {
         return Manager::zero_candidates_thr[thr];
     }
@@ -253,7 +253,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *          stores with memory_order_release, this one seq_cst (plain
      *          assignment). Dropping it would weaken zero's ordering of the flag.
      */
-    static void reset_array_inside_list_to_compress(int array_id, int chunk_index) noexcept
+    static void clear_candidate_flag(int array_id, int chunk_index) noexcept
     {
         array_is_inside_chunk_list_to_compress[array_id][chunk_index] = 0;
     }
@@ -269,7 +269,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         // Qualified: this policy's no-arg overload (above); Proxy's `using
         // Base::set_array_id` would hide it from an unqualified self.set_array_id().
         self.ProxyFastCompPolicy::set_array_id();
-        self.Base::set_ptr_is_inside_chunk_list_to_compress();
+        self.Base::bind_candidate_flag();
     }
 
   private:
@@ -404,7 +404,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 
     using FastCompPolicy::set_info_on_chunk;
 
-    using Base::add_to_compression_list;
+    using Base::queue_as_candidate;
     using Base::set_array_id;
 
     using Base::array_is_inside_chunk_list_to_compress; ///< Global compression tracking array
@@ -447,7 +447,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
 
-    // reset_array_inside_list_to_compress(), set_array_id() and the
+    // clear_candidate_flag(), set_array_id() and the
     // mark_for_compression_* family live on ProxyFastCompPolicy<..., true>;
     // manage_full_zero() on the <..., false> (counter) specialisation.
 
@@ -458,7 +458,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] bool is_const_val() const noexcept
     {
-        return chunk_.is_const_val1();
+        return chunk_.is_first_value();
     }
 
     /**
@@ -635,7 +635,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] bool is_not_const_val() const noexcept
     {
-        return chunk_.is_not_const_val1();
+        return chunk_.is_not_first_value();
     }
 
     /**

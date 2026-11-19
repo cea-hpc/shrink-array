@@ -146,7 +146,7 @@ SHRINK_ARRAY_EXPORT class RechunkDecider
         unsigned    old_size;   ///< chunk size before the re-chunk (elements)
         unsigned    new_size;   ///< chunk size after the re-chunk (elements)
         double      mem_before; ///< bytes (model) before the re-chunk
-        double      mem_pred;   ///< bytes (model) predicted at the new size
+        double      mem_predicted;   ///< bytes (model) predicted at the new size
         double      mem_after;  ///< bytes (model) after the re-chunk
         /// Model memory at the OLD size, from the after-tick's analysis (the
         /// advisor evaluates the finer sizes too): old_mem_now - mem_after is

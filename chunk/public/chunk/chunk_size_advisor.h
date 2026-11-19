@@ -42,7 +42,7 @@
 // windows of C elements, each classified from the CURRENT chunks it overlaps
 // (details at "The window model" in internal/chunk_size_scan.h, whose
 // ChunkSizeScan does the counting). For zero_any the identity of a
-// const_val2 constant IS the values_load() pointer (a ArrayConstVal2Holder slot), so
+// const_val2 constant IS the values_load() pointer (a SecondValueRegistry slot), so
 // a constant run is a pointer comparison:
 //         const1 + const1           -> const1
 //         const2(p) + const2(p)     -> const2

@@ -268,8 +268,8 @@ inline constexpr bool use_second_value = use_zero_or_value || use_zero_any; ///<
  *
  * @details A zero_or_value::Array registers (T{}, this index) at construction and
  *          keeps it until set_second_value(). Every consumer of the index
- *          answers "no second constant" for it: get_const_val2() is nullptr,
- *          is_const_val2() false, written() reduces to "not const_val1", and the
+ *          answers "no second constant" for it: second_value_ptr() is nullptr,
+ *          is_second_value() false, written() reduces to "not const_val1", and the
  *          compression pass compresses only the runs of first_value.
  */
 inline constexpr int no_second_value_index = -1;
@@ -281,7 +281,7 @@ inline constexpr int no_second_value_index = -1;
  * @brief Aggressive compression mode: a RUN-TIME switch, read once.
  *
  * false (default): the deferred sweep runs at end-of-parallel-phase boundaries via
- * compress_chunk_to_compress_potentially(true): fewer, grouped events, faster.
+ * run_compress_pass(true): fewer, grouped events, faster.
  *
  * true: no sweep between phases; compression happens during the parallel sections,
  * on the in-loop path only. Slower, but stresses the concurrent compression paths

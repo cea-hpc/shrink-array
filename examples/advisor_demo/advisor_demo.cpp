@@ -84,7 +84,7 @@ static Truth ground_truth(const zero_any::Array<double>& arr, double meta)
     for (long long j = 0; j < truth.chunks; ++j)
     {
         const auto& chunk = arr.chunk_list_[j];
-        if (!chunk.is_const_val1() && !chunk.is_const_val2())
+        if (!chunk.is_first_value() && !chunk.is_second_value())
         {
             ++truth.mat;
         }

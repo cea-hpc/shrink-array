@@ -96,8 +96,8 @@ le chunk est dans l'un de trois états :
 
 | état | `values` pointe vers | test |
 |---|---|---|
-| compressé à la première valeur | le tampon constant `const_val1` (que des 0) | `is_const_val1()` |
-| compressé à la seconde valeur | le tampon constant `const_val2[idx]` | `is_const_val2(idx)` |
+| compressé à la première valeur | le tampon constant `const_val1` (que des 0) | `is_first_value()` |
+| compressé à la seconde valeur | le tampon constant `const_val2[idx]` | `is_second_value(idx)` |
 | matérialisé | un tampon privé, alloué pour ce chunk | `written(idx)` |
 
 Les tampons constants sont **alloués une seule fois** et partagés par tous les chunks
@@ -114,7 +114,7 @@ valeur déclarée, repéré par un **indice** `idx`.
 
 La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le registre partagé
 <tt>zero_or_value::Proxy\<T\>\::array_registry</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
-triplet `InfArrayT` :
+triplet `ArrayInfo` :
 
 ```
 (second_value, idx, array_id)
@@ -125,10 +125,10 @@ triplet `InfArrayT` :
   (par exemple les drapeaux « déjà candidat à la compression »).
 
 Le registre reste la source de vérité, mais chaque tableau en garde un **miroir**
-(`zero_or_value::Array::inf_array`), relu (`sync_registry_mirror()`) après les trois seuls endroits qui
+(`zero_or_value::Array::array_info`), relu (`sync_registry_mirror()`) après les trois seuls endroits qui
 écrivent le registre : `create()`, `set_second_value()` et l'échange d'identité du rechunk.
 L'`operator[]` d'écriture **arme chaque proxy avec l'adresse de ce miroir**
-(`registry_mirror()`, `arm_inf_array()`) : le chemin d'écriture copie le triplet au lieu de
+(`registry_mirror()`, `arm_array_info()`) : le chemin d'écriture copie le triplet au lieu de
 chercher dans le registre. En build de vérification (`any_check`), chaque lecture du miroir
 est comparée au registre.
 
@@ -177,7 +177,7 @@ ProxyType operator[](this Derived& self, IndexType i) noexcept
     const int elem_offset       = self.offset_in_chunk(i);
     const ProxyType& val = self.chunk_list[chunk_index][elem_offset];
     val.set_this_and_chunk_index(self.registry_key(), chunk_index, self.array_id); // tableau, chunk, array_id
-    val.arm_inf_array(self.registry_mirror());                                 // zero_or_value : le miroir
+    val.arm_array_info(self.registry_mirror());                                 // zero_or_value : le miroir
     return val;
 }
 ```
@@ -193,7 +193,7 @@ il n'y a rien à faire, et surtout rien à allouer.
 const T* values_loc = chunk.values_load();
 
 // 1. first_value sur un chunk déjà à first_value : rien à faire
-if (is_const_val1_and_v_equal_first_value(values_loc, v)) return v;
+if (is_first_value_equal_to(values_loc, v)) return v;
 
 set_info_second_value_idx();   // second_value et idx, depuis le miroir
 
@@ -201,7 +201,7 @@ set_info_second_value_idx();   // second_value et idx, depuis le miroir
 //    rien à faire -- sauf si des écritures différées sont en attente sur le chunk
 //    (une ancienne opération appliquée plus tard écraserait la valeur laissée en place)
 if (!chunk.pending_any())
-    if (v == second_value && (values_loc == chunk.get_const_val2(idx) || values_loc[elem_offset] == second_value))
+    if (v == second_value && (values_loc == chunk.second_value_ptr(idx) || values_loc[elem_offset] == second_value))
         return v;
 
 // 3. sinon : le corps de l'écriture, confié au moteur d'écriture
@@ -393,7 +393,7 @@ parallèle.
 flowchart TD
     A["items (rang, second_value)"] --> B["protocole du compresseur<br/>(CompressionManager::start)"]
     B --> C["pour chaque entrée : figer la taille<br/>du chunk (n_elems de l'entrée)"]
-    C --> D["fill_list_to_compress : parcourir le chunk"]
+    C --> D["classify_candidate : parcourir le chunk"]
     D -->|"tout = first_value"| E["items ll_compt1"]
     D -->|"tout = second_value"| F["items ll_compt2"]
     D -->|"sinon"| G["rien (drapeau remis à zéro)"]
@@ -404,7 +404,7 @@ flowchart TD
     G --> J
 ```
 
-Le **parcours** (`fill_list_to_compress`) ne concerne que les chunks matérialisés. Il
+Le **parcours** (`classify_candidate`) ne concerne que les chunks matérialisés. Il
 compare chaque élément aux deux constantes et s'arrête dès que les deux hypothèses sont
 réfutées. Un chunk uniforme à 0 va dans `ll_compt1`, un chunk uniforme à la seconde valeur
 dans `ll_compt2`.
@@ -492,7 +492,7 @@ Sur la variante zero_any, un chunk que `fill_range` couvre entièrement prend la
 constante **par son seul état** (`zero_any::Chunk::fill_constant_st`), quels que soient la valeur et
 l'état du chunk : un chunk matérialisé passe par l'effacement de la compression elle-même
 (`clear_int_st` : tampon rendu, constante installée, sans balayage) ; un chunk compressé change de
-constante sur place -- case de seconde valeur (enregistrée par `find_or_set_idx_const_val2`), type,
+constante sur place -- case de seconde valeur (enregistrée par `find_or_register_second_value`), type,
 puis pointeur de valeurs, l'ordre que garde l'effacement. Aucun tampon n'est alloué, rempli, balayé
 ni rendu, et rien n'est mis en file. La constante que le chunk tenait reste enregistrée : aucun
 chunk n'y garde de référence, et `reclaim_second_values()` la libère dès qu'aucun chunk n'y pointe.
@@ -562,7 +562,7 @@ morceau qui couvre tout le chunk avec une seule valeur. Les formes à un seul th
 **Les valeurs fausses de septembre 2026.** Avec le chemin direct ouvert à `zero_or_value`,
 `bench_and_test.py` a signalé sur Grace des valeurs fausses **après compression** :
 `rechunk_validation_zero_or_value_dyn` (`scale-64-to-tgt`, POST-FAIL) et le mode check de
-`shrink_bench_zero_or_value_256` (« is_const_val2 should be not »). Ce n'était pas une course entre
+`shrink_bench_zero_or_value_256` (« is_second_value should be not »). Ce n'était pas une course entre
 threads : le test de re-chunk échoue à l'identique sur un seul cœur dans le build serial Debug,
 et les configurations en échec sur Grace étaient les serial. La cause était les compteurs du
 troisième point ci-dessus : les chemins directs (`fill_range`, `copy_range`, qu'utilise la

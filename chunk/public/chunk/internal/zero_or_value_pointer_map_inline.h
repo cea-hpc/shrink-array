@@ -27,14 +27,14 @@ namespace shrink_array
 {
 
 // ---------------------------------------------------------------------------
-// shrink_array::ZeroOrValueInfArrayPolicy<T, Enabled>
+// shrink_array::ZeroOrValueArrayInfoPolicy<T, Enabled>
 // ---------------------------------------------------------------------------
 
 template <typename T, bool Enabled>
-[[nodiscard]] ZeroOrValueInfArrayPolicy<T, Enabled>::InfArrayT*
-ZeroOrValueInfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
+[[nodiscard]] ZeroOrValueArrayInfoPolicy<T, Enabled>::ArrayInfo*
+ZeroOrValueArrayInfoPolicy<T, Enabled>::find_array_info(InT<T> key) const
 {
-    if (const auto it = map_inf_array_.find(key); it != map_inf_array_.end())
+    if (const auto it = array_info_map_.find(key); it != array_info_map_.end())
     {
         return it->second;
     }
@@ -42,13 +42,13 @@ ZeroOrValueInfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
 }
 
 template <typename T, bool Enabled>
-void ZeroOrValueInfArrayPolicy<T, Enabled>::erase_inf_array_by_ptr(const InfArrayT* self_ptr)
+void ZeroOrValueArrayInfoPolicy<T, Enabled>::erase_array_info_by_ptr(const ArrayInfo* self_ptr)
 {
-    for (auto it = map_inf_array_.begin(); it != map_inf_array_.end();)
+    for (auto it = array_info_map_.begin(); it != array_info_map_.end();)
     {
         if (it->second == self_ptr)
         {
-            it = map_inf_array_.erase(it);
+            it = array_info_map_.erase(it);
         }
         else
         {
@@ -118,11 +118,11 @@ void zero_or_value::PointerMap<T>::replace_all_other_elm(Key key, InT<T> val, in
 }
 
 template <typename T>
-[[nodiscard]] int zero_or_value::PointerMap<T>::find_idx_array_const2(InT<T> key) const
+[[nodiscard]] int zero_or_value::PointerMap<T>::find_second_value_index(InT<T> key) const
 {
     if constexpr (is_not_bool)
     {
-        if (const auto it = map_idx_const_val2_.find(key); it != map_idx_const_val2_.end())
+        if (const auto it = second_value_idx_map_.find(key); it != second_value_idx_map_.end())
         {
             return it->second;
         }
@@ -191,7 +191,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] zero_or_value::PointerMap<T>::InfArrayT
+[[nodiscard]] zero_or_value::PointerMap<T>::ArrayInfo
 zero_or_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
 {
     const internal::RegistryReadLock registry_lock(internal::registry_mutex());
@@ -267,7 +267,7 @@ void zero_or_value::PointerMap<T>::insert_only_array_id(Key key, int array_id)
     const T                           val{};
     const int                         idx = chunk_config::no_second_value_index;
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
-    vec_.emplace_back(key, InfArrayT{val, idx, array_id});
+    vec_.emplace_back(key, ArrayInfo{val, idx, array_id});
 }
 
 } // namespace shrink_array

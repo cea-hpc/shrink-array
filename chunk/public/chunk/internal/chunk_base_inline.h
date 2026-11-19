@@ -765,7 +765,7 @@ template <typename T, typename Derived>
 {
     if constexpr (chunk_config::stats)
     {
-        if (self.is_const_val1())
+        if (self.is_first_value())
         {
             inc_chunk_read_const<Derived>();
         }
@@ -785,9 +785,9 @@ template <typename T, typename Derived>
         // Split the read by what served it: a materialised chunk vs a
         // compressed one (values points at the constant marker). read_const /
         // (read + read_const) is the compression hit rate on reads.
-        // is_const_val1(), not written(): zero_or_value::Chunk::written() (no arg) aborts on
+        // is_first_value(), not written(): zero_or_value::Chunk::written() (no arg) aborts on
         // non-bool types -- it needs the second-value index a read lacks.
-        if (self.is_const_val1())
+        if (self.is_first_value())
         {
             inc_chunk_read_const<Derived>();
         }
@@ -805,7 +805,7 @@ T ChunkBase<T, Derived>::operator[](this const Derived& self, int offset) noexce
     if constexpr (chunk_config::stats)
     {
         // Same split as read_value().
-        if (self.is_const_val1())
+        if (self.is_first_value())
         {
             inc_chunk_read_const<Derived>();
         }
@@ -844,7 +844,7 @@ void ChunkBase<T, Derived>::read_block(this const Derived& self, int first, int 
     {
         // Same single load as element_at_unguarded: a chunk compressed to a
         // second constant points at an identifier, not at values.
-        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_second_value_ptr_of(vals)) [[unlikely]]
         {
             const T value = self.second_value_from_ptr(vals);
             for (int j = 0; j < count; ++j)
@@ -874,7 +874,7 @@ void ChunkBase<T, Derived>::read_block(this const Derived& self,
     {
         const T* const vals = self.values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_second_value_ptr_of(vals)) [[unlikely]]
         {
             const T value = self.second_value_from_ptr(vals);
             for (int j = 0; j < count; ++j)
@@ -919,13 +919,13 @@ bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
     {
         const T* const vals = self.values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (self.is_const_val1(vals))
+        if (self.is_first_value(vals))
         {
             // raw-read: read_block_or_constant -- the shared first-constant buffer
             constant = load_at<false>(vals, 0);
             return true;
         }
-        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_second_value_ptr_of(vals)) [[unlikely]]
         {
             constant = self.second_value_from_ptr(vals);
             return true;
@@ -970,7 +970,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
     const read_reclaim::ReadSection section;
     const T* const                  vals = self.values_load();
     test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-    if (self.is_const_val1(vals))
+    if (self.is_first_value(vals))
     {
         // raw-read: read_block_or_constant -- the shared first-constant buffer
         constant = load_at<false>(vals, 0);
@@ -978,7 +978,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
     }
     if constexpr (is_zero_any_family_v<Derived>)
     {
-        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_second_value_ptr_of(vals)) [[unlikely]]
         {
             constant = self.second_value_from_ptr(vals);
             return true;
@@ -1061,19 +1061,19 @@ auto& ChunkBase<T, Derived>::get_chunk_allocator([[maybe_unused]] int          t
 }
 
 template <typename T, typename Derived>
-T* ChunkBase<T, Derived>::get_const_val1() noexcept
+T* ChunkBase<T, Derived>::first_value_ptr() noexcept
 {
     if constexpr (use_mm_protect)
     {
         // Mapped at the first call, never unmapped: a global array reaches
         // it before main (the member below is a null pointer then) and
         // after main returns.
-        static T* const buffer = map_const_val1();
+        static T* const buffer = map_first_value_buffer();
         return buffer;
     }
     else
     {
-        return m_ptr_const_val1.data();
+        return first_value_buffer_.data();
     }
 }
 
@@ -1119,7 +1119,7 @@ void ChunkBase<T, Derived>::init_block(T* values_loc) noexcept
 }
 
 template <typename T, typename Derived>
-T* ChunkBase<T, Derived>::map_const_val1()
+T* ChunkBase<T, Derived>::map_first_value_buffer()
 {
     const size_t bytes     = const_buffer_size * sizeof(T);
     const size_t pagesize  = sysconf(_SC_PAGESIZE);
@@ -1239,7 +1239,7 @@ ChunkBase<T, Derived>::element_at_unguarded(this const Derived& self, int offset
         {
             test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
         }
-        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_second_value_ptr_of(vals)) [[unlikely]]
         {
             return self.second_value_from_ptr(vals);
         }
@@ -1267,7 +1267,7 @@ template <bool Relaxed>
     // very well predicted (most reads go to materialised chunks).
     //
     // ONE load of `values`, tested through the CRTP hooks (chunk_base knows
-    // nothing of the registry). Do not test self.is_const_val2() and then
+    // nothing of the registry). Do not test self.is_second_value() and then
     // dereference values_load(): a compressor claiming the chunk between the
     // two loads swaps in a region identifier, and the second load indexes an
     // unmapped page. Same rule as read_values().
@@ -1289,9 +1289,9 @@ template <bool Relaxed>
     {
         static_assert(
             requires(const Derived& obj, const T* ptr) {
-                obj.is_const_val2_ptr_of(ptr);
+                obj.is_second_value_ptr_of(ptr);
                 obj.second_value_from_ptr(ptr);
-            }, "a chunk of the zero_any family must provide is_const_val2_ptr_of() and second_value_from_ptr(), "
+            }, "a chunk of the zero_any family must provide is_second_value_ptr_of() and second_value_from_ptr(), "
                "or its own branch of the reads: its compressed chunks point at registry entries, not at "
                "their values");
         const T* const vals = Relaxed ? self.values_load() : self.values_load_for_read();
@@ -1299,7 +1299,7 @@ template <bool Relaxed>
         {
             test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
         }
-        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_second_value_ptr_of(vals)) [[unlikely]]
         {
             return self.second_value_from_ptr(vals);
         }

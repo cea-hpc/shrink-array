@@ -41,7 +41,7 @@
 #include "chunk/internal/chunk_traits.h"            // ChunkTraits<pattern::Chunk<T>>, HasMotifState
 #include "chunk/internal/motif_region.h"            // pattern::MotifRegion
 #include "chunk/internal/relaxed_element.h"         // load_element_acquire (the offset)
-#include "chunk/internal/array_const_val2_holder.h" // SecondValueTraits (the slot type), SecondValueRef
+#include "chunk/internal/second_value_registry.h" // SecondValueTraits (the slot type), SecondValueRef
 #include "chunk/internal/const_slot.h"              // ConstSlot::motif
 #include "chunk/internal/chunk_stats.h"             // inc_chunk_compress, add_chunk_bytes_freed (CHUNK_STATS)
 #include "chunk/internal/invariant_check.h"         // CHUNK_INVARIANT_FAILED
@@ -131,7 +131,7 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
 
     /**
      * @brief The pass's third classification, after zero_any's two constants
-     *        (fill_list_to_compress()): is this claimed, materialised chunk a
+     *        (classify_candidate()): is this claimed, materialised chunk a
      *        registered motif plus an offset? If so, it is queued for
      *        compress_motif_candidates(), and keeps its claim.
      * @details Reads the chunk in one block, normalises it (element j minus element
@@ -148,7 +148,7 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
     void classify_motif(int chunk_index, int array_id, ChunkElems size);
 
     /**
-     * @brief The OMPT pass's motif step (zero_any::ChunkImpl::compress_chunk_to_compress_in_par()):
+     * @brief The OMPT pass's motif step (zero_any::ChunkImpl::compress_rank_queue()):
      *        this materialised chunk, which compress() left as it is (neither constant),
      *        compressed to its registered motif plus an offset, at once, under the same
      *        admission rule as classify_motif().
@@ -164,7 +164,7 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
      */
     void compress_to_motif(int thr, int chunk_index, int array_id, ChunkElems size);
 
-    /// @brief How many motif candidates this thread's pass holds (fill_list_chunk_to_compress_in_par()).
+    /// @brief How many motif candidates this thread's pass holds (classify_rank_candidates()).
     [[nodiscard]] static std::size_t motif_candidate_count() noexcept
     {
         return motif_candidates_.size();

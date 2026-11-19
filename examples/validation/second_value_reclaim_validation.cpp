@@ -15,7 +15,7 @@
  */
 
 /**
- * @file const2_reclaim_validation.cpp
+ * @file second_value_reclaim_validation.cpp
  * @brief zero_any::Array::reclaim_second_values() frees exactly the second values
  *        nothing refers to any more, and the registry reuses their identifiers.
  *
@@ -52,7 +52,7 @@
  *               it keep exactly what the chunks at the new geometry hold, and
  *               one during a re-chunk rebuild is refused and counted.
  *
- *          Usage: const2_reclaim_validation [chunks]
+ *          Usage: second_value_reclaim_validation [chunks]
  */
 
 #include <cstdio>     // std::snprintf, std::remove, std::getline
@@ -74,13 +74,13 @@
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
-namespace validation::const2_reclaim_validation
+namespace validation::second_value_reclaim_validation
 {
 
 using namespace shrink_array;
 
 static_assert(chunk_config::use_zero_any,
-              "const2_reclaim_validation is zero_any's registry: link chunk_zero_any_<size>");
+              "second_value_reclaim_validation is zero_any's registry: link chunk_zero_any_<size>");
 
 using Arr      = zero_any::Array<double>;
 using Registry = zero_any::Chunk<double>::Holder::VecHolder;
@@ -218,7 +218,7 @@ static int run_rounds_child(long nch, long rounds)
 static void check_rounds_under_limit(const char* self, long nch)
 {
     const long        limit  = 3 * nch;
-    const std::string log    = validation::temp_path("const2_reclaim.log");
+    const std::string log    = validation::temp_path("second_value_reclaim.log");
     const std::string cmd    = "CHUNK_CONST_VAL2_ID_LIMIT=" + std::to_string(limit) + " " +
                                validation::self_command(self) + " --rounds " + std::to_string(nch) + " 12 > \"" + log +
                                "\" 2>&1";
@@ -256,7 +256,7 @@ int run(int argc, char** argv)
     const long nch      = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
     const auto chunk_sz = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
 
-    println("=== const2_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, chunk_sz,
+    println("=== second_value_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, chunk_sz,
             CHUNK_PMP_MAX_THREADS);
     {
         Arr arr(static_cast<int>(nch * chunk_sz));
@@ -426,8 +426,8 @@ int run(int argc, char** argv)
     // F: under a lowered identifier limit, reclaiming rounds run to the end.
     check_rounds_under_limit(argv[0], nch);
 
-    println("=== {} ===", fails ? "CONST2_RECLAIM FAILED" : "CONST2_RECLAIM OK");
+    println("=== {} ===", fails ? "SECOND_VALUE_RECLAIM FAILED" : "SECOND_VALUE_RECLAIM OK");
     return fails ? 1 : 0;
 }
 
-} // namespace validation::const2_reclaim_validation
+} // namespace validation::second_value_reclaim_validation

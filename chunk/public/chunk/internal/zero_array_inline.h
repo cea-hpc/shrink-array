@@ -91,8 +91,8 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
         return;
     }
 
-    const auto& sh_inf   = *Proxy<T>::array_registry;
-    const int   array_id = sh_inf.get_array_id(this->registry_key());
+    const auto& registry   = *Proxy<T>::array_registry;
+    const int   array_id = registry.get_array_id(this->registry_key());
 
     // Read before the clear() drain mutates state. Not written() = compressed
     // to first_value. A written() chunk is also classified by CONTENT (as in
@@ -458,9 +458,9 @@ void zero::Array<T, IntType>::resize(const IntType newsz)
         this->drain_candidates(); // not make_block_compression(): resize() may run in a region
     }
 
-    const auto& sh_inf = *Proxy<T>::array_registry;
+    const auto& registry = *Proxy<T>::array_registry;
 
-    const int array_id = sh_inf.get_array_id(this->registry_key());
+    const int array_id = registry.get_array_id(this->registry_key());
 
     const IntType old_size = m_size_; // the stale-tail reset at the end
 

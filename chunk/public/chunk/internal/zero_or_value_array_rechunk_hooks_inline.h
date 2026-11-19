@@ -105,7 +105,7 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(this Derived
 template <typename Derived>
 bool zero_or_value::RechunkHooks<Derived, true>::rechunk_swap_identity(this Derived& self, Derived& tmp)
 {
-    // The array_id, idx_const_val2_ and inf_array MEMBERS are NOT swapped: the
+    // The array_id, second_value_idx_ and array_info MEMBERS are NOT swapped: the
     // identity comes from array_registry, and the members may be
     // uninitialized (swapping would read indeterminate values). The mirrors are
     // re-read in rechunk_reown_after_swap().
@@ -122,8 +122,8 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this D
                                                                           Derived&        tmp,
                                                                           InT<value_type> state)
 {
-    // Re-own the registration of `state`: map_inf_array_[state] points at
-    // &tmp.inf_array, which dangles once the stack tmp dies, and the next
+    // Re-own the registration of `state`: array_info_map_[state] points at
+    // &tmp.array_info, which dangles once the stack tmp dies, and the next
     // compression of `state` would dereference it. Copy tmp's (value, idx) and
     // re-point the map at this array's member. Only when the fresh array
     // registered a value (state != value_type{}).
@@ -133,9 +133,9 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this D
         {
             if (!same_value(state, value_type{}))
             {
-                self.inf_array_      = tmp.inf_array_; // tmp's is valid (set_second_value ran)
-                self.idx_const_val2_ = tmp.idx_const_val2_;
-                ProxyType::array_registry->insert(state, &self.inf_array_);
+                self.array_info_      = tmp.array_info_; // tmp's is valid (set_second_value ran)
+                self.second_value_idx_ = tmp.second_value_idx_;
+                ProxyType::array_registry->insert(state, &self.array_info_);
             }
         }
     }
@@ -144,7 +144,7 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this D
         (void)state;
     }
 
-    // Write proxies are armed with the inf_array member's address: re-read both
+    // Write proxies are armed with the array_info member's address: re-read both
     // mirrors from the swapped registry (tmp's teardown uses it too). All build
     // modes, bool included.
     self.sync_registry_mirror();

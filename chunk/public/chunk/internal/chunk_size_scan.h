@@ -134,8 +134,8 @@ class ChunkSizeScan
     ///        its own; for the other variants, which have none, kind_motif is
     ///        kind_mat and every test on it folds away.
     static constexpr int kind_none   = -1;
-    static constexpr int kind_const1 = 0;                                        ///< the first constant
-    static constexpr int kind_const2 = 1;                                        ///< a second constant
+    static constexpr int kind_first_value = 0;                                        ///< the first constant
+    static constexpr int kind_second_value = 1;                                        ///< a second constant
     static constexpr int kind_mat    = 2;                                        ///< materialised
     static constexpr int kind_motif  = has_motif_state_v<ChunkT> ? 3 : kind_mat; ///< a motif chunk
 
@@ -202,7 +202,7 @@ class ChunkSizeScan
     {
         int64_t     start;
         int64_t     end;
-        int         kind; // kind_none, kind_const1, kind_const2, kind_mat, kind_motif
+        int         kind; // kind_none, kind_first_value, kind_second_value, kind_mat, kind_motif
         const void* key;
     };
 
@@ -232,7 +232,7 @@ class ChunkSizeScan
     ///        value, when designated. zero_any: any value.
     [[nodiscard]] bool compressible_value(const T& elem) const;
 
-    /// @brief @p chunk's kind; two kind_const2 chunks merge iff same @p key
+    /// @brief @p chunk's kind; two kind_second_value chunks merge iff same @p key
     ///        (zero_any: the buffer pointer; zero_or_value: one sentinel).
     [[nodiscard]] int classify(const ChunkT& chunk, const void*& key) const;
 
@@ -340,9 +340,9 @@ class ChunkSizeScan
     int64_t        len_;      ///< nc_ * chunk_sz_: the extent the windows cut
 
     int    second_value_idx_;   ///< second_value_index()
-    InT<T> const1_value_;       ///< the first constant
-    bool   has_const2_ = false; ///< a second value is designated, distinct from the first
-    T      const2_value_;       ///< ... that value
+    InT<T> first_value_;       ///< the first constant
+    bool   has_second_value_ = false; ///< a second value is designated, distinct from the first
+    T      second_value_;       ///< ... that value
 
     std::vector<uint32_t> cand_;                ///< candidate_sizes()
     int                   n_cand_      = 0;     ///< their count

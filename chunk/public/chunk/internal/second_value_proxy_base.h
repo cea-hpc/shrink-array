@@ -52,13 +52,13 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base = ProxyBase<Derived, T, ChunkT>;
     friend Base;
 
-    using Base::add_to_compression_list;
+    using Base::queue_as_candidate;
     using Base::array_id_;
     using Base::chunk_;
     using Base::chunk_index_;
     using Base::elem_offset_;
-    using Base::is_const_val1;
-    using Base::is_not_const_val1;
+    using Base::is_first_value;
+    using Base::is_not_first_value;
     using Base::values_;
 
     using typename Base::AtomicPtrRefT;
@@ -70,9 +70,9 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base::ptr_is_inside_chunk_list_to_compress_;
 
     // ========================================================================
-    // Constant-state queries. is_const_val2() itself is the derived proxy's:
+    // Constant-state queries. is_second_value() itself is the derived proxy's:
     // only it knows the index/idx for non-bool types. These reach it through
-    // self; the delegating is_const_val2() this class used to declare for them
+    // self; the delegating is_second_value() this class used to declare for them
     // is gone.
     // ========================================================================
 
@@ -177,12 +177,12 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
-     * @brief Negation of is_const_val2().
+     * @brief Negation of is_second_value().
      * @return true if the chunk is NOT compressed to the second constant.
      */
-    [[nodiscard]] bool is_not_const_val2(this const Derived& self) noexcept
+    [[nodiscard]] bool is_not_second_value(this const Derived& self) noexcept
     {
-        return !self.is_const_val2();
+        return !self.is_second_value();
     }
 
     /**
@@ -191,13 +191,13 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      */
     [[nodiscard]] bool is_const_val(this const Derived& self) noexcept
     {
-        return self.is_const_val1() || self.is_const_val2();
+        return self.is_first_value() || self.is_second_value();
     }
 
     /**
      * @brief Pre-check shared by every variant: the write is of a constant.
      * @details A write is worth the marking path (one read of the old value,
-     *          then add_to_compression_list) when the value written is one of
+     *          then queue_as_candidate) when the value written is one of
      *          the chunk's two constants -- whatever the chunk's state.
      *          should_mark_for_compression() then keeps the writes that change
      *          the element (old != new), so a chunk is queued at most once per
