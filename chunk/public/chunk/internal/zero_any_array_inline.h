@@ -332,13 +332,13 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         // that dominates the profile.
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
+            const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
 
             // Not for a work array torn down in a region: that pass walks every
             // rank's list, of every type.
-            if (!own_rank && ens_type_chunk.have_chunk_to_compress_potentially())
+            if (!own_rank && type_registry.have_chunk_to_compress_potentially())
             {
-                ens_type_chunk.compress_chunk_to_compress_potentially(false);
+                type_registry.compress_chunk_to_compress_potentially(false);
             }
         }
 

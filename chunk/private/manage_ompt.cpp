@@ -307,9 +307,9 @@ void parallel_end_chunk_work()
         return;
     }
 
-    const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
+    const auto& type_registry = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
 
-    if (!ens_type_chunk.have_chunk_to_compress_potentially())
+    if (!type_registry.have_chunk_to_compress_potentially())
     {
         return;
     }
@@ -318,7 +318,7 @@ void parallel_end_chunk_work()
     // already joined (the region's implicit barrier made its writes visible),
     // so one would bind to a team of one and do nothing; at a nested region's
     // end it would bind to the ENCLOSING team, which only this thread reaches.
-    ens_type_chunk.compress_chunk_to_compress_potentially(true);
+    type_registry.compress_chunk_to_compress_potentially(true);
 }
 
 /**
