@@ -58,8 +58,8 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& arr, const Options& opt)
     // designated (otherwise only first_value: the conservative answer).
     if constexpr ((chunk_config::use_zero_or_value || is_zero_any_family_v<ChunkT>) && requires { arr.second_value(); })
     {
-        second_value_ = arr.second_value();
-        has_second_value_   = !same_value(second_value_, first_value_);
+        second_value_     = arr.second_value();
+        has_second_value_ = !same_value(second_value_, first_value_);
     }
     for (const uint32_t cand_sz : cand_)
     {
@@ -191,12 +191,12 @@ int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
         }
         if (is_second)
         {
-            static constexpr int second_value_sentinel = 0; // one address: array-level, all const2 equal
-            key                                  = &second_value_sentinel;
+            static constexpr int second_value_sentinel = 0; // one address: array-level, all second values equal
+            key                                        = &second_value_sentinel;
             return kind_second_value;
         }
     }
-    // zero: const1 or mat only.
+    // zero: first value or mat only.
     return kind_mat;
 }
 
@@ -386,7 +386,7 @@ void ChunkSizeScan<Arr>::pick_part(int64_t part)
     for (int64_t j = j0; j < j1; ++j)
     {
         const void* key = nullptr;
-        if (classify(array_.chunk_list_[j], key) != kind_mat) // skip const1 / const2 (only mat has data)
+        if (classify(array_.chunk_list_[j], key) != kind_mat) // skip first value / second value (only mat has data)
         {
             continue;
         }

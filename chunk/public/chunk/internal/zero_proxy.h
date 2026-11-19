@@ -125,7 +125,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     // --- fast-block-compression surface: this policy's Enabled is that axis
     // (chunk_config::use_fast_block_compression).
     using Base::array_id_;
-    using Base::array_is_inside_chunk_list_to_compress;
+    using Base::candidate_flags;
     using Base::ptr_on_array_;
     using Base::read_values;
     using Base::read_values_async;
@@ -255,7 +255,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     static void clear_candidate_flag(int array_id, int chunk_index) noexcept
     {
-        array_is_inside_chunk_list_to_compress[array_id][chunk_index] = 0;
+        candidate_flags[array_id][chunk_index] = 0;
     }
 
   protected:
@@ -407,8 +407,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::queue_as_candidate;
     using Base::set_array_id;
 
-    using Base::array_is_inside_chunk_list_to_compress; ///< Global compression tracking array
-    using Base::ptr_is_inside_chunk_list_to_compress_;  ///< Per-chunk compression flag pointer
+    using Base::candidate_flag_; ///< Per-chunk compression flag pointer
+    using Base::candidate_flags; ///< Global compression tracking array
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
     struct modulo

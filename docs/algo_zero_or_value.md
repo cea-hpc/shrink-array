@@ -96,13 +96,13 @@ the chunk is in one of three states:
 
 | state | `values` points to | test |
 |---|---|---|
-| compressed to the first value | the constant buffer `const_val1` (all 0) | `is_first_value()` |
-| compressed to the second value | the constant buffer `const_val2[idx]` | `is_second_value(idx)` |
+| compressed to the first value | the constant buffer `first_value_buffer_` (all 0) | `is_first_value()` |
+| compressed to the second value | the constant buffer `second_value_buffers[idx]` | `is_second_value(idx)` |
 | materialised | a private buffer, allocated for this chunk | `written(idx)` |
 
 The constant buffers are **allocated only once** and shared by all the chunks
 concerned. Their size is `const_buffer_size` (the chunk size in fixed geometry,
-`chunk_dyn_max_size` in dynamic geometry). There is one `const_val2` buffer per declared second
+`chunk_dyn_max_size` in dynamic geometry). There is one `second_value_buffer_` buffer per declared second
 value, identified by an **index** `idx`.
 
 > Warning: `zero_or_value::Chunk::written()` **without an argument** is reserved for `bool` and returns `false`
@@ -120,7 +120,7 @@ The second value **is not stored in the array**: it lives in the shared registry
 (second_value, idx, array_id)
 ```
 
-- `idx`: the index of the `const_val2` constant buffer for this value;
+- `idx`: the index of the `second_value_buffer_` constant buffer for this value;
 - `array_id`: the array number, which indexes the per-array metadata tables
   (for example the "already a compression candidate" flags).
 
@@ -197,7 +197,7 @@ if (is_first_value_equal_to(values_loc, v)) return v;
 
 set_info_second_value_idx();   // second_value and idx, from the mirror
 
-// 2. second_value on a chunk at const_val2, or on an element that already holds it:
+// 2. second_value on a chunk at second_value_buffer_, or on an element that already holds it:
 //    nothing to do -- unless deferred writes are pending on the chunk
 //    (an older op replayed later would overwrite the value left in place)
 if (!chunk.pending_any())
@@ -212,7 +212,7 @@ if (deferred) { /* capture the operation to replay it later (7.3) */ }
 
 ### 6.3 The body: `perform_core_assignment`
 
-- **second value written into a `const_val1` chunk**: the chunk is materialised
+- **second value written into a `first_value_buffer_` chunk**: the chunk is materialised
   (`create_value()`, pre-filled with 0), then the value is written;
 - **compressed chunk (either constant) and a different value**: the chunk is materialised,
   pre-filled **with the constant it is leaving**, then the value is written;
@@ -331,10 +331,10 @@ for (long i = 0; i < n; ++i)
     arr[i] = second_value;
 ```
 
-At construction, all chunks are at `const_val1`. The first write to each chunk
+At construction, all chunks are at `first_value_buffer_`. The first write to each chunk
 **materialises** it (it then holds `1 0 0 0 …`). Without compression during execution, the
 loop would end with **the whole array allocated**, although every chunk has become uniform again.
-In-flight compression returns these chunks to `const_val2` as the loop proceeds.
+In-flight compression returns these chunks to `second_value_buffer_` as the loop proceeds.
 
 ### 8.2 Candidate lists
 
@@ -368,7 +368,7 @@ applied first:
   CAS of the chunk's flag, since a refusal after it would leave the flag set and the chunk
   never queued again.
 
-An atomic flag per chunk ("already a candidate", `array_is_inside_chunk_list_to_compress`,
+An atomic flag per chunk ("already a candidate", `candidate_flags`,
 indexed by `array_id`) guarantees that a chunk is queued **only once** until the
 next pass.
 
@@ -397,8 +397,8 @@ flowchart TD
     D -->|"all = first_value"| E["list ll_compt1"]
     D -->|"all = second_value"| F["list ll_compt2"]
     D -->|"otherwise"| G["nothing (flag reset to zero)"]
-    E --> H["clear : return the buffer,<br/>values -> const_val1"]
-    F --> I["clear : return the buffer,<br/>values -> const_val2[idx]"]
+    E --> H["clear : return the buffer,<br/>values -> first_value_buffer_"]
+    F --> I["clear : return the buffer,<br/>values -> second_value_buffers[idx]"]
     H --> J["reset the flags to zero,<br/>empty the list, finish()"]
     I --> J
     G --> J

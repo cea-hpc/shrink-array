@@ -22,8 +22,8 @@
 #include <source_location> // std::source_location
 
 #include "chunk/internal/second_value_chunk_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/config.h"             // build_config::any_check, chunk_config::use_compression_with_counter
-#include "chunk/internal/pmp_chunk.h" // get_thr_rank_fast
+#include "chunk/config.h"                         // build_config::any_check, chunk_config::use_compression_with_counter
+#include "chunk/internal/pmp_chunk.h"             // get_thr_rank_fast
 #include "chunk/internal/second_value_registry.h" // SecondValueRef
 
 namespace shrink_array
@@ -122,14 +122,14 @@ void SecondValueChunkBase<T, Derived>::clear_impl(this Derived&     self,
         if (self.is_first_value())
         {
             invariant_failed(
-                "Free List Corruption: Attempted to add 'const_val1' (zero-constant) to the thread-local free pool. "
-                "Type: {} | Chunk Addr: {} | Ptr being freed: {} | First Ptr: {} | Thread Rank: {}",
+                "Free List Corruption: Attempted to add 'first_value' (zero-constant) to the thread-local free pool. "
+                "Type: {} | Chunk Addr: {} | Ptr being freed: {} | First value ptr: {} | Thread Rank: {}",
                 type_name<T>(), &self, current_ptr, static_cast<const void*>(Base::first_value_ptr()),
                 get_thr_rank_fast());
         }
 
         invariant_failed(
-            "Free List Corruption: Attempted to add 'const_val2' (secondary constant) to the thread-local free pool. "
+            "Free List Corruption: Attempted to add 'second_value' (secondary constant) to the thread-local free pool. "
             "Type: {} | Chunk Addr: {} | Ptr being freed: {} | Thread Rank: {}",
             type_name<T>(), &self, current_ptr, get_thr_rank_fast());
     }
@@ -192,17 +192,17 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(this cons
         const void* values_ptr = static_cast<const void*>(self.values_load());
         const int   thr        = get_thr_rank_fast();
 
-        // --- 1. Check primary constant (const_val1) ---
+        // --- 1. Check primary constant (first_value) ---
         if (self.Base::is_first_value())
         {
             invariant_failed(std::source_location::current(),
-                             "Critical State Violation: Attempted to free 'const_val1' inside clear. "
-                             "Index: {} | Type: {} | Chunk: {} | Values: {} | First: {} | Thr: {}",
+                             "Critical State Violation: Attempted to free 'first_value' inside clear. "
+                             "Index: {} | Type: {} | Chunk: {} | Values: {} | First value: {} | Thr: {}",
                              const_index, type_name<T>(), chunk_ptr, values_ptr,
                              static_cast<const void*>(Derived::Base::first_value_ptr()), thr);
         }
 
-        // --- 2. Check secondary constant (const_val2) ---
+        // --- 2. Check secondary constant (second_value) ---
         bool        is_violating = false;
         const void* second_ptr   = nullptr;
 
@@ -249,8 +249,8 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(this cons
         if (is_violating)
         {
             invariant_failed(std::source_location::current(),
-                             "Critical State Violation: Attempted to free 'const_val2' inside clear. "
-                             "Index: {} | Type: {} | Chunk: {} | Values: {} | Const2: {} | Thr: {}",
+                             "Critical State Violation: Attempted to free 'second_value' inside clear. "
+                             "Index: {} | Type: {} | Chunk: {} | Values: {} | Second value: {} | Thr: {}",
                              const_index, type_name<T>(), chunk_ptr, values_ptr, second_ptr, thr);
         }
     }
@@ -286,11 +286,12 @@ void SecondValueChunkBase<T, Derived>::assert_writable_buffer(this Derived&     
 
         if (target_ptr == c1 || (c2 != nullptr && target_ptr == c2)) [[unlikely]]
         {
-            invariant_failed(loc,
-                             "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
-                             "Type: {} | Chunk Addr: {} | Target Ptr: {} | First: {} | Const2: {} | Thread: {}",
-                             type_name<T>(), static_cast<const SecondValueChunkBase*>(std::addressof(self)),
-                             static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
+            invariant_failed(
+                loc,
+                "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
+                "Type: {} | Chunk Addr: {} | Target Ptr: {} | First value: {} | Second value: {} | Thread: {}",
+                type_name<T>(), static_cast<const SecondValueChunkBase*>(std::addressof(self)),
+                static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
         }
     }
 }

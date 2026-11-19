@@ -243,7 +243,8 @@ class Registry
 
     /// @brief Account one call (@p wall_end: execute() returned, @p finalize_end:
     ///        finalize_parallel_phase() returned).
-    void record(const std::source_location& loc, const Call& c, Clock::time_point wall_end, Clock::time_point finalize_end)
+    void
+    record(const std::source_location& loc, const Call& c, Clock::time_point wall_end, Clock::time_point finalize_end)
     {
         const std::size_t n    = c.start.size();
         const double      w    = seconds(wall_end - c.t0);
@@ -491,14 +492,14 @@ class Registry
     std::vector<long long>             doubled_;        ///< TBB: regions each slot ran two ranks or more of
     long long                          slot_calls_ = 0; ///< TBB: regions with the slots recorded
     // TBB: the arena's observer counts, summed over the regions (record_arena()).
-    long long         arena_calls_           = 0;
-    long long         arena_in_              = 0;
-    long long         arena_entered_region_  = 0;
-    long long         arena_left_region_     = 0;
-    long long         arena_entered_finalize_     = 0;
-    long long         arena_left_finalize_        = 0;
-    long long         arena_entered_between_ = 0;
-    long long         arena_left_between_    = 0;
+    long long         arena_calls_            = 0;
+    long long         arena_in_               = 0;
+    long long         arena_entered_region_   = 0;
+    long long         arena_left_region_      = 0;
+    long long         arena_entered_finalize_ = 0;
+    long long         arena_left_finalize_    = 0;
+    long long         arena_entered_between_  = 0;
+    long long         arena_left_between_     = 0;
     ArenaCount        arena_last_;
     double            serial_    = 0;
     double            finalize_  = 0;

@@ -153,7 +153,7 @@ static void expect_values(std::string_view where, const Arr& arr, long count, do
     }
 }
 
-/// @brief --id-limit (child, run under CHUNK_CONST_VAL2_ID_LIMIT=16): 40 chunks,
+/// @brief --id-limit (child, run under CHUNK_SECOND_VALUE_ID_LIMIT=16): 40 chunks,
 ///        each at its own constant -- 40 distinct second values. Must stop
 ///        at the 17th registration; returning means it ran on.
 static int run_id_limit_child()
@@ -181,7 +181,7 @@ static int run_id_limit_child()
 static void check_id_limit(const char* self)
 {
     const std::string log     = validation::temp_path("second_value_id_limit.log");
-    const std::string cmd     = std::string("CHUNK_CONST_VAL2_ID_LIMIT=16 ") + validation::self_command(self) +
+    const std::string cmd     = std::string("CHUNK_SECOND_VALUE_ID_LIMIT=16 ") + validation::self_command(self) +
                                 " --id-limit > \"" + log + "\" 2>&1";
     const int         status  = std::system(cmd.c_str());
     const bool        stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);

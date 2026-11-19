@@ -146,7 +146,7 @@ bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
         {
             if constexpr (is_not_bool)
             {
-                const auto& registry           = *zero_or_value::Proxy<T>::array_registry;
+                const auto& registry         = *zero_or_value::Proxy<T>::array_registry;
                 const auto& v_all_second_val = registry.get_all_second_value();
                 return std::ranges::any_of(v_all_second_val, [n_thr](const auto& second_value)
                                            { return ChunkT<T>::has_queued(second_value, n_thr); });
@@ -184,7 +184,7 @@ void CompressCandidates<ChunkT, T>::compress_pass([[maybe_unused]] bool apply)
         {
             if constexpr (is_not_bool)
             {
-                const auto& registry          = *zero_or_value::Proxy<T>::array_registry;
+                const auto& registry  = *zero_or_value::Proxy<T>::array_registry;
                 const auto& all_infos = registry.all_array_infos();
                 for (const auto& array_info : all_infos)
                 {

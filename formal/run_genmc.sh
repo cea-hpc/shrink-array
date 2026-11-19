@@ -27,7 +27,9 @@ run() {
     local actual
     if grep -q "No errors were detected" <<<"$out"; then
         actual=ok
-    elif grep -qE "Error detected|Error:|violation|race|Assertion|assertion|use-after-free|freed memory|Liveness|liveness|Non-terminating|non-terminating" <<<"$out"; then
+    # "Unordered writes": since GenMC 0.20, in-place revisiting (on by default) stops on it as on
+    # an error, before the access it leads to (MUT_RELEASE_BEFORE_UNMARK, two passes).
+    elif grep -qE "Error detected|Error:|violation|race|Assertion|assertion|use-after-free|freed memory|Liveness|liveness|Non-terminating|non-terminating|Unordered writes|Verification unsucc" <<<"$out"; then
         actual=error
     else
         actual=unknown

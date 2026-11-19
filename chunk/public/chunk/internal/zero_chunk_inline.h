@@ -61,8 +61,7 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_candidates(int              thr,
-                                                                                        CandidateTuples& ll_compt)
+void zero::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_candidates(int thr, CandidateTuples& ll_compt)
 {
     const auto& vec_tup = Derived::Manager::zero_candidates_thr[thr];
 
@@ -92,10 +91,10 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_candidates(in
 
 template <typename T, typename Derived, bool Enabled>
 void zero::ChunkFastCompPolicy<T, Derived, Enabled>::classify_candidate(this Derived&    self,
-                                                                           CandidateTuples& ll_compt,
-                                                                           int              chunk_index,
-                                                                           int              array_id,
-                                                                           unsigned int     n_elems)
+                                                                        CandidateTuples& ll_compt,
+                                                                        int              chunk_index,
+                                                                        int              array_id,
+                                                                        unsigned int     n_elems)
 {
     if (self.written())
     {
@@ -112,7 +111,7 @@ template <typename T, typename Derived, bool Enabled>
 void zero::ChunkThreadPolicy<T, Derived, Enabled>::compress(this Derived& self, int thr_rank, unsigned int n_elems)
 {
     // Already compressed: nothing to do. Required: a chunk can be reached twice (its queued
-    // candidate outlives a compression by another path, e.g. the re-chunk fold). On a const1
+    // candidate outlives a compression by another path, e.g. the re-chunk fold). On a first-value
     // chunk `values` IS the shared zero sentinel: is_constant_to(0) would answer true and
     // clear_st() would park the SENTINEL into a reuse list, to be handed out as a buffer.
     if (!self.written())
@@ -351,8 +350,8 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
     }
 
     queue_flag::release_candidates(
-        candidates, sz, [](int array_id, int chunk_index) -> auto&
-        { return Proxy<T>::candidate_flag_row(array_id)[chunk_index]; },
+        candidates, sz,
+        [](int array_id, int chunk_index) -> auto& { return Proxy<T>::candidate_flag_row(array_id)[chunk_index]; },
         [](int array_id, int chunk_index) { Proxy<T>::clear_candidate_flag(array_id, chunk_index); });
 
     if (guarded)

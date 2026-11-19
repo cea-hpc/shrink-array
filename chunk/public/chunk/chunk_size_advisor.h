@@ -42,15 +42,15 @@
 // windows of C elements, each classified from the CURRENT chunks it overlaps
 // (details at "The window model" in internal/chunk_size_scan.h, whose
 // ChunkSizeScan does the counting). For zero_any the identity of a
-// const_val2 constant IS the values_load() pointer (a SecondValueRegistry slot), so
+// second_value constant IS the values_load() pointer (a SecondValueRegistry slot), so
 // a constant run is a pointer comparison:
-//         const1 + const1           -> const1
-//         const2(p) + const2(p)     -> const2
-//         anything else         -> materialized
+//         first + first                   -> first value
+//         second(p) + second(p)           -> second value
+//         anything else                   -> materialized
 // When S divides C the row is EXACT; otherwise partly-overlapped materialised
 // chunks are sampled (capped) and extrapolated. Deliberately CONSERVATIVE for
 // zero_any's mixed dual-value patterns. Constant-at-C windows count as
-// compressed whichever constant (const2 registry growth is ignored).
+// compressed whichever constant (second-value registry growth is ignored).
 //
 // CONCURRENCY CONTRACT: call at a QUIESCENT phase boundary only (same contract
 // as flush_pending_deferred_ops: no concurrent writers/compressors, deferred
@@ -83,7 +83,7 @@ SHRINK_ARRAY_EXPORT struct ChunkSizeEstimate
     uint32_t size      = 0;  ///< candidate chunk size (elements)
     int64_t  n_chunks  = 0;  ///< total chunks at that size
     int64_t  mat       = 0;  ///< materialized chunks (estimated or exact)
-    int64_t  constant  = 0;  ///< compressed chunks (const_val1 + const_val2)
+    int64_t  constant  = 0;  ///< compressed chunks (first_value + second_value)
     double   mem_bytes = 0.; ///< model memory (bytes): metadata, materialised data and,
                              ///< for pattern::Array, one entry per distinct motif
     bool    exact = false;   ///< true: exact fold; false: sampled estimate
@@ -206,7 +206,7 @@ struct ChunkSizeAdvisor
     ///        candidate chunk size would give it. Read-only; call at a
     ///        quiescent point. Variant-generic via @p Arr (zero::Array /
     ///        zero_or_value::Array / zero_any::Array): the only per-variant part is the
-    ///        const2 classification, selected with if constexpr on chunk_config.
+    ///        second-value classification, selected with if constexpr on chunk_config.
     template <typename Arr>
     static ChunkSizeReport analyze(const Arr& arr, const Options& opt = {})
     {

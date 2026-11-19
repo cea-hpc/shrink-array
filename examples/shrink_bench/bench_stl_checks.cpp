@@ -391,12 +391,12 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
         // Size spans many chunks (≈195 at chunk_size 512) so reads cross chunk
         // boundaries. Mixed data (mostly second_value, some distinct) exercises
-        // both the const2 read path and materialised reads — the two that can go
+        // both the second-value read path and materialised reads — the two that can go
         // stale. maybe_set_second_value is not required for correctness: a
         // zero_or_value array without it has T{} as second value (see
         // insert_only_array_id), so it writes fine but only its zeros compress.
         // It is declared here, before the writes, so that the runs of 2.0
-        // actually reach the const2 read path this check is about (no-op on
+        // actually reach the second-value read path this check is about (no-op on
         // zero / vector mode, per-chunk on zero_any).
         const long    nr = 100000;
         Array<double> reads(nr);

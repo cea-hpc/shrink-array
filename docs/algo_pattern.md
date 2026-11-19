@@ -118,7 +118,7 @@ The course of the pass; the steps up to the scan are those of `zero_any`
 ```mermaid
 flowchart TD
     A["zero_any's pass up to the scan:<br/>flush check, steal_mark, start"] --> E["classify_candidate at the entry's size:<br/>scan_constants against 0 and element 0"]
-    E -->|"all = 0"| F["type 0: slot reset_release,<br/>CAS values -> const_val1"]
+    E -->|"all = 0"| F["type 0: slot reset_release,<br/>CAS values -> first_value_buffer_"]
     E -->|"all = element 0"| G["type 1: find_or_register_second_value_release,<br/>CAS values -> the registry array"]
     E -->|"neither"| M["classify_motif: read_block,<br/>subtract element 0, hash, find_or_admit"]
     M -->|"registered motif"| MC["motif_candidates_, claim kept"]
@@ -184,7 +184,7 @@ differs.
 
 ```mermaid
 flowchart TD
-    A["pattern::Proxy: zero_any::ProxyImpl::assign_impl"] --> B{"0 on a const_val1 chunk,<br/>no deferred operation pending?"}
+    A["pattern::Proxy: zero_any::ProxyImpl::assign_impl"] --> B{"0 on a first_value_buffer_ chunk,<br/>no deferred operation pending?"}
     B -->|yes| B1["nothing to do"]
     B -->|no| C["engine of 7.2<br/>(write_with_optional_lock_with_set_ptr)"]
     C --> D{"re-check:<br/>compressor?"}

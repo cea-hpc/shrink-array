@@ -127,7 +127,7 @@ Le déroulé de la passe ; les étapes jusqu'au parcours sont celles de `zero_an
 ```mermaid
 flowchart TD
     A["passe de zero_any jusqu'au parcours :<br/>test du vidage, steal_mark, start"] --> E["classify_candidate à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
-    E -->|"tout = 0"| F["type 0 : reset_release de la case,<br/>CAS values -> const_val1"]
+    E -->|"tout = 0"| F["type 0 : reset_release de la case,<br/>CAS values -> first_value_buffer_"]
     E -->|"tout = élément 0"| G["type 1 : find_or_register_second_value_release,<br/>CAS values -> le tableau du registre"]
     E -->|"ni l'un ni l'autre"| M["classify_motif : read_block,<br/>soustraire l'élément 0, hacher, find_or_admit"]
     M -->|"motif enregistré"| MC["motif_candidates_, réservation gardée"]
@@ -196,7 +196,7 @@ diffère.
 
 ```mermaid
 flowchart TD
-    A["pattern::Proxy : zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à const_val1,<br/>aucune opération différée en attente ?"}
+    A["pattern::Proxy : zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à first_value_buffer_,<br/>aucune opération différée en attente ?"}
     B -->|oui| B1["rien à faire"]
     B -->|non| C["moteur du 7.2<br/>(write_with_optional_lock_with_set_ptr)"]
     C --> D{"revérification :<br/>compresseur ?"}

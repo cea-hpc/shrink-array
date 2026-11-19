@@ -82,7 +82,7 @@ flowchart TB
     subgraph per_type["per (variant, element type)"]
         mgr["TypeState<br/>reuse pools, compression candidates,<br/>per-rank allocators, deferred flush"]
         cmp["CompressionManager<br/>passes, deferred writes"]
-        reg["shared constants<br/>const_val1, second-value registry, motif region"]
+        reg["shared constants<br/>first_value_buffer_, second-value registry, motif region"]
     end
     subgraph per_process["per process"]
         all["TypeStateRegistry<br/>registry of every manager"]

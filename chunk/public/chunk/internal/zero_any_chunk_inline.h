@@ -38,8 +38,8 @@
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
 #include "chunk/internal/chunk_traits.h"               // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
 #include "chunk/internal/second_value_registry.h" // SecondValueRef
-#include "chunk/internal/queue_flag.h"              // queue_flag::hand_back / release: the pass's hand-back
-#include "chunk/internal/same_value.h"              // same_value
+#include "chunk/internal/queue_flag.h"            // queue_flag::hand_back / release: the pass's hand-back
+#include "chunk/internal/same_value.h"            // same_value
 
 /**
  * @file zero_any_chunk_inline.h
@@ -47,8 +47,8 @@
  *
  * A zero_any block is in one of three states; every function here moves it between them
  * or decides that it should move:
- *  - **const_val1**: `values` points at the shared all-`first_value` block;
- *  - **const_val2**: `values` points at the identifier slot of THIS chunk's own
+ *  - **first_value**: `values` points at the shared all-`first_value` block;
+ *  - **second_value**: `values` points at the identifier slot of THIS chunk's own
  *    second value (second_value_registry.h; zero_any's distinguishing feature —
  *    zero_or_value has one second value per array, zero_any one per chunk);
  *  - **materialised**: `values` points at a private heap buffer.
@@ -107,7 +107,7 @@ template <typename T, typename Derived, bool Enabled>
  * value" -- and stops once both are disproved. A chunk satisfying both is filed compact1 only.
  *
  * The candidate second value is element 0; a compact2 hit is queued WITH that value, for
- * the caller to register. A chunk already at const_val2 is not scanned (see the body).
+ * the caller to register. A chunk already at second_value is not scanned (see the body).
  *
  * @param ll_compt1  List of chunks compressible to first_value.
  * @param ll_compt2  List of chunks compressible to one other value.
@@ -123,12 +123,12 @@ template <typename T, typename Derived, bool Enabled>
  */
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::classify_candidate(this Derived&         self,
-                                                            CandidateTuples&      ll_compt1,
-                                                            CandidateValueTuples& ll_compt2,
-                                                            int                   chunk_index,
-                                                            int                   array_id,
-                                                            ChunkElems            size,
-                                                            [[maybe_unused]] bool claimed)
+                                                         CandidateTuples&      ll_compt1,
+                                                         CandidateValueTuples& ll_compt2,
+                                                         int                   chunk_index,
+                                                         int                   array_id,
+                                                         ChunkElems            size,
+                                                         [[maybe_unused]] bool claimed)
 {
     if (self.is_not_first_value())
     {
@@ -354,8 +354,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
     queue_flag::release_candidates(
         candidates, sz, [](int array_id, int chunk_index) -> auto&
         { return ProxyType::Base::candidate_flag_row(array_id)[chunk_index]; },
-        [](int array_id, int chunk_index)
-        { ProxyType::Base::clear_candidate_flag(array_id, chunk_index); });
+        [](int array_id, int chunk_index) { ProxyType::Base::clear_candidate_flag(array_id, chunk_index); });
 
     if (proxy2a)
     {
@@ -400,7 +399,7 @@ void zero_any::ChunkImpl<T, Derived>::compress(this Derived&         self,
                                                ChunkElems            size)
 {
     // OpenMP without OMPT, apply = false (the lists' purge walks): the body would only scan
-    // and register a const_val2 that make_block_compression redoes -- a large cost for no
+    // and register a second_value that make_block_compression redoes -- a large cost for no
     // compression, so skip it. apply = true (rechunk fold, chunk no writer can reach) runs.
     if constexpr (build_config::threaded && chunk_config::not_use_compression_with_ompt)
     {
@@ -411,7 +410,7 @@ void zero_any::ChunkImpl<T, Derived>::compress(this Derived&         self,
     }
 
     // Only a MATERIALISED chunk can be compressed: a queued entry can outlive the chunk's
-    // materialisation. Do not test const_val1 alone: a chunk at const_val2 would be scanned and
+    // materialisation. Do not test first_value alone: a chunk at second_value would be scanned and
     // its shared second-value block cleared a second time.
     if (self.written())
     {
@@ -720,9 +719,9 @@ void zero_any::ChunkImpl<T, Derived>::compress_rank_queue([[maybe_unused]] int t
  */
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::classify_rank_candidates([[maybe_unused]] int  thr,
-                                                                         CandidateTuples&      ll_compt1,
-                                                                         CandidateValueTuples& ll_compt2,
-                                                                         [[maybe_unused]] bool claimed)
+                                                               CandidateTuples&      ll_compt1,
+                                                               CandidateValueTuples& ll_compt2,
+                                                               [[maybe_unused]] bool claimed)
 {
     auto& vec_tup = Manager::get_zero_any_candidates(thr);
 
@@ -1086,7 +1085,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(this Derived& 
                                                                   int               thr_rank)
 {
     // CHUNK_STATS: a release, not a compression (block_clear counts those). The
-    // compression's own steps otherwise: type slot to const1 and second-value slot
+    // compression's own steps otherwise: type slot to the first value and second-value slot
     // reset BEFORE the CAS, then the buffer to free_block_to_pool() (ambient
     // geometry: the caller's old one; the slab's owner key).
     if constexpr (chunk_config::stats)
@@ -1244,7 +1243,7 @@ template <typename T, typename Derived>
         {
             invariant_failed(std::source_location::current(),
                              "try_mark_const_and_get_old: post-CAS values={} not in expected set "
-                             "(new_ptr={}, const1={}, a const2 array)",
+                             "(new_ptr={}, first_value={}, a second-value array)",
                              static_cast<const void*>(observed), static_cast<const void*>(new_ptr),
                              static_cast<const void*>(Base::first_value_ptr()));
         }
@@ -1304,7 +1303,7 @@ template <typename T, typename Derived>
             {
                 invariant_failed(std::source_location::current(),
                                  "post-create_value CAS: values={}, expected one of "
-                                 "{{values_loc={}, const1={}, a const2 array}}",
+                                 "{{values_loc={}, first_value={}, a second-value array}}",
                                  static_cast<const void*>(current), static_cast<const void*>(values_loc),
                                  static_cast<const void*>(Base::first_value_ptr()));
             }
@@ -1422,7 +1421,7 @@ void zero_any::ChunkImpl<T, Derived>::init_values_const_val(const ConstSlot*  pt
             if (registered_ptr == nullptr)
             {
                 invariant_failed(std::source_location::current(),
-                                 "init_values_const_val: type says const_val2 but no array is registered for the "
+                                 "init_values_const_val: type says second_value but no array is registered for the "
                                  "chunk's second value");
             }
         }

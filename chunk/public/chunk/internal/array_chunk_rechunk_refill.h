@@ -149,11 +149,11 @@ namespace shrink_array
  *          exactly one thread, the reads are const, and the write path
  *          partitions allocator / compression state by thread rank.
  *
- *          Materialisation is tracked with is_first_value() (values == the const1
+ *          Materialisation is tracked with is_first_value() (values == the first value
  *          sentinel), universal and index-free -- unlike written()/is_const_val()
  *          on zero_or_value, which need the second_value index. While filled,
- *          a chunk only goes const1 -> real buffer (never const2, a compression
- *          result), so "still const1" == "not yet materialised" for every variant.
+ *          a chunk only goes first value -> real buffer (never second value, a compression
+ *          result), so "still first value" == "not yet materialised" for every variant.
  */
 template <typename Derived>
 class RechunkSupport<Derived, true>::Refill
@@ -220,17 +220,17 @@ class RechunkSupport<Derived, true>::Refill
     {
         /// Every source is still the first constant: nothing to rebuild.
         bool all_first_value = true;
-        /// Every source is a compressed constant (const1 or const2): the new chunk,
+        /// Every source is a compressed constant (first value or second value): the new chunk,
         /// once filled, holds only constants and can be folded back at once.
-        /// Tracked for zero_any and zero_or_value (non-bool); zero has const1
+        /// Tracked for zero_any and zero_or_value (non-bool); zero has the first value
         /// only (covered by all_first_value).
         bool all_folded = true;
-        /// zero_any: some source is const1.
+        /// zero_any: some source is at the first value.
         bool any_first_value = false;
-        /// zero_any: every const2 source points at the SAME shared array (same value).
+        /// zero_any: every second-value source points at the SAME shared array (same value).
         bool same_second_value = true;
-        /// zero_any: the first const2 source's values pointer.
-        const T* const2 = nullptr;
+        /// zero_any: the first second-value source's values pointer.
+        const T* second_values_ptr = nullptr;
     };
 
     /// @brief Slices of the refill: 16 with releases_sources + fast allocator (fewer
@@ -289,7 +289,7 @@ class RechunkSupport<Derived, true>::Refill
     const bool trace_mem_on_; ///< memory=debug
     const bool slice_trace_;  ///< rechunk=trace
 
-    // zero_or_value's const2 predicate and its compress() both need the array's
+    // zero_or_value's second-value predicate and its compress() both need the array's
     // second-value registry entry; the lookups are hoisted here, once per
     // re-chunk.
     [[maybe_unused]] const int        idx_old2_; ///< src_'s second-value index (the scan)

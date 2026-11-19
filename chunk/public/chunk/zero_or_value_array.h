@@ -221,13 +221,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /**
      * @brief Set the array-wide second constant.
-     * @details Registers @p sec_value in the shared const_val2 registry, reusing an
+     * @details Registers @p sec_value in the shared second_value registry, reusing an
      *          identical value's index. A reused block is re-filled to THIS
      *          array's geometry first: a larger array would otherwise read stale
      *          zeros past the registering array's size.
      * @param sec_value value chunks may now compress to
      * @param message   print the "useless for bool" warning (bool only)
-     * @warning const_val2 blocks never move and are never released: a live chunk
+     * @warning second_value blocks never move and are never released: a live chunk
      *          of another array may hold the address as its `values`. One block
      *          per DISTINCT value ever declared, plus a candidate list per thread.
      */
@@ -292,7 +292,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
     ///        a shrinking resize() drops. Same release as clear_core(): freed
     ///        in place serially; under OpenMP parked in this array's geometry's
-    ///        reuse list and the chunk neutralised to const_val1. Sequential
+    ///        reuse list and the chunk neutralised to first_value. Sequential
     ///        point; the candidate lists must hold none of them.
     void release_chunk_range(int first, int last);
 

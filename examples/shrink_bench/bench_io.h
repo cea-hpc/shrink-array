@@ -383,8 +383,8 @@ void read_check_binary_file(Int                idx,
             const Int chunk_index = index / static_cast<Int>(data_check.chunk_size());
             const Int elem_offset = index % static_cast<Int>(data_check.chunk_size());
 
-            bool                  is_values     = false;
-            bool                  is_first_value = false;
+            bool                  is_values       = false;
+            bool                  is_first_value  = false;
             [[maybe_unused]] bool is_second_value = false; // read only by the zero_or_value / zero_any traces
             while (std::getline(trace_file, line))
             {
@@ -458,12 +458,12 @@ void read_check_binary_file(Int                idx,
             {
                 if (is_first)
                 {
-                    std::println(stderr, "\nwas const_val1 it is");
+                    std::println(stderr, "\nwas first_value it is");
                     lbd_print();
                     exit(0);
                 }
 
-                std::println(stderr, "\nwas const_val1 is not!");
+                std::println(stderr, "\nwas first_value is not!");
                 lbd_print();
                 exit(0);
             }
@@ -474,12 +474,12 @@ void read_check_binary_file(Int                idx,
                 {
                     if (is_second)
                     {
-                        std::println(stderr, "\nwas const_val2 it is");
+                        std::println(stderr, "\nwas second_value it is");
                         lbd_print();
                         exit(0);
                     }
 
-                    std::println(stderr, "\nwas const_val2 is not!");
+                    std::println(stderr, "\nwas second_value is not!");
                     lbd_print();
                     exit(0);
                 }
@@ -503,7 +503,7 @@ void read_check_binary_file(Int                idx,
 
                     if (te)
                     {
-                        std::println(stderr, "should be const_val1");
+                        std::println(stderr, "should be first_value");
                     }
                     else
                     {
@@ -894,12 +894,13 @@ void read_check_binary_file(Int                idx,
                         }
                         else
                         {
-                            log_message("\n[Info] should be const_val1 (all zero)!\n");
+                            log_message("\n[Info] should be first_value (all zero)!\n");
                         }
 
                         if constexpr (chunk_config::use_zero_any)
                         {
-                            const T* m_ptr_const_values = chunk_t.values_load(); // a const2 chunk reads from its array
+                            const T* m_ptr_const_values =
+                                chunk_t.values_load(); // a second-value chunk reads from its array
                             log_message("\nsecond_value_buffer_ contain : ");
                             log_values_compacted(log_message, m_ptr_const_values, data_check.chunk_size());
                         }
