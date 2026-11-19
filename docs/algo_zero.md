@@ -176,9 +176,11 @@ reasons for this small gain:
 
 - its metadata is already small, and growing the chunks mostly saves
   metadata;
-- after its rechunk, dynamic `zero` **slows down** (1.5 to 2 times slower per iteration than
-  static 1,024), for a reason still unknown: a dynamic build started directly at
-  1,024 runs as fast as the static one, and `zero_or_value` does not slow down after its rechunks.
+- a dynamic `zero` runs about 3% slower per iteration than static 1,024, rechunk or not, and
+  the advisor settles it at 768 on the benchmark's densifying arrays, which churns a little
+  more (about 2%) and holds no less memory than 1,024 (measured at full size, November 2026:
+  [adaptive_rechunk.md](adaptive_rechunk.md), section 8). The 1.5 to 2 times slowdown after its
+  rechunk measured earlier is gone.
 
 For a workload like the benchmark's, a **static** `zero` at the right size is still the
 best choice today.

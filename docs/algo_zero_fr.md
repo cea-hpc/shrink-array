@@ -178,9 +178,11 @@ raisons à ce gain faible :
 
 - ses métadonnées sont déjà faibles, et c'est surtout sur elles que le grossissement fait
   gagner ;
-- après son rechunk, `zero` dynamique **ralentit** (1,5 à 2 fois par itération par rapport au
-  statique 1 024), pour une raison encore inconnue : un build dynamique démarré directement à
-  1 024 va aussi vite que le statique, et `zero_or_value` ne ralentit pas après ses rechunks.
+- un `zero` dynamique tourne environ 3 % moins vite par itération que le statique 1 024, rechunk
+  ou non, et l'advisor l'installe à 768 sur les tableaux du banc, qui se densifient : un peu plus
+  de va-et-vient (environ 2 %) et pas moins de mémoire qu'à 1 024 (mesuré en taille réelle en
+  novembre 2026 : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md), section 8). Le
+  ralentissement de 1,5 à 2 fois après son rechunk mesuré auparavant a disparu.
 
 Pour un cas comme celui du banc, un `zero` **statique** à la bonne taille reste aujourd'hui le
 meilleur choix.
