@@ -140,8 +140,13 @@ inline void replay_retry(int&                        retry_count,
 // (handle_*_assignment) arm only what the write engine has not.
 
 // Full arming: resolves array_id, then every cached pointer.
+// Forced inline: every write runs it (the engine's lbd_info). Called out of line,
+// it writes into the proxy -- on the caller's stack -- with 8- and 4-byte stores,
+// and the caller then reloads the proxy's fields with 16-byte loads that span
+// them: a store the core cannot forward, so each write waited for it to reach
+// the cache (x86, 1 thread: write-varied 14.5 -> 8.9 ns, rmw 17.1 -> 9.8 ns).
 template <typename T, typename Derived, typename ChunkT>
-void zero_any::ProxyImpl<T, Derived, ChunkT>::set_info_on_chunk() noexcept
+CHUNK_FORCE_INLINE void zero_any::ProxyImpl<T, Derived, ChunkT>::set_info_on_chunk() noexcept
 {
     set_array_id();
 
