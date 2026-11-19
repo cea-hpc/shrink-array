@@ -23,7 +23,7 @@
  *
  * @details Like RechunkHooks for zero, but zero_or_value overrides all SIX hooks: it
  *          resolves array_id from the registry, carries the array-level second
- *          value across the swap, and re-owns its map_inf_array_ entry. They run
+ *          value across the swap, and re-owns its array_info_map_ entry. They run
  *          only under RechunkSupport<Derived, true>::rechunk_to(); the static
  *          specialisation keeps the signatures as no-ops so zero_or_value::Array's
  *          using-declarations stay valid in both modes.
@@ -95,10 +95,10 @@ class RechunkHooks<Derived, true>
     bool rechunk_swap_identity(Derived& tmp);
 
     /**
-     * @brief Re-own the map_inf_array_ entry after the identity swap.
+     * @brief Re-own the array_info_map_ entry after the identity swap.
      * @param tmp   scratch array the storage came from
      * @param state value returned by rechunk_capture_state()
-     * @details Re-points the shared entry at the SURVIVOR's inf_array member, so
+     * @details Re-points the shared entry at the SURVIVOR's array_info member, so
      *          that tmp's destructor does not erase an entry the survivor still
      *          needs -- see zero_or_value::Array's destructor, second warning.
      */

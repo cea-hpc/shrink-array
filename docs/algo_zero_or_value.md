@@ -114,7 +114,7 @@ value, identified by an **index** `idx`.
 
 The second value **is not stored in the array**: it lives in the shared registry
 <tt>zero_or_value::Proxy\<T\>\::array_registry</tt>, indexed by the **address** of the array. Each entry is an
-`InfArrayT` triplet:
+`ArrayInfo` triplet:
 
 ```
 (second_value, idx, array_id)
@@ -125,10 +125,10 @@ The second value **is not stored in the array**: it lives in the shared registry
   (for example the "already a compression candidate" flags).
 
 The registry remains the source of truth, but each array keeps a **mirror** of it
-(`zero_or_value::Array::inf_array`), re-read (`sync_registry_mirror()`) after the only three places that
+(`zero_or_value::Array::array_info`), re-read (`sync_registry_mirror()`) after the only three places that
 write the registry: `create()`, `set_second_value()` and the rechunk identity swap.
 The write `operator[]` **arms each proxy with the address of this mirror**
-(`registry_mirror()`, `arm_inf_array()`): the write path copies the triplet instead of
+(`registry_mirror()`, `arm_array_info()`): the write path copies the triplet instead of
 searching the registry. In a check build (`any_check`), each read of the mirror
 is compared with the registry.
 
@@ -177,7 +177,7 @@ ProxyType operator[](IndexType i) noexcept
     const int elem_offset       = i & size_policy_.modulo();
     const ProxyType& val = chunk_list[chunk_index][elem_offset];
     val.set_this_and_chunk_index(&derived(), chunk_index, array_id);   // array, chunk, array_id
-    val.arm_inf_array(derived().registry_mirror());                // zero_or_value: the mirror
+    val.arm_array_info(derived().registry_mirror());                // zero_or_value: the mirror
     return val;
 }
 ```

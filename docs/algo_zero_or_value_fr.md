@@ -114,7 +114,7 @@ valeur déclarée, repéré par un **indice** `idx`.
 
 La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le registre partagé
 <tt>zero_or_value::Proxy\<T\>\::array_registry</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
-triplet `InfArrayT` :
+triplet `ArrayInfo` :
 
 ```
 (second_value, idx, array_id)
@@ -125,10 +125,10 @@ triplet `InfArrayT` :
   (par exemple les drapeaux « déjà candidat à la compression »).
 
 Le registre reste la source de vérité, mais chaque tableau en garde un **miroir**
-(`zero_or_value::Array::inf_array`), relu (`sync_registry_mirror()`) après les trois seuls endroits qui
+(`zero_or_value::Array::array_info`), relu (`sync_registry_mirror()`) après les trois seuls endroits qui
 écrivent le registre : `create()`, `set_second_value()` et l'échange d'identité du rechunk.
 L'`operator[]` d'écriture **arme chaque proxy avec l'adresse de ce miroir**
-(`registry_mirror()`, `arm_inf_array()`) : le chemin d'écriture copie le triplet au lieu de
+(`registry_mirror()`, `arm_array_info()`) : le chemin d'écriture copie le triplet au lieu de
 chercher dans le registre. En build de vérification (`any_check`), chaque lecture du miroir
 est comparée au registre.
 
@@ -177,7 +177,7 @@ ProxyType operator[](IndexType i) noexcept
     const int elem_offset       = i & size_policy_.modulo();
     const ProxyType& val = chunk_list[chunk_index][elem_offset];
     val.set_this_and_chunk_index(&derived(), chunk_index, array_id);   // tableau, chunk, array_id
-    val.arm_inf_array(derived().registry_mirror());                // zero_or_value : le miroir
+    val.arm_array_info(derived().registry_mirror());                // zero_or_value : le miroir
     return val;
 }
 ```

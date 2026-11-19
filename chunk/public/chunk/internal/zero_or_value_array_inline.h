@@ -105,14 +105,14 @@ void zero_or_value::Array<T, IntType>::create(IntType sz)
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
-    auto& sh_inf = *Proxy<T>::array_registry;
+    auto& registry = *Proxy<T>::array_registry;
 
-    sh_inf.insert_only_array_id(this->registry_key(), array_count);
+    registry.insert_only_array_id(this->registry_key(), array_count);
     ++array_count;
     internal::ArrayUsers<ChunkType>::resize(array_count);
 
     // Registry entry written: refresh the mirror the write proxies are armed
-    // with (see zero_or_value::Array::inf_array).
+    // with (see zero_or_value::Array::array_info).
     sync_registry_mirror();
 
     if constexpr (chunk_config::use_fast_block_compression)
@@ -242,11 +242,11 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
         }
     }
 
-    auto& sh_inf = *Proxy<T>::array_registry;
+    auto& registry = *Proxy<T>::array_registry;
 
     if constexpr (is_not_bool)
     {
-        int idx = sh_inf.find_idx_array_const2(sec_value);
+        int idx = registry.find_idx_array_const2(sec_value);
 
         if (idx == -1)
         {
@@ -286,14 +286,14 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
                 }
             }
 
-            sh_inf.replace(this->registry_key(), sec_value, idx);
-            sh_inf.insert_second_value_idx(sec_value, idx);
+            registry.replace(this->registry_key(), sec_value, idx);
+            registry.insert_second_value_idx(sec_value, idx);
 
             second_value_idx_ = idx;
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                inf_array_.second_value = sec_value;
-                inf_array_.idx          = idx;
+                array_info_.second_value = sec_value;
+                array_info_.idx          = idx;
             }
 
             if constexpr (build_config::threaded)
@@ -368,16 +368,16 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                inf_array_.second_value = sec_value;
-                inf_array_.idx          = idx;
+                array_info_.second_value = sec_value;
+                array_info_.idx          = idx;
             }
         }
-        const bool exi = sh_inf.exists(this->registry_key());
+        const bool exi = registry.exists(this->registry_key());
 
         if (exi && !same_value(sec_value, this->second_value()))
         {
-            sh_inf.replace_all_other_elm(this->registry_key(), sec_value, second_value_idx_);
-            sh_inf.insert_second_value_idx(sec_value, idx);
+            registry.replace_all_other_elm(this->registry_key(), sec_value, second_value_idx_);
+            registry.insert_second_value_idx(sec_value, idx);
         }
     }
     else
@@ -392,8 +392,8 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
         }
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            inf_array_.second_value = true;
-            inf_array_.idx          = 0;
+            array_info_.second_value = true;
+            array_info_.idx          = 0;
         }
         if constexpr (build_config::threaded)
         {
@@ -406,11 +406,11 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
             }
         }
 
-        sh_inf.replace_all_other_elm(this->registry_key(), true, 0);
+        registry.replace_all_other_elm(this->registry_key(), true, 0);
     }
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        sh_inf.insert(sec_value, &inf_array_);
+        registry.insert(sec_value, &array_info_);
     }
 
     // Every branch above may have rewritten this array's registry entry
@@ -430,8 +430,8 @@ void zero_or_value::Array<T, IntType>::print_compression_stats(std::ostream& os)
         return;
     }
 
-    const auto& sh_inf   = *Proxy<T>::array_registry;
-    const int   array_id = sh_inf.get_array_id(this->registry_key());
+    const auto& registry = *Proxy<T>::array_registry;
+    const int   array_id = registry.get_array_id(this->registry_key());
 
     // Classification. written(idx) is true for a MATERIALISED chunk (`values !=
     // first_value && is_not_second_value(idx)`, as Chunk::written()); !written(idx)
@@ -601,9 +601,9 @@ void zero_or_value::Array<T, IntType>::clear_core()
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf = *Proxy<T>::array_registry;
+        const auto& registry = *Proxy<T>::array_registry;
 
-        const int array_id = sh_inf.get_array_id(this->registry_key());
+        const int array_id = registry.get_array_id(this->registry_key());
 
         Proxy<T>::clear_is_int(array_id);
 
@@ -1213,9 +1213,9 @@ void zero_or_value::Array<T, IntType>::resize(IntType newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf = *Proxy<T>::array_registry;
+        const auto& registry = *Proxy<T>::array_registry;
 
-        const int array_id = sh_inf.get_array_id(this->registry_key());
+        const int array_id = registry.get_array_id(this->registry_key());
         Proxy<T>::resize_array_is_int(array_id, chunk_count_);
     }
 
@@ -1261,7 +1261,7 @@ zero_or_value::Array<T, IntType>::~Array()
 
     if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
     {
-        Proxy<T>::array_registry->erase_inf_array_by_ptr(&inf_array_);
+        Proxy<T>::array_registry->erase_array_info_by_ptr(&array_info_);
     }
     // rechunk=debug, tmp teardown only (armed by rechunk_to): free chunk_list_'s
     // buffer here rather than with the member, so that the split can time it
@@ -1354,13 +1354,13 @@ void zero_or_value::Array<T, IntType>::register_no_second_value_key()
 {
     if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
     {
-        if (auto& sh_inf = *Proxy<T>::array_registry; sh_inf.find_inf_array(T{}) == nullptr)
+        if (auto& registry = *Proxy<T>::array_registry; registry.find_array_info(T{}) == nullptr)
         {
-            sh_inf.insert(T{}, &inf_array_none);
+            registry.insert(T{}, &array_info_none);
             // The between-phase pass drains only the values of THIS map: T{}
             // must be in it, at the sentinel index (so set_second_value(T{})
             // still sees it unregistered and builds a real block).
-            sh_inf.insert_second_value_idx(T{}, chunk_config::no_second_value_index);
+            registry.insert_second_value_idx(T{}, chunk_config::no_second_value_index);
         }
         if constexpr (build_config::threaded)
         {
@@ -1379,8 +1379,8 @@ void zero_or_value::Array<T, IntType>::register_no_second_value_key()
 template <ArrayChunkElement T, typename IntType>
 void zero_or_value::Array<T, IntType>::swap_identity(Array& other)
 {
-    auto& sh_inf = *Proxy<T>::array_registry;
-    sh_inf.swap_entries(this->registry_key(), other.registry_key());
+    auto& registry = *Proxy<T>::array_registry;
+    registry.swap_entries(this->registry_key(), other.registry_key());
     std::swap(second_value_idx_, other.second_value_idx_);
     sync_registry_mirror();
     other.sync_registry_mirror();
@@ -1388,10 +1388,10 @@ void zero_or_value::Array<T, IntType>::swap_identity(Array& other)
     {
         for (Array* arr : {this, &other})
         {
-            const T value = arr->inf_array_.second_value;
+            const T value = arr->array_info_.second_value;
             if (!same_value(value, T{}))
             {
-                sh_inf.insert(value, &arr->inf_array_);
+                registry.insert(value, &arr->array_info_);
             }
         }
     }

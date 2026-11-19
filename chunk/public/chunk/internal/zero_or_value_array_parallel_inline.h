@@ -51,7 +51,7 @@ void zero_or_value::FastBlockSupport<Derived, true>::drain_candidates()
         shrink_array::set_thread_chunk_size(self().chunk_size());
     }
 
-    // bool has its own pass (the (thr, inf_array, proxy) overload static_asserts for it).
+    // bool has its own pass (the (thr, array_info, proxy) overload static_asserts for it).
     // [&], not [this]: `this` is unused in the bool instantiation (-Wunused-lambda-capture).
     const auto pass_on_rank = [&](int thr)
     {
@@ -94,11 +94,11 @@ void zero_or_value::FastBlockSupport<Derived, true>::drain_own_candidates()
     // writer handshake: this array's candidates only, the thread's list for this second
     // value holding chunks of arrays other threads are writing. Other threads may be
     // reading, so the buffers released wait for a grace period (read_reclaim.h).
-    const int  rank     = CHUNK_PMP_THREAD_RANK;
-    const int  array_id = ProxyT::array_registry->get_array_id(self().registry_key());
-    const auto inf      = self().get_info_second_value();
-    auto&      by_value = ManagerT::zero_or_value_candidates_map_thr[rank];
-    if (const auto it = by_value.find(inf.second_value); it != by_value.end() && it->second)
+    const int  rank       = CHUNK_PMP_THREAD_RANK;
+    const int  array_id   = ProxyT::array_registry->get_array_id(self().registry_key());
+    const auto array_info = self().get_info_second_value();
+    auto&      by_value   = ManagerT::zero_or_value_candidates_map_thr[rank];
+    if (const auto it = by_value.find(array_info.second_value); it != by_value.end() && it->second)
     {
         internal::with_own_candidates_only(*it->second, array_id,
                                            [&]
@@ -106,7 +106,7 @@ void zero_or_value::FastBlockSupport<Derived, true>::drain_own_candidates()
                                                const read_reclaim::PassScope pass_scope;
                                                if constexpr (Derived::is_not_bool)
                                                {
-                                                   ChunkType::make_block_compression(rank, inf, nullptr);
+                                                   ChunkType::make_block_compression(rank, array_info, nullptr);
                                                }
                                                else
                                                {
@@ -132,13 +132,13 @@ void zero_or_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates([
         using ProxyT   = Traits::ProxyType;
         using ManagerT = Traits::ManagerType;
 
-        const int  array_id = ProxyT::array_registry->get_array_id(self().registry_key());
-        const auto inf      = self().get_info_second_value();
-        const int  thr_self = get_thr_rank_fast();
-        const auto n_rank   = static_cast<int>(ManagerT::zero_or_value_candidates_map_thr.size());
-        const int  first    = own_rank_only ? thr_self : 0;
-        const int  last     = own_rank_only ? std::min(thr_self + 1, n_rank) : n_rank;
-        bool       found    = false;
+        const int  array_id   = ProxyT::array_registry->get_array_id(self().registry_key());
+        const auto array_info = self().get_info_second_value();
+        const int  thr_self   = get_thr_rank_fast();
+        const auto n_rank     = static_cast<int>(ManagerT::zero_or_value_candidates_map_thr.size());
+        const int  first      = own_rank_only ? thr_self : 0;
+        const int  last       = own_rank_only ? std::min(thr_self + 1, n_rank) : n_rank;
+        bool       found      = false;
         for (int thr = first; thr < last; ++thr)
         {
             for (const auto& kv : ManagerT::zero_or_value_candidates_map_thr[thr])
@@ -151,7 +151,7 @@ void zero_or_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates([
                 {
                     if (std::get<2>(tup) == array_id)
                     {
-                        std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
+                        std::get<0>(tup)->compress(thr_self, array_info, /*apply=*/true, std::get<3>(tup).count());
                         ProxyT::reset_array_inside_list_to_compress(array_id, std::get<1>(tup));
                         found = true;
                     }

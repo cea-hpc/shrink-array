@@ -220,8 +220,8 @@ void zero_any::ArrayImpl<Derived>::clear()
                                       const auto v0                        = ck.constant_value(csz);
                                       summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
                                   });
-                const auto& sh_inf      = *ProxyType::array_registry;
-                const int   array_index = sh_inf.get_array_id(this->registry_key());
+                const auto& registry    = *ProxyType::array_registry;
+                const int   array_index = registry.get_array_id(this->registry_key());
                 report_size_prediction<T>(summary, csz, array_index, "zero_any",
                                           sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
             }
@@ -764,9 +764,9 @@ void zero_any::ArrayImpl<Derived>::resize(IntType newsz)
     this->check_length(newsz, "resize");
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     this->invalidate_proxies();
-    const auto& sh_inf = *ProxyType::array_registry;
+    const auto& registry = *ProxyType::array_registry;
 
-    const int     array_id        = sh_inf.get_array_id(this->registry_key());
+    const int     array_id        = registry.get_array_id(this->registry_key());
     const int     old_chunk_count = chunk_count_;
     const IntType old_size        = this->m_size_; // the stale-tail reset at the end
 

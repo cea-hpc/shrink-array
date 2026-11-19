@@ -22,7 +22,7 @@
 #include "chunk/bit.h"                           // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h"                        // build_config::threaded, chunk_config::chunk_dynamic
 #include "chunk/internal/pmp_chunk.h"            // CHUNK_PMP_THREAD_CAPACITY (max_thr)
-#include "chunk/internal/second_value_info.h"    // SecondValueInfo (InfArrayT)
+#include "chunk/internal/second_value_info.h"    // SecondValueInfo (ArrayInfo)
 #include "chunk/internal/type_state_interface.h" // TypeStateInterface
 #include "chunk/internal/type_state_policies.h"  // TypeStateDynImpl, TypeStateParallelImpl
 #include "chunk/internal/reuse_pools.h"          // ReusePools
@@ -118,7 +118,7 @@ class TypeState final : public virtual TypeStateInterface,
 
     /// @brief zero_or_value: the second-value lists sweep_rank() drains, snapshotted
     ///        serially by sweep_prepare().
-    std::vector<SecondValueInfo<T>*> sweep_inf_arrays_;
+    std::vector<SecondValueInfo<T>*> sweep_array_infos_;
 
     /// @brief Slab byte budget seen at the last register_chunk_size(); what
     ///        register_alloc_key() hands to the keyed allocator sets.

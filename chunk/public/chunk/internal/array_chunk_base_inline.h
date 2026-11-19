@@ -691,7 +691,7 @@ ArrayChunkBase<Derived>::element_proxy(IndexType index) noexcept
     // a renamed member must fail to compile, not fall back silently.
     if constexpr (std::is_same_v<ProxyType, zero_or_value::Proxy<T>>)
     {
-        val.arm_inf_array(derived().registry_mirror());
+        val.arm_array_info(derived().registry_mirror());
     }
 
     // No sync on the write entry: the read entries pull visibility

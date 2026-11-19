@@ -210,7 +210,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         (void)ok;
 
         // Variant finalisation after the swap (zero_or_value re-owns its
-        // map_inf_array_ entry so it does not dangle when tmp dies).
+        // array_info_map_ entry so it does not dangle when tmp dies).
         self().rechunk_reown_after_swap(tmp, state);
 
         // Restore the active geometry BEFORE tmp is destroyed, so tmp (now

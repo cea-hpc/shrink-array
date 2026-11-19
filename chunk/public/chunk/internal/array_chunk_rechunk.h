@@ -136,7 +136,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *          - rechunk_swap_identity(tmp) -> bool — swap array_id member (if any)
      *            + registry entry (swap_keys/entries)
      *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_or_value
-     *            re-owns its map_inf_array_ entry so it doesn't dangle when tmp dies)
+     *            re-owns its array_info_map_ entry so it doesn't dangle when tmp dies)
      *
      * @param new_size the new chunk size (a power of two or a multiple of 64)
      * @warning Restores the previously active geometry on exit; see

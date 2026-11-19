@@ -48,9 +48,9 @@ namespace shrink_array
 // the proxy is not armed. Callers read the fields THROUGH this pointer: see the
 // note on set_info_on_chunk() below for why not through a returned copy.
 template <typename T, typename Derived>
-const zero_or_value::ProxySpec<T, Derived>::InfArrayT* zero_or_value::ProxySpec<T, Derived>::armed_inf_array() const
+const zero_or_value::ProxySpec<T, Derived>::ArrayInfo* zero_or_value::ProxySpec<T, Derived>::armed_array_info() const
 {
-    if (inf_array_src_ != nullptr) [[likely]]
+    if (array_info_src_ != nullptr) [[likely]]
     {
         if constexpr (build_config::any_check)
         {
@@ -59,17 +59,17 @@ const zero_or_value::ProxySpec<T, Derived>::InfArrayT* zero_or_value::ProxySpec<
             // Once per (array, idx, array_id) and registry generation, not per
             // write: see verify_once_per_generation().
             const auto ptr      = get_ptr_on_array();
-            const int  idx      = inf_array_src_->idx;
-            const int  array_id = inf_array_src_->array_id;
+            const int  idx      = array_info_src_->idx;
+            const int  array_id = array_info_src_->array_id;
             internal::verify_once_per_generation(
                 ptr, std::tuple{ptr, idx, array_id},
                 [ptr, idx, array_id]
                 {
-                    const InfArrayT reg = Derived::get_info_second_value(ptr);
+                    const ArrayInfo reg = Derived::get_info_second_value(ptr);
                     if (reg.idx != idx || reg.array_id != array_id)
                     {
                         CHUNK_INVARIANT_FAILED(
-                            "zero_or_value::ProxySpec::load_inf_array: armed (index_value {}, array_id {}) "
+                            "zero_or_value::ProxySpec::load_array_info: armed (index_value {}, array_id {}) "
                             "differs from the registry's (index_value {}, array_id {}) for array {} -- a "
                             "registry write without sync_registry_mirror()?",
                             idx, array_id, reg.idx, reg.array_id, ptr);
@@ -77,13 +77,13 @@ const zero_or_value::ProxySpec<T, Derived>::InfArrayT* zero_or_value::ProxySpec<
                 });
         }
     }
-    return inf_array_src_;
+    return array_info_src_;
 }
 
 template <typename T, typename Derived>
-zero_or_value::ProxySpec<T, Derived>::InfArrayT zero_or_value::ProxySpec<T, Derived>::load_inf_array() const
+zero_or_value::ProxySpec<T, Derived>::ArrayInfo zero_or_value::ProxySpec<T, Derived>::load_array_info() const
 {
-    if (const InfArrayT* src = armed_inf_array()) [[likely]]
+    if (const ArrayInfo* src = armed_array_info()) [[likely]]
     {
         return *src;
     }
@@ -92,9 +92,9 @@ zero_or_value::ProxySpec<T, Derived>::InfArrayT zero_or_value::ProxySpec<T, Deri
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-const zero_or_value::ProxySpec<T, Derived>::InfArrayT* zero_or_value::ProxySpec<T, Derived>::armed_inf_array() const
+const zero_or_value::ProxySpec<T, Derived>::ArrayInfo* zero_or_value::ProxySpec<T, Derived>::armed_array_info() const
 {
-    if (inf_array_src_ != nullptr) [[likely]]
+    if (array_info_src_ != nullptr) [[likely]]
     {
         if constexpr (build_config::any_check)
         {
@@ -103,17 +103,17 @@ const zero_or_value::ProxySpec<T, Derived>::InfArrayT* zero_or_value::ProxySpec<
             // Once per (array, idx, array_id) and registry generation, not per
             // write: see verify_once_per_generation().
             const auto ptr      = get_ptr_on_array();
-            const int  idx      = inf_array_src_->idx;
-            const int  array_id = inf_array_src_->array_id;
+            const int  idx      = array_info_src_->idx;
+            const int  array_id = array_info_src_->array_id;
             internal::verify_once_per_generation(
                 ptr, std::tuple{ptr, idx, array_id},
                 [ptr, idx, array_id]
                 {
-                    const InfArrayT reg = Derived::get_info_second_value(ptr);
+                    const ArrayInfo reg = Derived::get_info_second_value(ptr);
                     if (reg.idx != idx || reg.array_id != array_id)
                     {
                         CHUNK_INVARIANT_FAILED(
-                            "zero_or_value::ProxySpec::load_inf_array: armed (index_value {}, array_id {}) "
+                            "zero_or_value::ProxySpec::load_array_info: armed (index_value {}, array_id {}) "
                             "differs from the registry's (index_value {}, array_id {}) for array {} -- a "
                             "registry write without sync_registry_mirror()?",
                             idx, array_id, reg.idx, reg.array_id, ptr);
@@ -121,14 +121,14 @@ const zero_or_value::ProxySpec<T, Derived>::InfArrayT* zero_or_value::ProxySpec<
                 });
         }
     }
-    return inf_array_src_;
+    return array_info_src_;
 }
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-zero_or_value::ProxySpec<T, Derived>::InfArrayT zero_or_value::ProxySpec<T, Derived>::load_inf_array() const
+zero_or_value::ProxySpec<T, Derived>::ArrayInfo zero_or_value::ProxySpec<T, Derived>::load_array_info() const
 {
-    if (const InfArrayT* src = armed_inf_array()) [[likely]]
+    if (const ArrayInfo* src = armed_array_info()) [[likely]]
     {
         return *src;
     }
@@ -137,7 +137,7 @@ zero_or_value::ProxySpec<T, Derived>::InfArrayT zero_or_value::ProxySpec<T, Deri
 
 // Every write runs one of these. They take the fields from the armed mirror --
 // memory written long before -- never from a copy just stored. Not
-//     inf_array = load_inf_array(); second_value = inf_array.second_value; ...
+//     array_info = load_array_info(); second_value = array_info.second_value; ...
 // which returns the 16-byte record through a stack temporary (a q-register
 // store) and reads it straight back with 8- and 4-byte loads: a store the core
 // cannot forward to narrower loads, so each write waits for it to reach the
@@ -151,18 +151,18 @@ zero_or_value::ProxySpec<T, Derived>::InfArrayT zero_or_value::ProxySpec<T, Deri
 template <typename T, typename Derived>
 CHUNK_FORCE_INLINE void zero_or_value::ProxySpec<T, Derived>::set_info_on_chunk()
 {
-    if (const InfArrayT* src = armed_inf_array()) [[likely]]
+    if (const ArrayInfo* src = armed_array_info()) [[likely]]
     {
-        inf_array_    = *src;
+        array_info_   = *src;
         second_value_ = src->second_value;
         idx_          = src->idx;
-        derived().set_array_id(src->array_id); // what set_array_id() would read back from inf_array
+        derived().set_array_id(src->array_id); // what set_array_id() would read back from array_info
     }
     else
     {
-        inf_array_    = Derived::get_info_second_value(get_ptr_on_array());
-        second_value_ = inf_array_.second_value;
-        idx_          = inf_array_.idx;
+        array_info_   = Derived::get_info_second_value(get_ptr_on_array());
+        second_value_ = array_info_.second_value;
+        idx_          = array_info_.idx;
         derived().set_array_id();
     }
 
@@ -175,24 +175,24 @@ CHUNK_FORCE_INLINE void zero_or_value::ProxySpec<T, Derived>::set_info_on_chunk(
 template <typename T, typename Derived>
 void zero_or_value::ProxySpec<T, Derived>::set_info_second_value_idx()
 {
-    if (const InfArrayT* src = armed_inf_array()) [[likely]]
+    if (const ArrayInfo* src = armed_array_info()) [[likely]]
     {
-        inf_array_    = *src;
+        array_info_   = *src;
         second_value_ = src->second_value;
         idx_          = src->idx;
         return;
     }
-    inf_array_    = Derived::get_info_second_value(get_ptr_on_array());
-    second_value_ = inf_array_.second_value;
-    idx_          = inf_array_.idx;
+    array_info_   = Derived::get_info_second_value(get_ptr_on_array());
+    second_value_ = array_info_.second_value;
+    idx_          = array_info_.idx;
 }
 
 template <typename T, typename Derived>
 void zero_or_value::ProxySpec<T, Derived>::set_info_second_value_idx_from_key(ArrayKey<Chunk<T>> key)
 {
-    inf_array_    = Derived::get_info_second_value(key);
-    second_value_ = inf_array_.second_value;
-    idx_          = inf_array_.idx;
+    array_info_   = Derived::get_info_second_value(key);
+    second_value_ = array_info_.second_value;
+    idx_          = array_info_.idx;
 }
 
 // Hidden from Doxygen: the zero_or_value::Proxy alias (BaseSpec) and the bool specialization
@@ -201,14 +201,14 @@ void zero_or_value::ProxySpec<T, Derived>::set_info_second_value_idx_from_key(Ar
 template <typename T, typename Derived>
 void zero_or_value::ProxySpec<T, Derived>::set_second_value()
 {
-    if (const InfArrayT* src = armed_inf_array()) [[likely]]
+    if (const ArrayInfo* src = armed_array_info()) [[likely]]
     {
-        inf_array_    = *src;
+        array_info_   = *src;
         second_value_ = src->second_value;
         return;
     }
-    inf_array_    = Derived::get_info_second_value(get_ptr_on_array());
-    second_value_ = inf_array_.second_value;
+    array_info_   = Derived::get_info_second_value(get_ptr_on_array());
+    second_value_ = array_info_.second_value;
 }
 /// @endcond
 
@@ -216,14 +216,14 @@ template <typename T, typename Derived>
     requires is_bool_like_v<T>
 CHUNK_FORCE_INLINE void zero_or_value::ProxySpec<T, Derived>::set_info_on_chunk()
 {
-    if (const InfArrayT* src = armed_inf_array()) [[likely]]
+    if (const ArrayInfo* src = armed_array_info()) [[likely]]
     {
-        inf_array_ = *src;
-        derived().set_array_id(src->array_id); // not read back from inf_array (see above)
+        array_info_ = *src;
+        derived().set_array_id(src->array_id); // not read back from array_info (see above)
     }
     else
     {
-        inf_array_ = Derived::get_info_second_value(get_ptr_on_array());
+        array_info_ = Derived::get_info_second_value(get_ptr_on_array());
         derived().set_array_id();
     }
 
@@ -295,7 +295,7 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_co
                 {
                     static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
-                    const auto* inf_ptr = Derived::array_registry->find_inf_array(second_val);
+                    const auto* inf_ptr = Derived::array_registry->find_array_info(second_val);
                     Chunk<T>::make_block_compression(thr_rank, *inf_ptr, self());
 
                     derived().set_info_on_chunk();
@@ -564,8 +564,8 @@ T zero_or_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 {
                     if constexpr (is_not_bool)
                     {
-                        const auto inf = Proxy<T>::get_info_second_value(ctx->ptr_on_array);
-                        chunk.create_value(is_const2, inf);
+                        const auto array_info = Proxy<T>::get_info_second_value(ctx->ptr_on_array);
+                        chunk.create_value(is_const2, array_info);
                     }
                     else
                     {
@@ -652,7 +652,7 @@ void zero_or_value::Proxy<T>::ensure_writable_storage()
 
     if (is_second)
     {
-        chunk_.create_value(true, inf_array_);
+        chunk_.create_value(true, array_info_);
         if constexpr (chunk_config::use_compression_with_counter)
         {
             chunk_.set_n_val_eq_second_value(this->chunk_size());
@@ -663,7 +663,7 @@ void zero_or_value::Proxy<T>::ensure_writable_storage()
 
     if (is_first)
     {
-        chunk_.create_value(false, inf_array_);
+        chunk_.create_value(false, array_info_);
         if constexpr (chunk_config::use_compression_with_counter)
         {
             chunk_.set_n_val_eq_first_value(this->chunk_size());
@@ -749,11 +749,11 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_si
     {
         if (is_second)
         {
-            chunk.create_value(true, proxy.get_inf_array());
+            chunk.create_value(true, proxy.array_info());
         }
         else if (is_first)
         {
-            chunk.create_value(false, proxy.get_inf_array());
+            chunk.create_value(false, proxy.array_info());
         }
     }
 
@@ -809,7 +809,7 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_ar
 
     if (will_be_not_second_value)
     {
-        chunk_.create_value(true, inf_array_);
+        chunk_.create_value(true, array_info_);
         operation(op);
     }
     else if (SecondValueBase::is_not_second_value())
@@ -838,7 +838,7 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_ar
 
     if (will_be_not_second_value)
     {
-        ctx->chunk.create_value(true, proxy.get_inf_array());
+        ctx->chunk.create_value(true, proxy.array_info());
         operation(op);
     }
     else if (!proxy.is_second_value())
@@ -882,7 +882,7 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_arit
 
         if (will_be_not_second_value)
         {
-            chunk_.create_value(true, inf_array_);
+            chunk_.create_value(true, array_info_);
             if constexpr (chunk_config::use_compression_with_counter)
             {
                 chunk_.set_n_val_eq_second_value(this->chunk_size() - 1);
@@ -939,7 +939,7 @@ void zero_or_value::Proxy<T>::execute_inplace_operation(Lambda operation)
     {
         if constexpr (is_not_bool)
         {
-            Base::chunk_.create_value(is_second, inf_array_);
+            Base::chunk_.create_value(is_second, array_info_);
         }
         else
         {
@@ -1033,8 +1033,8 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_in
     {
         if constexpr (is_not_bool)
         {
-            const auto inf = Proxy<T>::get_info_second_value(ctx->ptr_on_array);
-            chunk.create_value(is_second, inf);
+            const auto array_info = Proxy<T>::get_info_second_value(ctx->ptr_on_array);
+            chunk.create_value(is_second, array_info);
         }
         else
         {
@@ -1299,7 +1299,7 @@ void zero_or_value::Proxy<T>::create_value(bool is_const2) const noexcept
     }
     if constexpr (is_not_bool)
     {
-        chunk_.create_value(is_const2, inf_array_);
+        chunk_.create_value(is_const2, array_info_);
     }
     else
     {

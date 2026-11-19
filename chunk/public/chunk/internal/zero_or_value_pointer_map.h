@@ -26,13 +26,13 @@
 // (a void* handle) and by the value:
 //
 //   zero_or_value::PointerMap<T>                  the map itself (key -> SecondValueInfo).
-//   ZeroOrValueInfArrayPolicy<T,B>  the value -> inf_array side, as a policy:
+//   ZeroOrValueArrayInfoPolicy<T,B>  the value -> array_info side, as a policy:
 //                                        the <T,false> specialisation is all no-ops.
 //   ValueToInfTupleMapHelper<T>          its std::map type, ordered by ValueLess
 //                                        (value_less.h: complex has no operator<).
 //
 // The key -> value store is a LINEAR scan over a std::deque (PointerMapLinear; see
-// the storage note in zero_or_value::PointerMap). Only the value -> inf_array side is a std::map.
+// the storage note in zero_or_value::PointerMap). Only the value -> array_info side is a std::map.
 
 #include <deque>   // std::deque: share_info storage, no realloc invalidation
 #include <map>     // std::map
@@ -49,27 +49,27 @@
 #include "chunk/internal/in_t.h"               // InT<T>
 #include "chunk/config.h"                      // build_config::any_check
 #include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/second_value_info.h"  // SecondValueInfo (InfArrayT)
+#include "chunk/internal/second_value_info.h"  // SecondValueInfo (ArrayInfo)
 #include "chunk/log.h"                         // CHUNK_LOG (report_key_not_found)
 
 namespace shrink_array
 {
 
-/// @brief Names the map from a second value to its inf_array record (SecondValueInfo<T>), ordered by ValueLess<T>.
+/// @brief Names the map from a second value to its array_info record (SecondValueInfo<T>), ordered by ValueLess<T>.
 template <typename T>
 struct ValueToInfTupleMapHelper
 {
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
     // Keyed by the second value, ordered by ValueLess (value_less.h).
-    using type = std::map<T, InfArrayT*, ValueLess<T>>;
+    using type = std::map<T, ArrayInfo*, ValueLess<T>>;
 };
 
 /**
- * @brief Policy holding the fast-block-compression-only value -> inf_array
+ * @brief Policy holding the fast-block-compression-only value -> array_info
  *        lookup for zero_or_value::PointerMap.
  *
- * @details An inf_array is zero_or_value's `(second_value, index, array_id)` tuple;
+ * @details An array_info is zero_or_value's `(second_value, index, array_id)` tuple;
  *          the map, keyed by second value, is ValueToInfTupleMapHelper's.
  *          zero (zero::PointerMap, zero_proxy.h) has no such lookup.
  *
@@ -79,53 +79,53 @@ struct ValueToInfTupleMapHelper
  *                 chunk_config::use_fast_block_compression.
  */
 template <typename T, bool Enabled>
-class ZeroOrValueInfArrayPolicy
+class ZeroOrValueArrayInfoPolicy
 {
   public:
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
     /**
-     * @brief All registered inf_array pointers, in map order.
+     * @brief All registered array_info pointers, in map order.
      * @return Vector of every second value's currently-registered pointer.
      */
-    [[nodiscard]] std::vector<InfArrayT*> get_all_inf_array() const;
+    [[nodiscard]] std::vector<ArrayInfo*> all_array_infos() const;
 
     /**
-     * @brief Look up the inf_array record pointer registered for a second value.
+     * @brief Look up the array_info record pointer registered for a second value.
      * @param key Second value to look up.
      * @return The registered pointer, or nullptr if @p key is not registered.
      */
-    [[nodiscard]] InfArrayT* find_inf_array(InT<T> key) const;
+    [[nodiscard]] ArrayInfo* find_array_info(InT<T> key) const;
 
     /**
      * @brief Drop every entry still pointing at @p self_ptr.
      *
      * @details Called from zero_or_value::Array::clear_core so a destroyed array's
-     *          inf_array MEMBER cannot dangle here, where
+     *          array_info MEMBER cannot dangle here, where
      *          compress_chunk_to_compress_potentially() would dereference it via
-     *          get_all_inf_array(). Only entries this array currently OWNS are
+     *          all_array_infos(). Only entries this array currently OWNS are
      *          removed: one re-registered by a later array points elsewhere and
      *          stays. O(n), teardown-only.
      *
-     * @param self_ptr Address of the departing array's inf_array member.
+     * @param self_ptr Address of the departing array's array_info member.
      */
-    void erase_inf_array_by_ptr(const InfArrayT* self_ptr);
+    void erase_array_info_by_ptr(const ArrayInfo* self_ptr);
 
   protected:
     using MapType0 = ValueToInfTupleMapHelper<T>::type;
 
     /**
-     * @brief Register the inf_array record pointer for a second value.
+     * @brief Register the array_info record pointer for a second value.
      * @param key Second value to register.
-     * @param idx inf_array record pointer to associate with @p key.
+     * @param idx array_info record pointer to associate with @p key.
      */
-    void insert(InT<T> key, InfArrayT* idx)
+    void insert(InT<T> key, ArrayInfo* idx)
     {
-        map_inf_array_[key] = idx;
+        array_info_map_[key] = idx;
     }
 
-    /// Map from a second value to its registered inf_array record pointer.
-    MapType0 map_inf_array_;
+    /// Map from a second value to its registered array_info record pointer.
+    MapType0 array_info_map_;
 };
 
 /**
@@ -135,27 +135,27 @@ class ZeroOrValueInfArrayPolicy
  *          of their own; they simply do nothing and report an empty registry.
  */
 template <typename T>
-class ZeroOrValueInfArrayPolicy<T, false>
+class ZeroOrValueArrayInfoPolicy<T, false>
 {
   public:
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
     /// @brief No registry: always empty.
-    [[nodiscard]] static std::vector<InfArrayT*> get_all_inf_array()
+    [[nodiscard]] static std::vector<ArrayInfo*> all_array_infos()
     {
         return {};
     }
     /// @brief No registry: never found.
-    [[nodiscard]] static InfArrayT* find_inf_array(InT<T> /*key*/) noexcept
+    [[nodiscard]] static ArrayInfo* find_array_info(InT<T> /*key*/) noexcept
     {
         return nullptr;
     }
     /// @brief No registry: nothing to erase.
-    static void erase_inf_array_by_ptr(const InfArrayT* /*self_ptr*/) {}
+    static void erase_array_info_by_ptr(const ArrayInfo* /*self_ptr*/) {}
 
   protected:
     /// @brief No registry: nothing recorded.
-    static void insert(InT<T> /*key*/, InfArrayT* /*idx*/) {}
+    static void insert(InT<T> /*key*/, ArrayInfo* /*idx*/) {}
 };
 
 namespace zero_or_value
@@ -170,13 +170,13 @@ namespace zero_or_value
 template <typename T>
 class PointerMap
     : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<ArrayKey<Chunk<T>>, SecondValueInfo<T>>>>,
-      public ZeroOrValueInfArrayPolicy<T, chunk_config::use_fast_block_compression>
+      public ZeroOrValueArrayInfoPolicy<T, chunk_config::use_fast_block_compression>
 {
   private:
     /// Internal alias for tuple representing a value with index and table number.
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
-    using Linear = PointerMapLinear<InfArrayT, std::deque<std::pair<ArrayKey<Chunk<T>>, InfArrayT>>>;
+    using Linear = PointerMapLinear<ArrayInfo, std::deque<std::pair<ArrayKey<Chunk<T>>, ArrayInfo>>>;
     /// @brief Bring the base's storage into this class's scope.
     /// @details Avoids `this->vec` everywhere (dependent base).
     using Linear::vec_;
@@ -186,8 +186,8 @@ class PointerMap
     using Key = Linear::Key;
 
   private:
-    /// @brief Policy carrying the fast-block-compression-only inf_array map.
-    using InfArrayPolicy = ZeroOrValueInfArrayPolicy<T, chunk_config::use_fast_block_compression>;
+    /// @brief Policy carrying the fast-block-compression-only array_info map.
+    using ArrayInfoPolicy = ZeroOrValueArrayInfoPolicy<T, chunk_config::use_fast_block_compression>;
 
     // The storage must be a std::deque, NOT a std::vector: a vector's emplace_back
     // reallocates and frees the old buffer under a reader walking it in parallel
@@ -212,10 +212,10 @@ class PointerMap
     MapType second_value_idx_map_;
 
   public:
-    /// @brief The policy's insert(second value, inf_array pointer), protected
+    /// @brief The policy's insert(second value, array_info pointer), protected
     ///        there, is part of this registry's public surface (zero_or_value::Array
-    ///        registers its inf_array through it).
-    using InfArrayPolicy::insert;
+    ///        registers its array_info through it).
+    using ArrayInfoPolicy::insert;
 
     /**
      * @brief Inserts a default value and table number for a given key.
@@ -276,7 +276,7 @@ class PointerMap
 
     /// @brief The whole (second value, index, array_id) tuple recorded for
     ///        array @p key.
-    [[nodiscard]] InfArrayT get_info_second_value(Key key) const noexcept;
+    [[nodiscard]] ArrayInfo get_info_second_value(Key key) const noexcept;
 
     // erase(), swap_entries(), exists(), size() and for_each_key() come from
     // PointerMapLinear (shared with zero::PointerMap).

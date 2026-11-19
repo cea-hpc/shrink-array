@@ -37,7 +37,7 @@
 #include "chunk/internal/second_value_proxy_base.h"            // SecondValueProxyBase
 #include "chunk/internal/chunk_stats.h" // inc_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (ArrayInfo)
 
 // compression_manager.h (CompressionManagerType) comes unconditionally through proxy_base.h.
 
@@ -61,7 +61,7 @@ namespace zero_or_value
 template <typename T, typename Derived>
 // second_value_ and idx_ have default initialisers although each is written before its first
 // read -- both by set_info_on_chunk() and set_info_second_value_idx(...), second_value_ alone
-// by set_second_value() -- from the array's record (the armed mirror, else load_inf_array()):
+// by set_second_value() -- from the array's record (the armed mirror, else load_array_info()):
 // the proxy is copied out of ArrayChunkBase::element_proxy() before that, and copying an
 // indeterminate value is undefined (GCC 16: -Wmaybe-uninitialized at ElementRef's constructor).
 class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
@@ -71,7 +71,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     using Base      = SecondValueProxyBase<Derived, T, Chunk<T>>;
     using Base::derived;
     using ValuesTypeRef = SecondValueProxyBase<Derived, T, ChunkType>::ValuesTypeRef;
-    using InfArrayT     = SecondValueInfo<T>;
+    using ArrayInfo     = SecondValueInfo<T>;
 
     using Base::Base;
 
@@ -134,11 +134,11 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief The cached (second_value, idx, array_id) metadata tuple.
-     * @return Reference to inf_array.
+     * @return Reference to array_info.
      */
-    const InfArrayT& get_inf_array() const noexcept
+    const ArrayInfo& array_info() const noexcept
     {
-        return inf_array_;
+        return array_info_;
     }
 
     /// @brief Arm this proxy with the owning array's registry mirror
@@ -146,26 +146,26 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     /// @details Called by ArrayChunkBase::operator[]. An unarmed proxy (deferred-replay
     ///          reconstruction, *_from_key path) resolves the tuple through array_registry.
     /// @note Without it every write scans the registry, a large share of the write cost.
-    void arm_inf_array(const InfArrayT* src) const noexcept
+    void arm_array_info(const ArrayInfo* src) const noexcept
     {
-        inf_array_src_ = src;
+        array_info_src_ = src;
     }
 
   protected:
     /**
-     * @brief The second_value in inf_array (set by set_info_on_chunk()), for callers that did
+     * @brief The second_value in array_info (set by set_info_on_chunk()), for callers that did
      *        the full metadata load.
      * @return The second constant value.
      */
     [[nodiscard]] T make_second_value() const noexcept
     {
-        return inf_array_.second_value;
+        return array_info_.second_value;
     }
 
     /**
      * @brief This array's array_id, for the per-write refresh (zero_or_value::Proxy::set_array_id()):
-     *        from the armed mirror when there is one, from inf_array otherwise.
-     * @details Not read back from inf_array when armed: set_info_second_value_idx()
+     *        from the armed mirror when there is one, from array_info otherwise.
+     * @details Not read back from array_info when armed: set_info_second_value_idx()
      *          has just copied the 16-byte record there with one q-register store,
      *          and a narrower load of it cannot be forwarded on AArch64 (Neoverse)
      *          -- the write then waits for the store to reach the cache. Same
@@ -173,7 +173,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      */
     [[nodiscard]] int armed_array_id() const
     {
-        if (const InfArrayT* src = armed_inf_array()) [[likely]]
+        if (const ArrayInfo* src = armed_array_info()) [[likely]]
         {
             return src->array_id;
         }
@@ -181,11 +181,11 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /// @brief armed_array_id()'s unarmed path, out of line: inlined, the compiler
-    ///        turns the branch into a select that loads inf_array.array_id on
+    ///        turns the branch into a select that loads array_info.array_id on
     ///        every write anyway (and waits for the store again).
     [[gnu::noinline, gnu::cold]] int unarmed_array_id() const noexcept
     {
-        return inf_array_.array_id;
+        return array_info_.array_id;
     }
 
     /**
@@ -206,9 +206,9 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Cached compression metadata tuple
      * @details Contains (second_value, idx, array_id) to avoid repeated lookups.
-     *          Populated by load_inf_array().
+     *          Populated by load_array_info().
      */
-    InfArrayT inf_array_; ///< Compression metadata associated with this proxy.
+    ArrayInfo array_info_; ///< Compression metadata associated with this proxy.
 
   private:
     /**
@@ -222,14 +222,14 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     /// @brief The (second_value, idx, array_id) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: zero_any::Proxy::set_array_id).
-    [[nodiscard]] InfArrayT load_inf_array() const;
+    [[nodiscard]] ArrayInfo load_array_info() const;
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
-    ///        load_inf_array()'s copy: see set_info_on_chunk().
-    [[nodiscard]] const InfArrayT* armed_inf_array() const;
+    ///        load_array_info()'s copy: see set_info_on_chunk().
+    [[nodiscard]] const ArrayInfo* armed_array_info() const;
 
     /// Owning array's registry mirror; nullptr until armed.
-    mutable const InfArrayT* inf_array_src_ = nullptr;
+    mutable const ArrayInfo* array_info_src_ = nullptr;
 };
 
 // bool and Bit (bit.h): the second constant is `true`, only array_id is per array.
@@ -240,7 +240,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
   public:
     using Base = SecondValueProxyBase<Derived, T, Chunk<T>>;
     using Base::derived;
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
     using ChunkType = Chunk<T>;
 
@@ -249,10 +249,10 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     using Base::Base;
 
     /// @brief Arm this proxy with the owning array's registry mirror (see the non-bool
-    ///        zero_or_value::ProxySpec::arm_inf_array()).
-    void arm_inf_array(const InfArrayT* src) const noexcept
+    ///        zero_or_value::ProxySpec::arm_array_info()).
+    void arm_array_info(const ArrayInfo* src) const noexcept
     {
-        inf_array_src_ = src;
+        array_info_src_ = src;
     }
 
     /// @brief Bool specialization of set_info_on_chunk(). See
@@ -276,11 +276,11 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Resolve this proxy's real per-array array_id from the global
      *        metadata map (second_value/idx stay their constexpr values).
-     * @post inf_array's array_id is valid for this proxy's own array.
+     * @post array_info's array_id is valid for this proxy's own array.
      */
     void set_info_second_value_idx()
     {
-        inf_array_ = load_inf_array();
+        array_info_ = load_array_info();
     }
 
     /**
@@ -291,7 +291,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
      */
     void set_info_second_value_idx_from_key(ArrayKey<Chunk<T>> key)
     {
-        inf_array_ = derived().get_info_second_value(key);
+        array_info_ = derived().get_info_second_value(key);
     }
 
   protected:
@@ -309,8 +309,8 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief This array's array_id, for the per-write refresh (zero_or_value::Proxy::set_array_id()):
-     *        from the armed mirror when there is one, from inf_array otherwise.
-     * @details Not read back from inf_array when armed: set_info_second_value_idx()
+     *        from the armed mirror when there is one, from array_info otherwise.
+     * @details Not read back from array_info when armed: set_info_second_value_idx()
      *          has just copied the 16-byte record there with one q-register store,
      *          and a narrower load of it cannot be forwarded on AArch64 (Neoverse)
      *          -- the write then waits for the store to reach the cache. Same
@@ -318,7 +318,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
      */
     [[nodiscard]] int armed_array_id() const
     {
-        if (const InfArrayT* src = armed_inf_array()) [[likely]]
+        if (const ArrayInfo* src = armed_array_info()) [[likely]]
         {
             return src->array_id;
         }
@@ -326,19 +326,19 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /// @brief armed_array_id()'s unarmed path, out of line: inlined, the compiler
-    ///        turns the branch into a select that loads inf_array.array_id on
+    ///        turns the branch into a select that loads array_info.array_id on
     ///        every write anyway (and waits for the store again).
     [[gnu::noinline, gnu::cold]] int unarmed_array_id() const noexcept
     {
-        return inf_array_.array_id;
+        return array_info_.array_id;
     }
 
     /**
      * @brief Cached compression metadata tuple
      * @details Contains (second_value, idx, array_id) to avoid repeated lookups.
-     *          Populated by load_inf_array().
+     *          Populated by load_array_info().
      */
-    InfArrayT inf_array_; ///< Compression metadata associated with this proxy.
+    ArrayInfo array_info_; ///< Compression metadata associated with this proxy.
 
   private:
     /**
@@ -352,14 +352,14 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     /// @brief The (second_value, idx, array_id) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: zero_any::Proxy::set_array_id).
-    [[nodiscard]] InfArrayT load_inf_array() const;
+    [[nodiscard]] ArrayInfo load_array_info() const;
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
-    ///        load_inf_array()'s copy: see set_info_on_chunk().
-    [[nodiscard]] const InfArrayT* armed_inf_array() const;
+    ///        load_array_info()'s copy: see set_info_on_chunk().
+    [[nodiscard]] const ArrayInfo* armed_array_info() const;
 
     /// Owning array's registry mirror; nullptr until armed.
-    mutable const InfArrayT* inf_array_src_ = nullptr;
+    mutable const ArrayInfo* array_info_src_ = nullptr;
 };
 
 /**
@@ -379,7 +379,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     using Base::read_values;
     using Base::read_values_async;
     using Base::values_;
-    using ProxySpec<T, Derived>::inf_array_;
+    using ProxySpec<T, Derived>::array_info_;
 
     // second_value is in a dependent base: import it for unqualified use (two-phase lookup).
     using ProxySpec<T, Derived>::second_value_;
@@ -631,7 +631,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
     using Base::chunk_;
     using CRTPSupport<Derived>::derived;
     using ProxySpec<T, Derived>::second_value_;
-    using ProxySpec<T, Derived>::inf_array_;
+    using ProxySpec<T, Derived>::array_info_;
 
     using ProxySpec<T, Derived>::ProxySpec;
 
@@ -732,8 +732,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     using Base::read_values;
     using Base::values_; ///< Pointer to chunk's data array
 
-    using BaseSpec::inf_array_;
-    using InfArrayT = BaseSpec::InfArrayT;
+    using BaseSpec::array_info_;
+    using ArrayInfo = BaseSpec::ArrayInfo;
 
     using ValuesTypeRef = Base::AtomicPtrRefT; // C++20: no typename in an alias
 
@@ -985,12 +985,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     /**
      * @brief Extract and cache array number from compression metadata
-     * @pre inf_array must be populated via get_info_second_value()
+     * @pre array_info must be populated via get_info_second_value()
      * @post array_id contains valid array index
      */
     void set_array_id() noexcept
     {
-        array_id_ = BaseSpec::armed_array_id(); // not inf_array.array_id: see armed_array_id()
+        array_id_ = BaseSpec::armed_array_id(); // not array_info.array_id: see armed_array_id()
     }
 
     /**
@@ -1034,7 +1034,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @param ptr Array pointer to look up.
      * @return The registered metadata tuple.
      */
-    [[nodiscard]] static InfArrayT get_info_second_value(ArrayKey<Chunk<T>> ptr) noexcept
+    [[nodiscard]] static ArrayInfo get_info_second_value(ArrayKey<Chunk<T>> ptr) noexcept
     {
         return array_registry->get_info_second_value(ptr);
     }

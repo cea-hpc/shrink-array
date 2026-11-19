@@ -120,7 +120,7 @@ template <typename Derived, typename ChunkType>
 
 /// @brief The FRESH array's second-value record (the fold writes it;
 ///        rechunk_seed_fresh() has declared it), or 0 as above. Deduced, not
-///        named: only zero_or_value::Array has InfArrayT, and a discarded
+///        named: only zero_or_value::Array has ArrayInfo, and a discarded
 ///        branch is never instantiated.
 template <typename Derived, typename ChunkType>
 [[nodiscard]] auto rechunk_second_info(const Derived& array) noexcept

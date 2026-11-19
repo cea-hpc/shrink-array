@@ -399,9 +399,9 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      */
     void pre_create_hook()
     {
-        auto& sh_inf = *ProxyType::array_registry;
+        auto& registry = *ProxyType::array_registry;
 
-        sh_inf.insert(this->registry_key(), array_count);
+        registry.insert(this->registry_key(), array_count);
         array_id_ = array_count;
         ++array_count;
     }

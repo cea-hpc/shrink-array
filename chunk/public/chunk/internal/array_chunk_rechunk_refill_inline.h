@@ -765,7 +765,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
     // state).
     //
     // Wired for zero_any (compress() by chunk_index, array_id) and zero_or_value
-    // (by the array's inf_array record). bool registers no second value
+    // (by the array's array_info record). bool registers no second value
     // (get_idx_second_value aborts) and is bit-packed: never this path.
     if constexpr (is_zero_any_family_v<ChunkType>)
     {

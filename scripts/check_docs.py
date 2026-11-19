@@ -154,6 +154,7 @@ ALLOWED = {
     "const_val1", "const_val2", "is_const_val1", "is_const_val2", "get_const_val1", "get_const_val2",
     "ArrayConstVal2Holder", "find_or_set_idx_const_val2", "find_or_set_ind_cst_val2",
     "const2_registry_validation", "const2_reclaim_validation", "chunk/internal/array_const_val2_holder.h",
+    "ProxySpec::armed_inf_array",  # now armed_array_info() (inf_array -> array_info)
     # removed: the names before 0.3.0 (CHANGELOG.md, Unreleased, Removed)
     "CHUNK_CST_VAL2_ID_LIMIT", "CHUNK_CST2_RECLAIM",
     "is_power_of_two",  # pow2.h's, never called: removed (lint lot 4)
