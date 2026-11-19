@@ -37,7 +37,7 @@
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"             // ProxyOperators
-#include "chunk/internal/array_const_val2_holder.h"     // ArrayConstVal2Holder: second-value identifiers
+#include "chunk/internal/second_value_registry.h"     // SecondValueRegistry: second-value identifiers
 #include "chunk/internal/relaxed_element.h"             // store_value: zero_any's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
 #include "chunk/internal/test_hooks.h"                  // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
@@ -100,13 +100,13 @@ template <typename T>
 [[nodiscard]] T element_of(const T* vals, std::size_t index) noexcept
 {
     if constexpr (requires(const T* ptr) {
-                      ArrayConstVal2Holder<T>::is_const_val2_ptr(ptr);
-                      ArrayConstVal2Holder<T>::value_of_ptr_checked(ptr);
+                      SecondValueRegistry<T>::is_second_value_ptr(ptr);
+                      SecondValueRegistry<T>::value_of_ptr_checked(ptr);
                   })
     {
-        if (ArrayConstVal2Holder<T>::is_const_val2_ptr(vals)) [[unlikely]]
+        if (SecondValueRegistry<T>::is_second_value_ptr(vals)) [[unlikely]]
         {
-            return ArrayConstVal2Holder<T>::value_of_ptr_checked(vals);
+            return SecondValueRegistry<T>::value_of_ptr_checked(vals);
         }
     }
     // elem_get, not vals[index]: for Bit, vals[index] indexes BYTES past the
@@ -160,14 +160,14 @@ template <typename Derived, typename T, typename ChunkT, bool Enabled>
 class ProxyBaseFastCompPolicy
 {
   public:
-    /// @brief set_ptr_is_inside_chunk_list_to_compress() for the replay path,
+    /// @brief bind_candidate_flag() for the replay path,
     ///        taking the array/chunk indices from @p ctx.
-    void set_ptr_is_inside_chunk_list_to_compress_async(auto* ctx);
+    void bind_candidate_flag_async(auto* ctx);
 
     /// @brief Queue the chunk @p ctx names as a compression candidate, on the
     ///        replay path.
     // Explicit object parameter (C++23), reaching the derived proxy directly.
-    void add_to_compression_list_async(this const auto& self, auto* ctx);
+    void queue_as_candidate_async(this const auto& self, auto* ctx);
 
     /**
      * @brief Grow the per-array table of candidate-flag arrays to @p array_count entries.
@@ -246,7 +246,7 @@ class ProxyBaseFastCompPolicy
     static inline CompressionManager<T, ChunkT>& compression_mgr = compression_mgr_storage_.value;
 
     /// @brief This proxy's entry in #array_is_inside_chunk_list_to_compress, or
-    ///        null before set_ptr_is_inside_chunk_list_to_compress() runs.
+    ///        null before bind_candidate_flag() runs.
     std::atomic<char>* ptr_is_inside_chunk_list_to_compress_ = nullptr;
 
     /**
@@ -415,23 +415,23 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ========================================================================
 
     /// @brief Is the chunk compressed to its single first value?
-    [[nodiscard]] bool is_const_val1() const noexcept
+    [[nodiscard]] bool is_first_value() const noexcept
     {
-        return chunk_.is_const_val1();
+        return chunk_.is_first_value();
     }
 
-    /// @brief is_const_val1() judged from an already-loaded value pointer.
+    /// @brief is_first_value() judged from an already-loaded value pointer.
     /// @param values_loc The pointer the caller loaded; saves a reload on a path
     ///        that has one in hand, and keeps the whole test on ONE snapshot.
-    [[nodiscard]] bool is_const_val1(const T* values_loc) const noexcept
+    [[nodiscard]] bool is_first_value(const T* values_loc) const noexcept
     {
-        return chunk_.is_const_val1(values_loc);
+        return chunk_.is_first_value(values_loc);
     }
 
-    /// @brief Complement of is_const_val1().
-    [[nodiscard]] bool is_not_const_val1() const noexcept
+    /// @brief Complement of is_first_value().
+    [[nodiscard]] bool is_not_first_value() const noexcept
     {
-        return !chunk_.is_const_val1();
+        return !chunk_.is_first_value();
     }
 
     /// @brief Would writing @p value leave the chunk compressed exactly as it is?
@@ -445,20 +445,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          engine, whose WAW guard retires the op before the store;
     ///          otherwise the write is silently lost. pending_any() is one
     ///          acquire load of the chunk header, constant-false in a serial build.
-    [[nodiscard]] bool is_const_val1_and_v_equal_first_value(InT<T> value) const noexcept
+    [[nodiscard]] bool is_first_value_equal_to(InT<T> value) const noexcept
     {
-        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_const_val1() && !chunk_.pending_any();
+        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_first_value() && !chunk_.pending_any();
     }
 
-    /// @brief is_const_val1_and_v_equal_first_value() from a loaded value pointer.
-    [[nodiscard]] bool is_const_val1_and_v_equal_first_value(const T* values_loc, InT<T> value) const noexcept
+    /// @brief is_first_value_equal_to() from a loaded value pointer.
+    [[nodiscard]] bool is_first_value_equal_to(const T* values_loc, InT<T> value) const noexcept
     {
-        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_const_val1(values_loc) &&
+        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_first_value(values_loc) &&
                !chunk_.pending_any();
     }
 
     /// @brief Point this proxy at an already-known candidate flag.
-    void set_ptr_is_inside_chunk_list_to_compress(std::atomic<char>* pt) noexcept
+    void bind_candidate_flag(std::atomic<char>* pt) noexcept
     {
         ptr_is_inside_chunk_list_to_compress_ = pt;
     }
@@ -467,14 +467,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @pre array_id and chunk_index must be valid
      * @post ptr_is_inside_chunk_list_to_compress_ points to correct atomic flag
      */
-    void set_ptr_is_inside_chunk_list_to_compress() noexcept
+    void bind_candidate_flag() noexcept
     {
         ptr_is_inside_chunk_list_to_compress_ =
             &FastCompPolicy::array_is_inside_chunk_list_to_compress[array_id_][chunk_index_];
     }
 
-    /// @brief add_to_compression_list() on the calling thread's own list.
-    void add_to_compression_list(this const Derived& self);
+    /// @brief queue_as_candidate() on the calling thread's own list.
+    void queue_as_candidate(this const Derived& self);
 
     // ========================================================================
     // Common I/O operations
@@ -791,7 +791,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief Queue this chunk as a compression candidate in @p vec_tuple.
-    void add_to_compression_list([[maybe_unused]] auto& vec_tuple) const;
+    void queue_as_candidate([[maybe_unused]] auto& vec_tuple) const;
 
     /// @brief The ordinary read: synchronise this offset, then read it live.
     /// @details The only place the read-side synchronisation cost is paid, and
@@ -1160,13 +1160,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @param chunk_index Chunk index within that array.
      * @param flag New flag value (0: not queued).
      */
-    static void set_array_is_inside_chunk_list_to_compress(int array_id, int chunk_index, char flag) noexcept
+    static void set_candidate_flag(int array_id, int chunk_index, char flag) noexcept
     {
         FastCompPolicy::array_is_inside_chunk_list_to_compress[array_id][chunk_index] = flag;
     }
 
     /// @brief The whole candidate-flag row for array @p array_id.
-    static ChunkFlagRowT& get_array_is_inside_list_to_compress(int array_id) noexcept
+    static ChunkFlagRowT& candidate_flag_row(int array_id) noexcept
     {
         return FastCompPolicy::array_is_inside_chunk_list_to_compress[array_id];
     }
@@ -1174,7 +1174,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Clear one chunk's candidate flag, so it may be queued again.
     /// @note Release store: whatever made the chunk a candidate must be visible
     ///       to the thread that next reads the flag.
-    static void reset_array_inside_list_to_compress(int array_id, int chunk_index) noexcept
+    static void clear_candidate_flag(int array_id, int chunk_index) noexcept
     {
         FastCompPolicy::array_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0,
                                                                                             std::memory_order_release);

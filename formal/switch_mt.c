@@ -25,9 +25,9 @@
  * Compressor (make_block_compression with a proxy), as the source runs it:
  *   steal_mark(X)                      -- release
  *   start(): announce + full barrier, then wait until no writer flag names a marked chunk
- *   fill_list_to_compress(X):
- *     is_not_cst_val1()   -- load 1; a chunk at the first constant is skipped
- *     is_cst_val2()       -- load 2; a chunk at a second value is skipped
+ *   classify_candidate(X):
+ *     is_not_first_value()   -- load 1; a chunk at the first constant is skipped
+ *     is_second_value()       -- load 2; a chunk at a second value is skipped
  *     scan                -- load 3: the chunk goes on the compact1 list (all first_value) or
  *                            the compact2 list (all one other value)
  *   clear_int_st -> block_clear_common (zero_any::Chunk):
@@ -231,14 +231,14 @@ static void* compressor(void* arg)
         ;
 #endif
 
-    /* fill_list_to_compress */
+    /* classify_candidate */
     int listed = 0;
     int target = CST1;
     const int v1 = atomic_load_explicit(&values, memory_order_acquire);
-    if (v1 != CST1) /* is_not_cst_val1 */
+    if (v1 != CST1) /* is_not_first_value */
     {
         const int v2 = atomic_load_explicit(&values, memory_order_acquire);
-        if (!is_cst2(v2)) /* is_cst_val2 */
+        if (!is_cst2(v2)) /* is_second_value */
         {
             const int v3 = atomic_load_explicit(&values, memory_order_acquire); /* the scan */
             listed       = 1;

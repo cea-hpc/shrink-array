@@ -70,7 +70,7 @@ tout à zéro. Chaque nom du modèle correspond à un endroit du source, avec le
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h` : `start()`, `finish()` ; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h` : `steal_mark_` et ses trois verbes |
 | `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `zero_any_chunk.h` : `try_mark_const_and_get_old()` |
-| `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()` ; `relaxed_element.h` |
+| `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `classify_candidate()` ; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h` : `write_with_optional_lock_impl()` |
 
 Le modèle vérifie trois propriétés : **P1**, un écrivain n'écrit jamais dans un tampon que la passe a
@@ -200,7 +200,7 @@ dans sa liste de candidats. Le chunk est réduit à deux mots, `values` (la prem
 emplacements de seconde valeur, ou un tampon) et `meta` (la table de types et l'emplacement, une
 variable simple : le vérificateur y signale une course), et à une marque de vol. La passe est
 `make_block_compression` telle que le source la déroule : les trois chargements de
-`fill_list_to_compress` (`is_not_const_val1`, `is_const_val2`, le scan), puis `block_clear_common` : les
+`classify_candidate` (`is_not_first_value`, `is_second_value`, le scan), puis `block_clear_common` : les
 métadonnées sont écrites **avant** le CAS de `try_mark_const_and_get_old`, et un CAS qui échoue -- le
 chunk est déjà à une constante -- resynchronise `values` d'après les métadonnées (la « resynchro
 critique »). Trois propriétés sont assertées après les jointures : **P1**, le changement fait par
@@ -247,7 +247,7 @@ de lecture et la libération du tampon sont vérifiées comme en section 6.
 | `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()` ; `internal/proxy_base_inline.h` `read_values_at()` ; `pattern_chunk.h` `Chunk::motif_offset()` |
 | `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, la branche motif |
 | `pass()`, un motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
-| `pass()`, une constante | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`) ; `internal/zero_any_chunk_inline.h` `find_or_set_idx_const_val2_release()` |
+| `pass()`, une constante | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`) ; `internal/zero_any_chunk_inline.h` `find_or_register_second_value_release()` |
 
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
@@ -304,7 +304,7 @@ compresseur est bornée (`CHUNK_COMPRESS_MAX_YIELDS`, 10 000 yields de 1 000 pau
 interblocage, mais un arrêt des deux threads pendant tout ce budget, après quoi la passe est
 abandonnée (le compteur de porte des abandons sur attente trop longue, dans le rapport
 `CHUNK_STATS`, les compte). Il faut un chunk à une constante tout en étant dans une liste de
-candidats -- le cas contre lequel `fill_list_to_compress()` se prémunit avec `is_not_const_val1()` -- donc c'est
+candidats -- le cas contre lequel `classify_candidate()` se prémunit avec `is_not_first_value()` -- donc c'est
 rare, pas impossible.
 
 Le correctif découle du protocole lui-même : un écrivain du chemin rapide tient son drapeau et a
@@ -456,7 +456,7 @@ que sa marque tient encore les écrivains à l'écart, le drapeau du candidat pa
 « restitué » (`queue_flag::hand_back`, dans le parcours même, avant que le parcours lève la marque d'un
 chunk qu'il écarte, dans les trois variantes) ; un écrivain dont le marquage trouve 2 le change
 en 3, « écrit entre-temps », au lieu de renoncer (`queue_flag::try_queue`, à chaque site
-d'écrivain : `add_to_compression_list()`, sa forme asynchrone, les écritures par plage qui y
+d'écrivain : `queue_as_candidate()`, sa forme asynchrone, les écritures par plage qui y
 passent) ; la passe remet ensuite 2 -> 0 par CAS et, sur un 3, remet elle-même le chunk dans la
 liste de son rang (`queue_flag::release`). Dans les passes de `zero`, `zero_or_value` et
 `zero_any` (avec la validation des motifs de `pattern`), builds threadés ; le build série n'a pas

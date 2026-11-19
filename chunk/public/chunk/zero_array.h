@@ -69,9 +69,9 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     ///        create() through ArrayChunkBase.
     void pre_create_hook()
     {
-        auto& sh_inf = *Proxy<T>::array_registry;
+        auto& registry = *Proxy<T>::array_registry;
 
-        sh_inf.insert(this->registry_key(), Base::array_count);
+        registry.insert(this->registry_key(), Base::array_count);
 
         this->array_id_ = Base::array_count;
 

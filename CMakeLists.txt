@@ -117,7 +117,7 @@ option(FAST_ALLOC_CHECK_LISTS "Debug builds: check every slab list in full on ea
 # 4 bytes per chunk instead of 8 or 16, -3.8% RSS on the 50 M-chunk reference
 # run, for one more dependent load on every write of a materialised chunk --
 # +3% CPU on the perf bench. Off by default; see SecondValueTraits in
-# chunk/internal/array_const_val2_holder.h.
+# chunk/internal/second_value_registry.h.
 option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte identifiers (less memory, +3% write CPU)" OFF)
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
 # build (chunk/build_options.h).

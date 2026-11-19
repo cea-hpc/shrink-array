@@ -469,7 +469,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 // Fining is untouched: its model is exact.
                 if (pol_.coarsen_trust_ratio > 0. && ev.new_size > ev.old_size)
                 {
-                    const double predicted = ev.mem_before - ev.mem_pred;
+                    const double predicted = ev.mem_before - ev.mem_predicted;
                     // Drift-free when the table had the old size, else the
                     // before/after difference.
                     const double measured =
@@ -540,7 +540,7 @@ inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
                          "(freed {:6.1f} MB, {:6.1f} at unchanged data; advisor predicted {:6.1f}) in {:5.0f} ms",
                          event.iter, event.name, event.old_size, event.new_size, event.mem_before / 1e6,
                          event.mem_after / 1e6, d_meas / 1e6, (event.mem_after_old - event.mem_after) / 1e6,
-                         (event.mem_before - event.mem_pred) / 1e6, ms);
+                         (event.mem_before - event.mem_predicted) / 1e6, ms);
         }
         else
         {
@@ -548,7 +548,7 @@ inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
                          "  iter {:<6} {:<12} S {:5} -> {:<5}   mem {:7.1f} -> {:7.1f} MB "
                          "(freed {:6.1f} MB; advisor predicted {:6.1f}) in {:5.0f} ms",
                          event.iter, event.name, event.old_size, event.new_size, event.mem_before / 1e6,
-                         event.mem_after / 1e6, d_meas / 1e6, (event.mem_before - event.mem_pred) / 1e6, ms);
+                         event.mem_after / 1e6, d_meas / 1e6, (event.mem_before - event.mem_predicted) / 1e6, ms);
         }
     }
 }

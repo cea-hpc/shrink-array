@@ -34,7 +34,7 @@
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/zero_or_value_array.h"                  // zero_or_value::Array, the class these bodies belong to
 #include "chunk/internal/type_name.h"                   // type_name<T>
-#include "chunk/internal/singleton.h"                   // SingletonChk<TypeStateRegistry>::get_ref
+#include "chunk/internal/singleton.h"                   // Singleton<TypeStateRegistry>::get_ref
 #include "chunk/internal/zero_or_value_proxy.h"         // zero_or_value::Proxy<T>
 #include "chunk/internal/chunk_stats.h"                 // inc_chunk_teardown_clear, add_chunk_released
 #include "chunk/internal/type_state_registry.h"         // TypeStateRegistry::ensure_manager
@@ -105,14 +105,14 @@ void zero_or_value::Array<T, IntType>::create(IntType sz)
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
-    auto& sh_inf = *Proxy<T>::array_registry;
+    auto& registry = *Proxy<T>::array_registry;
 
-    sh_inf.insert_only_array_id(this->registry_key(), array_count);
+    registry.insert_only_array_id(this->registry_key(), array_count);
     ++array_count;
     internal::ArrayUsers<ChunkType>::resize(array_count);
 
     // Registry entry written: refresh the mirror the write proxies are armed
-    // with (see zero_or_value::Array::inf_array).
+    // with (see zero_or_value::Array::array_info).
     sync_registry_mirror();
 
     if constexpr (chunk_config::use_fast_block_compression)
@@ -242,15 +242,15 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
         }
     }
 
-    auto& sh_inf = *Proxy<T>::array_registry;
+    auto& registry = *Proxy<T>::array_registry;
 
     if constexpr (is_not_bool)
     {
-        int idx = sh_inf.find_idx_array_const2(sec_value);
+        int idx = registry.find_second_value_index(sec_value);
 
         if (idx == -1)
         {
-            idx = static_cast<int>(Chunk<T>::array_m_ptr_const_val2->size());
+            idx = static_cast<int>(Chunk<T>::second_value_buffers->size());
 
             if constexpr (build_config::use_mm_protect)
             {
@@ -270,30 +270,30 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
 
                 mprotect(ptr, alloc_size, PROT_READ);
 
-                Chunk<T>::array_m_ptr_const_val2->push_back(arr);
-                if (Chunk<T>::array_m_ptr_const_val2_mm_elems.size() <= static_cast<std::size_t>(idx))
+                Chunk<T>::second_value_buffers->push_back(arr);
+                if (Chunk<T>::second_value_buffers_mm_elems.size() <= static_cast<std::size_t>(idx))
                 {
-                    Chunk<T>::array_m_ptr_const_val2_mm_elems.resize(idx + 1, 0);
+                    Chunk<T>::second_value_buffers_mm_elems.resize(idx + 1, 0);
                 }
-                Chunk<T>::array_m_ptr_const_val2_mm_elems[idx] = this->size_policy_.size();
+                Chunk<T>::second_value_buffers_mm_elems[idx] = this->size_policy_.size();
             }
             else
             {
-                Chunk<T>::array_m_ptr_const_val2->resize(idx + 1);
+                Chunk<T>::second_value_buffers->resize(idx + 1);
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    (*Chunk<T>::array_m_ptr_const_val2)[idx][i] = sec_value;
+                    (*Chunk<T>::second_value_buffers)[idx][i] = sec_value;
                 }
             }
 
-            sh_inf.replace(this->registry_key(), sec_value, idx);
-            sh_inf.insert_map_idx_const_val2(sec_value, idx);
+            registry.replace(this->registry_key(), sec_value, idx);
+            registry.insert_second_value_idx(sec_value, idx);
 
-            idx_const_val2_ = idx;
+            second_value_idx_ = idx;
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                inf_array_.second_value = sec_value;
-                inf_array_.idx          = idx;
+                array_info_.second_value = sec_value;
+                array_info_.idx          = idx;
             }
 
             if constexpr (build_config::threaded)
@@ -309,7 +309,7 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
                     const auto& vec_ref    = Manager::zero_or_value_candidates_thr[thr][idx];
-                    const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk, T>>(vec_ref);
+                    const auto  shared_vec = std::make_shared<CandidateList<Chunk, T>>(vec_ref);
                     Manager::zero_or_value_candidates_map_thr[thr][sec_value] = shared_vec;
                 }
             }
@@ -327,8 +327,8 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
             if constexpr (build_config::use_mm_protect)
             {
                 const std::size_t cur_elems =
-                    Chunk<T>::array_m_ptr_const_val2_mm_elems.size() > static_cast<std::size_t>(idx)
-                        ? Chunk<T>::array_m_ptr_const_val2_mm_elems[idx]
+                    Chunk<T>::second_value_buffers_mm_elems.size() > static_cast<std::size_t>(idx)
+                        ? Chunk<T>::second_value_buffers_mm_elems[idx]
                         : 0;
                 const std::size_t need_elems = this->size_policy_.size();
 
@@ -348,52 +348,52 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
 
                     // Do NOT unmap the old buffer: a live array's chunk may hold its
                     // address as `values` (immortal-arena discipline).
-                    (*Chunk<T>::array_m_ptr_const_val2)[idx] = arr;
-                    if (Chunk<T>::array_m_ptr_const_val2_mm_elems.size() <= static_cast<std::size_t>(idx))
+                    (*Chunk<T>::second_value_buffers)[idx] = arr;
+                    if (Chunk<T>::second_value_buffers_mm_elems.size() <= static_cast<std::size_t>(idx))
                     {
-                        Chunk<T>::array_m_ptr_const_val2_mm_elems.resize(idx + 1, 0);
+                        Chunk<T>::second_value_buffers_mm_elems.resize(idx + 1, 0);
                     }
-                    Chunk<T>::array_m_ptr_const_val2_mm_elems[idx] = need_elems;
+                    Chunk<T>::second_value_buffers_mm_elems[idx] = need_elems;
                 }
             }
             else
             {
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    (*Chunk<T>::array_m_ptr_const_val2)[idx][i] = sec_value;
+                    (*Chunk<T>::second_value_buffers)[idx][i] = sec_value;
                 }
             }
 
-            idx_const_val2_ = idx;
+            second_value_idx_ = idx;
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                inf_array_.second_value = sec_value;
-                inf_array_.idx          = idx;
+                array_info_.second_value = sec_value;
+                array_info_.idx          = idx;
             }
         }
-        const bool exi = sh_inf.exists(this->registry_key());
+        const bool exi = registry.exists(this->registry_key());
 
         if (exi && !same_value(sec_value, this->second_value()))
         {
-            sh_inf.replace_all_other_elm(this->registry_key(), sec_value, idx_const_val2_);
-            sh_inf.insert_map_idx_const_val2(sec_value, idx);
+            registry.replace_all_other_elm(this->registry_key(), sec_value, second_value_idx_);
+            registry.insert_second_value_idx(sec_value, idx);
         }
     }
     else
     {
         if constexpr (is_not_bool)
         {
-            Chunk<T>::array_m_ptr_const_val2->resize(+1);
+            Chunk<T>::second_value_buffers->resize(+1);
             for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
             {
-                (*Chunk<T>::array_m_ptr_const_val2)[0][i] = true;
+                (*Chunk<T>::second_value_buffers)[0][i] = true;
             }
         }
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            inf_array_.second_value = true;
-            inf_array_.idx          = 0;
+            array_info_.second_value = true;
+            array_info_.idx          = 0;
         }
         if constexpr (build_config::threaded)
         {
@@ -401,16 +401,16 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
             {
                 Manager::zero_or_value_candidates_thr[thr].resize(1);
                 const auto& vec_ref    = Manager::zero_or_value_candidates_thr[thr][0];
-                const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk, T>>(vec_ref);
+                const auto  shared_vec = std::make_shared<CandidateList<Chunk, T>>(vec_ref);
                 Manager::zero_or_value_candidates_map_thr[thr][sec_value] = shared_vec;
             }
         }
 
-        sh_inf.replace_all_other_elm(this->registry_key(), true, 0);
+        registry.replace_all_other_elm(this->registry_key(), true, 0);
     }
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        sh_inf.insert(sec_value, &inf_array_);
+        registry.insert(sec_value, &array_info_);
     }
 
     // Every branch above may have rewritten this array's registry entry
@@ -430,11 +430,11 @@ void zero_or_value::Array<T, IntType>::print_compression_stats(std::ostream& os)
         return;
     }
 
-    const auto& sh_inf   = *Proxy<T>::array_registry;
-    const int   array_id = sh_inf.get_array_id(this->registry_key());
+    const auto& registry   = *Proxy<T>::array_registry;
+    const int   array_id = registry.get_array_id(this->registry_key());
 
     // Classification. written(idx) is true for a MATERIALISED chunk (`values !=
-    // const_val1 && is_not_const_val2(idx)`, as Chunk::written()); !written(idx)
+    // const_val1 && is_not_second_value(idx)`, as Chunk::written()); !written(idx)
     // covers BOTH compressed states. n_t0 = at the first constant, n_t1 = at the
     // second (the "type-2" reporting downstream). Do not read !written(idx) as
     // "first constant" and written(idx) as "second": n_t0 + n_t1 would then
@@ -471,7 +471,7 @@ void zero_or_value::Array<T, IntType>::print_compression_stats(std::ostream& os)
                                                               ++acc[same_value(*v0, Chunk<T>::first_value) ? 0 : 1];
                                                               return;
                                                           }
-                                                          ++acc[ck.is_const_val1() ? 0 : 1];
+                                                          ++acc[ck.is_first_value() ? 0 : 1];
                                                       });
         n_t0              = counts[0];
         n_t1              = counts[1];
@@ -496,7 +496,7 @@ void zero_or_value::Array<T, IntType>::print_compression_stats(std::ostream& os)
                                                               ++acc[same_value(*v0, Chunk<T>::first_value) ? 0 : 1];
                                                               return;
                                                           }
-                                                          ++acc[ck.is_const_val1() ? 0 : 1];
+                                                          ++acc[ck.is_first_value() ? 0 : 1];
                                                       });
         n_t0              = counts[0];
         n_t1              = counts[1];
@@ -601,9 +601,9 @@ void zero_or_value::Array<T, IntType>::clear_core()
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf = *Proxy<T>::array_registry;
+        const auto& registry = *Proxy<T>::array_registry;
 
-        const int array_id = sh_inf.get_array_id(this->registry_key());
+        const int array_id = registry.get_array_id(this->registry_key());
 
         Proxy<T>::clear_is_int(array_id);
 
@@ -634,13 +634,13 @@ void zero_or_value::Array<T, IntType>::clear_core()
     {
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+            const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
 
             // Not for a work array torn down in a region: that pass walks every
             // rank's list, of every type.
-            if (!own_rank && type_registry.have_chunk_to_compress_potentially())
+            if (!own_rank && type_registry.has_candidates())
             {
-                type_registry.compress_chunk_to_compress_potentially(false);
+                type_registry.run_compress_pass(false);
             }
         }
     }
@@ -754,7 +754,7 @@ void zero_or_value::Array<T, IntType>::clear_core()
                               // compress path short-circuit. Mirrors zero_any::Array::clear_core.
                               if constexpr (is_not_bool)
                               {
-                                  ll_chunk_loc[k]->init_values_const_val1();
+                                  ll_chunk_loc[k]->init_to_first_value();
                               }
                               else
                               {
@@ -827,10 +827,10 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
         if (!chunk_config::aggressive_compression() && !CHUNK_PMP_IN_PARALLEL_REGION)
         // run-time switch: chunk/config.h
         {
-            if (const auto& type_registry = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
-                type_registry.have_chunk_to_compress_potentially())
+            if (const auto& type_registry = shrink_array::Singleton<shrink_array::TypeStateRegistry>::get_ref();
+                type_registry.has_candidates())
             {
-                type_registry.compress_chunk_to_compress_potentially(true);
+                type_registry.run_compress_pass(true);
             }
             drained = true;
         }
@@ -932,7 +932,7 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
         [[maybe_unused]] ChunkFlagRowT* flags = nullptr;
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            flags = &Proxy<T>::get_array_is_inside_list_to_compress(
+            flags = &Proxy<T>::candidate_flag_row(
                 Proxy<T>::array_registry->get_array_id(this->registry_key()));
         }
         const auto heal = [&](int jj, auto&& clear)
@@ -1094,7 +1094,7 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
             if constexpr (chunk_config::use_fast_block_compression)
             {
                 is_inside =
-                    static_cast<int>(Proxy<T>::get_array_is_inside_list_to_compress(
+                    static_cast<int>(Proxy<T>::candidate_flag_row(
                                          Proxy<T>::array_registry->get_array_id(this->registry_key()))[chunk_index]
                                          .load(std::memory_order_acquire));
             }
@@ -1185,7 +1185,7 @@ void zero_or_value::Array<T, IntType>::release_chunk_range(int first, int last)
                     // reuse list now.
                     if constexpr (is_not_bool)
                     {
-                        chunk_list_[j].init_values_const_val1();
+                        chunk_list_[j].init_to_first_value();
                     }
                     else
                     {
@@ -1213,9 +1213,9 @@ void zero_or_value::Array<T, IntType>::resize(IntType newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf = *Proxy<T>::array_registry;
+        const auto& registry = *Proxy<T>::array_registry;
 
-        const int array_id = sh_inf.get_array_id(this->registry_key());
+        const int array_id = registry.get_array_id(this->registry_key());
         Proxy<T>::resize_array_is_int(array_id, chunk_count_);
     }
 
@@ -1261,7 +1261,7 @@ zero_or_value::Array<T, IntType>::~Array()
 
     if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
     {
-        Proxy<T>::array_registry->erase_inf_array_by_ptr(&inf_array_);
+        Proxy<T>::array_registry->erase_array_info_by_ptr(&array_info_);
     }
     // rechunk=debug, tmp teardown only (armed by rechunk_to): free chunk_list_'s
     // buffer here rather than with the member, so that the split can time it
@@ -1354,13 +1354,13 @@ void zero_or_value::Array<T, IntType>::register_no_second_value_key()
 {
     if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
     {
-        if (auto& sh_inf = *Proxy<T>::array_registry; sh_inf.find_inf_array(T{}) == nullptr)
+        if (auto& registry = *Proxy<T>::array_registry; registry.find_array_info(T{}) == nullptr)
         {
-            sh_inf.insert(T{}, &inf_array_none);
+            registry.insert(T{}, &array_info_none);
             // The between-phase pass drains only the values of THIS map: T{}
             // must be in it, at the sentinel index (so set_second_value(T{})
             // still sees it unregistered and builds a real block).
-            sh_inf.insert_map_idx_const_val2(T{}, chunk_config::no_second_value_index);
+            registry.insert_second_value_idx(T{}, chunk_config::no_second_value_index);
         }
         if constexpr (build_config::threaded)
         {
@@ -1379,19 +1379,19 @@ void zero_or_value::Array<T, IntType>::register_no_second_value_key()
 template <ArrayChunkElement T, typename IntType>
 void zero_or_value::Array<T, IntType>::swap_identity(Array& other)
 {
-    auto& sh_inf = *Proxy<T>::array_registry;
-    sh_inf.swap_entries(this->registry_key(), other.registry_key());
-    std::swap(idx_const_val2_, other.idx_const_val2_);
+    auto& registry = *Proxy<T>::array_registry;
+    registry.swap_entries(this->registry_key(), other.registry_key());
+    std::swap(second_value_idx_, other.second_value_idx_);
     sync_registry_mirror();
     other.sync_registry_mirror();
     if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
     {
         for (Array* arr : {this, &other})
         {
-            const T value = arr->inf_array_.second_value;
+            const T value = arr->array_info_.second_value;
             if (!same_value(value, T{}))
             {
-                sh_inf.insert(value, &arr->inf_array_);
+                registry.insert(value, &arr->array_info_);
             }
         }
     }

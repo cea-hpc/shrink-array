@@ -36,7 +36,7 @@
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/array_const_val2_holder.h"     // SecondValueRef
+#include "chunk/internal/second_value_registry.h"     // SecondValueRef
 #include "chunk/internal/chunk_tuples.h"                // ZeroAnyCompOf
 #include "chunk/internal/proxy_base.h"                  // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"     // SecondValueProxyBase
@@ -411,9 +411,9 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived, ChunkT>
     void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& operand, Body lbd) const;
 
     /// @brief Rank @p thr's zero_any candidate list.
-    ZeroAnyCompOf<ChunkT>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+    ZeroAnyCompOf<ChunkT>& candidates_of_thread(int thr) const noexcept
     {
-        return chunk_.get_vec_tuple_to_compress_potentially_thr(thr);
+        return chunk_.candidates_of_thread(thr);
     }
 
     /// @brief Common initialisation of the fast path: table number, then the
@@ -421,7 +421,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived, ChunkT>
     void set_array_id_ptr_is_inside_chunk(this Derived& self) noexcept
     {
         self.set_array_id(); // zero_any::ProxyImpl's no-arg overload (looks the table up)
-        self.Base::set_ptr_is_inside_chunk_list_to_compress();
+        self.Base::bind_candidate_flag();
     }
 
   private:
@@ -447,9 +447,9 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
     using BaseSpec::BaseSpec;
 
     /// @brief The single candidate list of a serial build (zero_any::ChunkThreadPolicy<false>).
-    ZeroAnyCompOf<ChunkT>& get_vec_tuple_to_compress_potentially() const noexcept
+    ZeroAnyCompOf<ChunkT>& serial_candidates() const noexcept
     {
-        return chunk_.get_vec_tuple_to_compress_potentially();
+        return chunk_.serial_candidates();
     }
 };
 
@@ -632,9 +632,9 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     // Small helpers about chunk const-value modes
 
     /// @brief Is this proxy's chunk compressed to its second value?
-    [[nodiscard]] bool is_const_val2() const noexcept
+    [[nodiscard]] bool is_second_value() const noexcept
     {
-        return chunk_.is_const_val2();
+        return chunk_.is_second_value();
     }
 
     // The candidate-list accessors live on the zero_any::ProxyFastCompPolicy specialisations.
@@ -685,7 +685,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
      *          - discover: any non-first value on a chunk with no second value yet;
      *          - change: the chunk has a second value, new is neither constant and
      *            differs from old. The chunk may be turning uniform at a third
-     *            value W, which the pass compresses (fill_list_to_compress scans
+     *            value W, which the pass compresses (classify_candidate scans
      *            against values[0]). Do not narrow it to old == second: the write
      *            that completes a uniform W often replaces a value that is neither
      *            constant (a region painted over another one), and such a chunk
@@ -747,7 +747,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
      * @brief Ensures the chunk has allocated storage for modification
      *
      * @details Materialises a chunk in constant mode (const_val1 or const_val2). Arms
-     * the cached metadata itself (set_info_on_chunk()), after sampling is_const_val2().
+     * the cached metadata itself (set_info_on_chunk()), after sampling is_second_value().
      *
      * @post Chunk has allocated storage for modifications
      */

@@ -24,7 +24,7 @@
 #include "chunk/internal/pmp_chunk.h"               // get_thr_rank_fast (the constant-buffer write check)
 #include "chunk/internal/chunk_base.h"              // ChunkBase
 #include "chunk/internal/const_slot.h"              // ConstSlot (clear_impl's type-of-constant slot)
-#include "chunk/internal/array_const_val2_holder.h" // SecondValueRef, the zero_any second-value slot handle
+#include "chunk/internal/second_value_registry.h" // SecondValueRef, the zero_any second-value slot handle
 #include "chunk/internal/type_name.h"               // type_name<T>
 
 namespace shrink_array
@@ -44,10 +44,10 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     using Base = ChunkBase<T, Derived>;
     using Base::first_value;
     using Base::is_bool;
-    using Base::is_const_val1;
+    using Base::is_first_value;
     using Base::is_not_bool;
-    using Base::is_not_const_val1;
-    using Base::m_ptr_const_val1;
+    using Base::is_not_first_value;
+    using Base::first_value_buffer_;
     using Base::read_value;
     using Base::values_;
     using Base::values_load;
@@ -72,7 +72,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     /// @param thr_rank Thread rank
     /// @param ptr_type_const Pointer to constant type indicator (zero_any only)
     /// @param ptr_second_value Pointer to second value (zero_any only)
-    /// @param const2_ptr The shared array to install for a type-2 compression
+    /// @param second_ptr The shared array to install for a type-2 compression
     ///        (zero_any only; the chunk keeps no copy of it)
     template <typename IndexT>
     void block_clear_common(this Derived&        self,
@@ -81,7 +81,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
                             [[maybe_unused]] int thr_rank,
                             ConstSlot*           ptr_type_const   = nullptr,
                             SecondValueRef<T>    ptr_second_value = {},
-                            T*                   const2_ptr       = nullptr);
+                            T*                   second_ptr       = nullptr);
 
     /**
      * @brief Atomically attempts to install a new buffer or recycles it on failure.

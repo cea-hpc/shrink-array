@@ -17,7 +17,7 @@
 #pragma once
 
 /**
- * @file array_const_val2_holder.h
+ * @file second_value_registry.h
  * @brief The registry of second-value slots behind "second constant value" compression.
  *
  * A zero_any chunk compressed to a constant other than zero does not own a buffer: it
@@ -32,7 +32,7 @@
  *    pointer another thread is holding.
  *  - GlobalVecHolder owns that chain, one instance per element type, plus the
  *    hash index that makes a lookup O(1) and the lock that serialises appends.
- *  - ArrayConstVal2Holder is the surface the chunks talk to: stateless, it owns
+ *  - SecondValueRegistry is the surface the chunks talk to: stateless, it owns
  *    the allocation strategy.
  *
  * @par Two paths, and only one of them takes a lock
@@ -113,7 +113,7 @@ template <typename T>
 class GlobalVecHolder;
 
 template <typename T>
-class ArrayConstVal2Holder;
+class SecondValueRegistry;
 
 /**
  * @brief How a chunk's second value is stored in the per-chunk table.
@@ -264,7 +264,7 @@ class GlobalVecHolder
     // `values`). The allocator is a bump pointer plus the free list of reclaimed identifiers
     // (reused first); region_reset() gives the pages back at the last clear.
     //
-    // Nothing is ever STORED in the region: a slot is an identifier. is_const_val2() is a range
+    // Nothing is ever STORED in the region: a slot is an identifier. is_second_value() is a range
     // test and id_of_ptr() is arithmetic -- neither dereferences it -- and the value comes from
     // value_by_id[]. The read path pays one well-predicted range test (ChunkBase::element_at).
     // Shared arrays FILLED with the value would avoid the test but cost tens of KiB per value
@@ -407,7 +407,7 @@ class GlobalVecHolder
     ///        cache line of its own (check builds only; one slot otherwise).
     /// @details One counter shared by every thread made each lookup bounce its
     ///          cache line between the cores: two locked RMWs per second-value
-    ///          lookup, about 90 % of find_or_set_idx_const_val2() in the check
+    ///          lookup, about 90 % of find_or_register_second_value() in the check
     ///          bench. A thread takes a slot once (round robin; past
     ///          in_flight_slots threads share one, which costs contention, not
     ///          correctness: the reclaim reads the sum).
@@ -513,7 +513,7 @@ class GlobalVecHolder
     // Every array of the family with element type T draws its second values from this one
     // registry: zero_any::Array<T> and pattern::Array<T> alike. A reclaim must mark what ALL
     // of them still name: each member registers its mark here on its first use of the
-    // registry (zero_any::ArrayImpl::acquire_const2_registry()), and
+    // registry (zero_any::ArrayImpl::acquire_second_value_registry()), and
     // zero_any::ArrayImpl::reclaim_second_values(), on any member, runs them all.
 
     /// @brief A member's mark: sets referenced[id] for each identifier its live arrays name.
@@ -544,7 +544,7 @@ class GlobalVecHolder
     [[nodiscard]] static T* take_free_slot() noexcept;
 
     /// @brief Is @p ptr a second-value slot of this type?
-    /// @note THE constant-2 test of zero_any: `is_const_val2()` is
+    /// @note THE constant-2 test of zero_any: `is_second_value()` is
     ///       `region_contains(values)`. Relaxed load of a pointer that is
     ///       written once, before any chunk exists.
     [[nodiscard]] static bool region_contains(const T* ptr) noexcept
@@ -640,7 +640,7 @@ class GlobalVecHolder
     /**
      * @brief Drop one user; free the whole registry when it was the last.
      *
-     * @param n_val2 Incremented by the number of registered values freed.
+     * @param n_second_values Incremented by the number of registered values freed.
      *
      * @details Decrements #ref_count and returns immediately while other
      *          zero_any::Array<T> instances are alive. The last one out frees every
@@ -650,7 +650,7 @@ class GlobalVecHolder
      *          next generation of arrays is freed by its own last one out.
      *
      * @warning No thread may be SCANNING the chain while this runs --
-     *          find_or_set_idx_const_val2(), reached from make_block_compression
+     *          find_or_register_second_value(), reached from make_block_compression
      *          on the write slow path. Call it serially, or from an
      *          `omp single` PRECEDED BY A BARRIER that ends every concurrent
      *          scan (a `nowait` loop before the single lets a late writer's
@@ -660,7 +660,7 @@ class GlobalVecHolder
      *       "I am the lone thread of a single". omp_in_parallel() is the wrong
      *       test, since the single legitimately runs inside a parallel region.
      */
-    static void clear_if_last(int& n_val2);
+    static void clear_if_last(int& n_second_values);
 
     /**
      * @brief Free everything unconditionally, ignoring #ref_count.
@@ -750,13 +750,13 @@ class GlobalVecHolder
         (max_ids * id_stride) < region_bytes ? (max_ids * id_stride) : region_bytes;
 
 #ifndef CHUNK_CONST_VAL2_INDEX_LOG2
-    static constexpr int chunk_const_val2_index_loc = 18;
+    static constexpr int lookup_slots_log2 = 18;
     // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
 #else
-    static constexpr int chunk_const_val2_index_loc = CHUNK_CONST_VAL2_INDEX_LOG2;
+    static constexpr int lookup_slots_log2 = CHUNK_CONST_VAL2_INDEX_LOG2;
 #endif
 
-    static constexpr size_t index_cap       = 1uz << chunk_const_val2_index_loc; ///< Initial capacity.
+    static constexpr size_t index_cap       = 1uz << lookup_slots_log2; ///< Initial capacity.
     static constexpr int    index_max_probe = 64;                                ///< Bounded; giving up means fallback.
 
     /// @brief Bytes of the value table: identifiers 0 to id_limit.
@@ -849,13 +849,13 @@ class GlobalVecHolder
  *  - GlobalVecHolder::head is never null after create() or clear(): clear()
  *    reinstalls an empty segment, so a later compression pass finds a valid
  *    head without testing.
- *  - Every slot handed out by find_or_set_idx_const_val2() lies in the region,
- *    and nothing else does: is_const_val2_ptr() is exact.
+ *  - Every slot handed out by find_or_register_second_value() lies in the region,
+ *    and nothing else does: is_second_value_ptr() is exact.
  *
- * @see ArrayConstVal2Holder<bool>, which has none of this machinery.
+ * @see SecondValueRegistry<bool>, which has none of this machinery.
  */
 template <typename T>
-class ArrayConstVal2Holder
+class SecondValueRegistry
 {
   public:
     using VecHolder = GlobalVecHolder<T>;
@@ -876,16 +876,16 @@ class ArrayConstVal2Holder
      *
      * @note The O(N) chain scan runs only behind GlobalVecHolder::index_degraded.
      */
-    [[nodiscard]] T* find_or_set_idx_const_val2(T second_v, SecondValueRef<T> ptr_second_value);
+    [[nodiscard]] T* find_or_register_second_value(T second_v, SecondValueRef<T> ptr_second_value);
 
-    /// @brief find_or_set_idx_const_val2() recording the slot by a release store
+    /// @brief find_or_register_second_value() recording the slot by a release store
     ///        (SecondValueRef::set_from_array_release()): a member with the motif state.
-    [[nodiscard]] T* find_or_set_idx_const_val2_release(T second_v, SecondValueRef<T> ptr_second_value);
+    [[nodiscard]] T* find_or_register_second_value_release(T second_v, SecondValueRef<T> ptr_second_value);
 
     /// @brief Is @p ptr one of this type's second-value slots?
-    /// @note `is_const_val2()` of zero_any: one relaxed load of the region base
+    /// @note `is_second_value()` of zero_any: one relaxed load of the region base
     ///       and two compares, no per-chunk state.
-    [[nodiscard]] static bool is_const_val2_ptr(const T* ptr) noexcept
+    [[nodiscard]] static bool is_second_value_ptr(const T* ptr) noexcept
     {
         return GlobalVecHolder<T>::region_contains(ptr);
     }
@@ -898,7 +898,7 @@ class ArrayConstVal2Holder
     ///          constant from the per-chunk tables alone
     ///          (init_values_const_val): re-sync after a lost CAS, re-chunk,
     ///          teardown -- never on the element write path.
-    [[nodiscard]] static T* find_const_val2_ptr(InT<T> second_v);
+    [[nodiscard]] static T* find_second_value_ptr(InT<T> second_v);
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -928,7 +928,7 @@ class ArrayConstVal2Holder
      *
      * @details Same conversion, but returns T{} rather than indexing out of
      *          bounds if @p ptr is not where the caller thought. A pointer that
-     *          passes is_const_val2_ptr() can only yield an id in [1, id_capacity()],
+     *          passes is_second_value_ptr() can only yield an id in [1, id_capacity()],
      *          so this never fires in a correct call -- it guards a pointer
      *          that was not range-tested, where a compare is cheaper than a
      *          crash.
@@ -943,13 +943,13 @@ class ArrayConstVal2Holder
 
     /**
      * @brief Drop this user of the registry; the last one frees it.
-     * @param n_val2 Incremented by the number of registered values freed.
+     * @param n_second_values Incremented by the number of registered values freed.
      * @warning Single thread only, and with no concurrent scan in flight.
      *          @see GlobalVecHolder::clear_if_last for the full contract.
      */
-    static void clear(int& n_val2)
+    static void clear(int& n_second_values)
     {
-        VecHolder::clear_if_last(n_val2);
+        VecHolder::clear_if_last(n_second_values);
     }
 
     /// @brief The identifier for @p value, registering its slot if it is new;
@@ -984,7 +984,7 @@ class ArrayConstVal2Holder
 };
 
 /**
- * @brief ArrayConstVal2Holder for bool, where the whole registry collapses.
+ * @brief SecondValueRegistry for bool, where the whole registry collapses.
  *
  * @details A bool has exactly one value that is not the first constant, so
  *          there is nothing to register, look up, share or free: a single
@@ -992,32 +992,32 @@ class ArrayConstVal2Holder
  *          of the primary template is kept so call sites compile uniformly, and
  *          all of them are trivial.
  *
- * @warning find_or_set_idx_const_val2() takes NO arguments here, unlike the
+ * @warning find_or_register_second_value() takes NO arguments here, unlike the
  *          primary template's two. A call site that serves both must dispatch,
  *          not just forward.
  */
 template <>
-class ArrayConstVal2Holder<bool>
+class SecondValueRegistry<bool>
 {
   public:
-    /// @brief Nothing to create. @see ArrayConstVal2Holder::create
+    /// @brief Nothing to create. @see SecondValueRegistry::create
     static void create() {}
     /// @brief Nothing to free, and no user count to keep.
-    static void clear(int& /*n_val2*/) {}
+    static void clear(int& /*n_second_values*/) {}
 
     /// @brief The shared array. There is only ever one, so nothing is searched.
-    static bool* find_or_set_idx_const_val2()
+    static bool* find_or_register_second_value()
     {
         return m_ptr.data();
     }
 
     /// @brief Is @p ptr the shared array? There is only one.
-    [[nodiscard]] static bool is_const_val2_ptr(const bool* ptr) noexcept
+    [[nodiscard]] static bool is_second_value_ptr(const bool* ptr) noexcept
     {
         return ptr == m_ptr.data();
     }
     /// @brief The shared array, whatever the value: it is `true` or nothing.
-    [[nodiscard]] static bool* find_const_val2_ptr(bool /*second_v*/) noexcept
+    [[nodiscard]] static bool* find_second_value_ptr(bool /*second_v*/) noexcept
     {
         return m_ptr.data();
     }
@@ -1034,4 +1034,4 @@ class ArrayConstVal2Holder<bool>
 
 } // namespace shrink_array
 
-#include "chunk/internal/array_const_val2_holder_inline.h" // the template bodies
+#include "chunk/internal/second_value_registry_inline.h" // the template bodies

@@ -33,7 +33,7 @@
 // zero_or_value CONTRACT: the compression-candidate list is indexed by
 // second_value (zero_or_value_candidates_map_thr[thr][second_value]),
 // populated ONLY by set_second_value. A second_value must therefore be
-// declared BEFORE writing, otherwise get_vec_tuple_to_compress_potentially_thr
+// declared BEFORE writing, otherwise candidates_of_thread
 // asserts (vec == nullptr). This is what the bench does via
 // maybe_set_second_value; we reproduce it here for every case. zero_any / zero
 // don't need this (no-op).
@@ -207,7 +207,7 @@ constexpr const char* variant_name()
 
 // set_second_value only exists on zero_or_value / zero_any: no-op elsewhere. REQUIRED
 // on zero_or_value before any write (see the contract at the top of the file); also
-// exercises the val2 path (second_value preservation + array_m_ptr_const_val2
+// exercises the val2 path (second_value preservation + second_value_buffers
 // queue on growth, for zero_or_value).
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
@@ -846,7 +846,7 @@ bool bool_runs(long i)
 /// double content for the sliced-val2 cases: runs of 0, runs of the second
 /// value 0.5 and varied data, 2600 elements each (several chunks at every
 /// geometry the cases use).
-double sliced_val2_mix(long i)
+double sliced_second_value_mix(long i)
 {
     switch ((i / 2600) % 5)
     {
@@ -976,7 +976,7 @@ static int run_body(int argc, char** argv)
              return check_invariance<double>(
                  "all-different", 100000, 1024, [](long i) -> double { return double(i); }, /*sv_value=*/1.0);
          }},
-        // Growth 512 -> 2048 with val2: targets the array_m_ptr_const_val2 queue
+        // Growth 512 -> 2048 with val2: targets the second_value_buffers queue
         // (zero_or_value) + the second_value round-trip.
         {"val2-grow", 512,
          [&]
@@ -1057,13 +1057,13 @@ static int run_body(int argc, char** argv)
         {"sliced-val2-grow", 64,
          []
          {
-             return check_invariance<double>("sliced-val2-grow-64-to-256", 4L << 20, 256, sliced_val2_mix,
+             return check_invariance<double>("sliced-val2-grow-64-to-256", 4L << 20, 256, sliced_second_value_mix,
                                              /*sv_value=*/0.5, /*post_rounds=*/2);
          }},
         {"sliced-val2-uneven", 512,
          []
          {
-             return check_invariance<double>("sliced-val2-uneven-512-to-192", 2L << 20, 192, sliced_val2_mix,
+             return check_invariance<double>("sliced-val2-uneven-512-to-192", 2L << 20, 192, sliced_second_value_mix,
                                              /*sv_value=*/0.5, /*post_rounds=*/2);
          }},
     };

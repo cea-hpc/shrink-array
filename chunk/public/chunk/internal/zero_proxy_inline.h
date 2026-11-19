@@ -90,7 +90,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
         inc_chunk_write<ChunkType>(value);
     }
 
-    if (const bool need_alloc = this->is_const_val1(vals); need_alloc)
+    if (const bool need_alloc = this->is_first_value(vals); need_alloc)
     {
         // Counter-mode state across the allocation; empty work otherwise.
         class
@@ -153,7 +153,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(t
     if (should_mark_for_compression(old_value, new_value) || !same_value(self.read_values(), expected_in_memory))
         [[unlikely]]
     {
-        self.add_to_compression_list();
+        self.queue_as_candidate();
     }
 }
 
@@ -168,7 +168,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(t
     if (should_mark_for_compression(old_value, new_value) || !same_value(self.read_values_at(vals), expected_in_memory))
         [[unlikely]]
     {
-        self.add_to_compression_list();
+        self.queue_as_candidate();
     }
 }
 
@@ -416,7 +416,7 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // reloaded once after a materialisation, as in lbd_equal_core.
                 T* values = chunk.values_load();
 
-                const bool is_constant = chunk.is_const_val1(values);
+                const bool is_constant = chunk.is_first_value(values);
 
                 // Capture the old value BEFORE materialising: create_value()
                 // installs an all-zero buffer, and the non-zero -> zero transition
@@ -490,9 +490,9 @@ void zero::Proxy<T>::execute_simple_operation(Lambda operation)
     [[maybe_unused]] const bool was_first_value =
         same_value(values_[elem_offset_], static_cast<T>(Chunk<T>::first_value));
 
-    const bool is_val1 = Base::is_const_val1();
+    const bool is_first = Base::is_first_value();
 
-    if (is_val1)
+    if (is_first)
     {
         create_value();
 
@@ -510,7 +510,7 @@ void zero::Proxy<T>::execute_simple_operation(Lambda operation)
         // 0 += 0 leaves it at the first value and neither transition below
         // fires, so the count would stay one short for good. Settle the bet.
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (is_val1 && same_value(values_[elem_offset_], static_cast<T>(Chunk<T>::first_value)))
+        if (is_first && same_value(values_[elem_offset_], static_cast<T>(Chunk<T>::first_value)))
         {
             chunk_.inc_n_val_eq_zero();
             if (chunk_.is_full_zero(this->chunk_size()))
@@ -521,7 +521,7 @@ void zero::Proxy<T>::execute_simple_operation(Lambda operation)
         }
         // Already-armed transitions (arming handled above).
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (was_first_value && !is_val1 && !same_value(values_[elem_offset_], static_cast<T>(Chunk<T>::first_value)))
+        if (was_first_value && !is_first && !same_value(values_[elem_offset_], static_cast<T>(Chunk<T>::first_value)))
         {
             chunk_.dec_n_val_eq_zero();
         }
@@ -543,7 +543,7 @@ template <typename Derived, typename T, bool Enabled>
 template <typename Lambda>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
 {
-    if (const bool is_val1 = ctx->chunk.is_const_val1(); is_val1)
+    if (const bool is_first = ctx->chunk.is_first_value(); is_first)
     {
         ctx->chunk.create_value();
     }
@@ -649,7 +649,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_a
     const InT<T> v_old = Base::read_values_async(ctx);
 
     const Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
-    if (const bool is_val = chunk_loc.is_const_val1(); is_val)
+    if (const bool is_val = chunk_loc.is_first_value(); is_val)
     {
         // Through the proxy: pins the ambient geometry (see execute_inplace_operation).
         proxy.create_value();
@@ -887,7 +887,7 @@ template <typename T>
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (chunk_.is_not_const_val1() && chunk_.is_full_zero(this->chunk_size()))
+        if (chunk_.is_not_first_value() && chunk_.is_full_zero(this->chunk_size()))
         {
             if constexpr (build_config::chunk_dynamic)
             {

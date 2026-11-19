@@ -173,7 +173,7 @@ void memory_consumption(const std::string& msg)
                 static const bool keep_pools = shrink_array::env_flag("SHRINK_BENCH_KEEP_POOLS");
                 if (!keep_pools)
                 {
-                    (void)shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref().trim_reuse_pools(0);
+                    (void)shrink_array::Singleton<shrink_array::TypeStateRegistry>::get_ref().trim_reuse_pools(0);
                 }
             }
             malloc_trim(0);
@@ -240,7 +240,7 @@ void memory_consumption(const std::string& msg)
         if constexpr (chunk_config::is_shrink_enabled)
         {
             const std::size_t parked =
-                shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref().reuse_pool_bytes();
+                shrink_array::Singleton<shrink_array::TypeStateRegistry>::get_ref().reuse_pool_bytes();
             std::print(", parked {:.3f} Mo", convert_memory(static_cast<double>(parked)));
             // Preprocessor guard, not `if constexpr`: ChunkStatsThr and
             // reduce_chunk_stats() only exist in a CHUNK_STATS build, and a

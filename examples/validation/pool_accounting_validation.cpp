@@ -70,7 +70,7 @@
 #include "chunk/internal/zero_any_chunk_def.h"      // zero_any::ChunkDef
 #include "chunk/internal/env_parse.h"               // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                            // shrink_array::println
-#include "chunk/internal/singleton.h"               // SingletonChk
+#include "chunk/internal/singleton.h"               // Singleton
 #include "chunk/internal/type_state_registry.h"     // TypeStateRegistry::ready_block_size
 
 // Defined by every executable of the library (the fast allocator reads it).
@@ -160,7 +160,7 @@ int run(int argc, char** argv)
 
     // --- 0. one block size per process ------------------------------------
     const auto block_size = []
-    { return static_cast<long>(SingletonChk<TypeStateRegistry>::get_ref().ready_block_size()); };
+    { return static_cast<long>(Singleton<TypeStateRegistry>::get_ref().ready_block_size()); };
     const long blocks = block_size();
     Runtime::init(false); // refused, with a warning
     expect(block_size() == blocks, "init(false) after (true) keeps the block size", block_size(), blocks);

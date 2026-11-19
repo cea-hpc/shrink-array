@@ -46,7 +46,7 @@ e  * @file type_state_inline.h
 #include "chunk/internal/concept_chunk.h"           // IsChunk, IsZeroOrValue, IsZeroAnyFamily
 #include "chunk/internal/global_stats_chunk_list.h" // GlobalStatsChunkList
 #include "chunk/internal/type_name.h"               // type_name<T>
-#include "chunk/internal/singleton.h"               // SingletonChk
+#include "chunk/internal/singleton.h"               // Singleton
 
 namespace shrink_array
 {
@@ -56,12 +56,12 @@ void TypeState<ChunkT, T>::sweep_prepare()
 {
     if constexpr (chunk_config::use_fast_block_compression && IsZeroOrValue<ChunkT, T> && is_not_bool)
     {
-        const auto inf_arrays = zero_or_value::Proxy<T>::array_registry->get_all_inf_array();
-        sweep_inf_arrays_.assign(inf_arrays.begin(), inf_arrays.end());
+        const auto array_infos = zero_or_value::Proxy<T>::array_registry->all_array_infos();
+        sweep_array_infos_.assign(array_infos.begin(), array_infos.end());
     }
 }
 
-/// @brief Rank @p thr's share of compress_chunk_to_compress_potentially().
+/// @brief Rank @p thr's share of run_compress_pass().
 template <template <typename> typename ChunkT, typename T>
 void TypeState<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unused]] bool apply)
 {
@@ -71,9 +71,9 @@ void TypeState<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unused]]
         {
             if constexpr (is_not_bool)
             {
-                for (const auto* inf_array : sweep_inf_arrays_)
+                for (const auto* array_info : sweep_array_infos_)
                 {
-                    ChunkT<T>::compress_sweep_rank(thr, *inf_array, apply);
+                    ChunkT<T>::compress_sweep_rank(thr, *array_info, apply);
                 }
             }
             else
@@ -181,7 +181,7 @@ void TypeState<ChunkT, T>::compute_size_buffer_reuse()
 template <template <typename> typename ChunkT, typename T>
 void TypeState<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress()
 {
-    auto& global_stats = SingletonChk<GlobalStatsChunkList>::get_ref();
+    auto& global_stats = Singleton<GlobalStatsChunkList>::get_ref();
 
     // Take the tuning constants from THIS manager's own variant: they differ a great deal
     // (see ChunkDef / zero_or_value::ChunkDef / zero_any::ChunkDef). The value is divided by the thread count, so at

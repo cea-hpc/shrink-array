@@ -28,7 +28,7 @@ that have this value. The read is exactly the same as in the other variants.
 
 The library: `shrink_array::zero_any` (it defines `CHUNK_VARIANT_ZERO_ANY`). Code: `chunk/internal/zero_any_chunk.h`, `chunk/zero_any_array.h`,
 `internal/zero_any_chunk_inline.h`, `internal/zero_any_array_inline.h`, `internal/zero_any_proxy.h`,
-`internal/zero_any_proxy_inline.h`, `internal/array_const_val2_holder.h`.
+`internal/zero_any_proxy_inline.h`, `internal/second_value_registry.h`.
 
 ## 2. Per-chunk metadata
 
@@ -58,7 +58,7 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
 
 ## 3. The second-value registry
 
-`array_const_val2_holder.h`. For each element type, a registry **unique to the process**
+`second_value_registry.h`. For each element type, a registry **unique to the process**
 (`GlobalVecHolder`) holds an array filled with each distinct second value encountered.
 
 - It is organised as chained **segments of 64 slots**, rather than as a resizable
@@ -90,7 +90,7 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   limits the number of distinct values of the `unsigned long` array, `CHUNK_LOG=compress=info`
   prints the state of the registry and `CHUNK_CONST2_RECLAIM=N` reclaims every N iterations.
 
-`find_or_set_idx_const_val2(value, slot)` registers the value if needed, writes it into the
+`find_or_register_second_value(value, slot)` registers the value if needed, writes it into the
 chunk's second-value slot, and returns the shared array to install.
 
 ## 4. When a chunk becomes a compression candidate
@@ -117,12 +117,12 @@ write: ~3 µs per write on `shrink_bench_omp_zero_any_256` at 64 threads.
 ## 5. The compression pass
 
 Same sequence as for the other variants (reservation of the candidates, compression window,
-re-read), with two lists at the end of the re-read (`fill_list_to_compress`, which compares
+re-read), with two lists at the end of the re-read (`classify_candidate`, which compares
 each element with the first element of the chunk):
 
 - chunks **uniform at zero** are compressed to type 0: `values` goes back to `const_val1`;
 - chunks **uniform at another value** are compressed to type 1:
-  `find_or_set_idx_const_val2` registers the value and returns the shared array, which
+  `find_or_register_second_value` registers the value and returns the shared array, which
   `clear_int_st` installs by CAS as the chunk's `values` pointer.
 
 The freed buffer joins the thread's reuse list after the read sections' grace period. The
@@ -139,12 +139,12 @@ flowchart TD
     B -->|no| C["steal_mark every candidate"]
     C --> D{"CompressionManager::start"}
     D -->|declined| D1["steal_unmark all, give up"]
-    D -->|accepted| E["fill_list_to_compress at the entry's size:<br/>scan_constants against 0 and element 0"]
+    D -->|accepted| E["classify_candidate at the entry's size:<br/>scan_constants against 0 and element 0"]
     E -->|"all = 0"| F["list ll_compt1"]
     E -->|"all = element 0"| G["list ll_compt2"]
     E -->|"otherwise"| N["steal_unmark at once"]
     F --> F1["clear_int_st, type 0: slot reset,<br/>type const_val1, CAS values -> const_val1"]
-    G --> G1["find_or_set_idx_const_val2: value registered,<br/>written in the slot, then clear_int_st, type 1:<br/>CAS values -> the registry array"]
+    G --> G1["find_or_register_second_value: value registered,<br/>written in the slot, then clear_int_st, type 1:<br/>CAS values -> the registry array"]
     F1 --> R["free_block_to_pool after a grace period,<br/>steal_unmark"]
     G1 --> R
     R --> K["queue flags: hand_back after the scan, release at the end,<br/>written meanwhile -> queued again,<br/>trigger's chunk queued again, finish()"]
@@ -186,7 +186,7 @@ value).
 
 ```mermaid
 flowchart TD
-    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 on a const_val1 chunk,<br/>no deferred operation pending?<br/>(is_const_val1_and_v_equal_first_value)"}
+    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 on a const_val1 chunk,<br/>no deferred operation pending?<br/>(is_first_value_equal_to)"}
     B -->|yes| B1["nothing to do"]
     B -->|no| C["engine of 7.2 (write_with_optional_lock_with_set_ptr):<br/>deferred operations, wait_out_compressor,<br/>announce_write"]
     C --> D{"re-check:<br/>compressor?"}
@@ -195,7 +195,7 @@ flowchart TD
     E --> F{"chunk at its second value<br/>and value = that value?"}
     F -->|yes| F1["nothing to do"]
     F -->|no| G{"BEFORE the store: a constant written<br/>over something else, or discover / leave<br/>passing may_become_uniform?"}
-    G -->|yes| G1["add_to_compression_list"]
+    G -->|yes| G1["queue_as_candidate"]
     G -->|no| H
     G1 --> H{"perform_core_assignment:<br/>state of the chunk?"}
     H -->|"element already = value = second value"| K

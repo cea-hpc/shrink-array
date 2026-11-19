@@ -22,7 +22,7 @@
 
 #include "chunk/bit.h"                                   // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"                         // InT<T>: the element snapshots
-#include "chunk/internal/second_value_info.h"            // SecondValueInfo (InfArrayT)
+#include "chunk/internal/second_value_info.h"            // SecondValueInfo (ArrayInfo)
 #include "chunk/internal/second_value_array_base.h"      // for SecondValueArrayBase
 #include "chunk/internal/zero_or_value_array_parallel.h" // zero_or_value::FastBlockSupport; ParallelSupport through it
 #include "chunk/internal/zero_or_value_array_rechunk_hooks.h" // zero_or_value::RechunkHooks — CHUNK_DYNAMIC-only mixin
@@ -86,7 +86,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     friend SecondValueBase;       ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<Array>; ///< For swap_identity().
 
-    // RechunkHooks::rechunk_reown_after_swap copies the private idx_const_val2_.
+    // RechunkHooks::rechunk_reown_after_swap copies the private second_value_idx_.
     template <typename, bool>
     friend class shrink_array::zero_or_value::RechunkHooks;
 
@@ -107,7 +107,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     using SecondValueBase::resize; // resize(sz, val), ArrayChunkBase's
 
     /// Registry entry of an array: (second value, its index in the shared value table, array_id).
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
     using Manager = TypeState<Chunk, T>; ///< Same type as ManagerType.
 
@@ -190,15 +190,15 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief Release the array's storage, then drop both registry entries.
      *
      * @details clear() first: it still needs get_array_id(registry_key()) and a
-     *          valid inf_array pointer.
+     *          valid array_info pointer.
      *
      * @warning Neither erase is optional:
      *          - array_registry->erase(registry_key()): otherwise a later array
      *            at this address inherits our array_id and second value
      *            (PointerMap's first-match lookup); rechunk_to()'s @c tmp
      *            makes address reuse routine.
-     *          - erase_inf_array_by_ptr(&inf_array): map_inf_array_ entries
-     *            pointing at our inf_array MEMBER would be dereferenced by the
+     *          - erase_array_info_by_ptr(&array_info): array_info_map_ entries
+     *            pointing at our array_info MEMBER would be dereferenced by the
      *            next array's terminal sweep (use after free). Fast-block,
      *            non-bool only; rechunk_to() re-points its value onto the
      *            survivor first, so only entries we still own go.
@@ -245,7 +245,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     }
 
     /// @brief Full registry tuple for this array: second value, its index, array_id.
-    [[nodiscard]] InfArrayT get_info_second_value() const noexcept
+    [[nodiscard]] ArrayInfo get_info_second_value() const noexcept
     {
         return Proxy<T>::array_registry->get_info_second_value(this->registry_key());
     }
@@ -399,21 +399,21 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     void copy_second_value_from(const Array& from);
 
     /// @brief Address of the registry mirror, for ArrayChunkBase to arm write
-    ///        proxies with (zero_or_value::ProxySpec::arm_inf_array).
-    [[nodiscard]] const InfArrayT* registry_mirror() const noexcept
+    ///        proxies with (zero_or_value::ProxySpec::arm_array_info).
+    [[nodiscard]] const ArrayInfo* registry_mirror() const noexcept
     {
-        return &inf_array_;
+        return &array_info_;
     }
 
     /// @brief Re-read the mirror from the registry. Call after ANY write to
     ///        this array's registry entry -- a missed site is caught by the
-    ///        any_check comparison in zero_or_value::ProxySpec::load_inf_array().
+    ///        any_check comparison in zero_or_value::ProxySpec::load_array_info().
     void sync_registry_mirror() noexcept
     {
-        inf_array_ = this->get_info_second_value();
+        array_info_ = this->get_info_second_value();
     }
 
-    /// @brief Make the T{} key drainable: its tuple in map_inf_array_ and a
+    /// @brief Make the T{} key drainable: its tuple in array_info_map_ and a
     ///        candidate list per rank, if this type has none yet. Idempotent;
     ///        fast-block builds only (the serial path has no lists).
     void register_no_second_value_key();
@@ -422,8 +422,8 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief The identity step of swap(): the registry tuple (second value,
      *        its index, array_id), which is what zero_or_value reads its identity
      *        from, then the members that mirror it.
-     * @details array_id is not swapped (zero_or_value never reads it). map_inf_array_
-     *          points each second value at an array's inf_array MEMBER, which
+     * @details array_id is not swapped (zero_or_value never reads it). array_info_map_
+     *          points each second value at an array's array_info MEMBER, which
      *          now holds the other tuple: both values are re-pointed.
      */
     void swap_identity(Array& other);
@@ -435,22 +435,22 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     ///          create(), set_second_value(), the identity swaps. Write proxies
     ///          are armed with its address, keeping the registry scan off the
     ///          write path.
-    /// @warning map_inf_array_ holds a POINTER to this member, so the destructor
+    /// @warning array_info_map_ holds a POINTER to this member, so the destructor
     ///          must erase that entry -- see its documentation.
-    InfArrayT inf_array_;
+    ArrayInfo array_info_;
 
     /**
      * @brief The (T{}, no_second_value_index) tuple every array without a
      *        second value is drained under.
-     * @details The compression pass walks map_inf_array_; an array with no
+     * @details The compression pass walks array_info_map_; an array with no
      *          second value queues under T{}, which needs this tuple and a list
      *          per rank (register_no_second_value_key()). Never erased.
      */
-    static inline InfArrayT inf_array_none{T{}, chunk_config::no_second_value_index, 0};
+    static inline ArrayInfo array_info_none{T{}, chunk_config::no_second_value_index, 0};
 
     /// Index of the second value in the shared value table;
     /// chunk_config::no_second_value_index until set_second_value().
-    int idx_const_val2_ = chunk_config::no_second_value_index;
+    int second_value_idx_ = chunk_config::no_second_value_index;
 };
 
 } // namespace zero_or_value

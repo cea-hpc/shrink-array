@@ -35,7 +35,7 @@
 #include <utility>   // std::cmp_greater
 
 #include "chunk/config.h"                              // build_config::chunk_dynamic, threaded
-#include "chunk/internal/singleton.h"                  // SingletonChk
+#include "chunk/internal/singleton.h"                  // Singleton
 #include "chunk/internal/chunk_size_config.h"          // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"          // active_chunk_size
 #include "chunk/internal/chunk_stats.h"                // per-variant stats reduce/print
@@ -50,14 +50,14 @@ namespace shrink_array
 
 /// @brief Allocation block (slab) size in bytes, computed once by init().
 int Runtime::block_size;
-// No #ifdef _OPENMP: the bodies are TEMPLATES on AllT (see runtime.h), and
+// No #ifdef _OPENMP: the bodies are TEMPLATES on Registry (see runtime.h), and
 // only the one this build instantiates below is compiled. Use
-// SingletonChk<AllT>, never SingletonChk<TypeStateRegistry>: the calls must stay
+// Singleton<Registry>, never Singleton<TypeStateRegistry>: the calls must stay
 // dependent, or phase-1 lookup rejects the other build's body.
 
 /// @copydoc RuntimeParallelInterface<true>::init_thread_structures
-template <typename AllT>
-void RuntimeParallelInterface<true, AllT>::init_thread_structures()
+template <typename Registry>
+void RuntimeParallelInterface<true, Registry>::init_thread_structures()
 {
     if constexpr (build_config::use_fast_alloc)
     {
@@ -82,7 +82,7 @@ template struct RuntimeParallelInterface<build_config::threaded, TypeStateRegist
  */
 void Runtime::init(bool big_chunk_block)
 {
-    auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+    auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
 
     int sz = 1024 * 1024 * 2;
     if (big_chunk_block)
@@ -154,8 +154,8 @@ void Runtime::force_compression()
 {
     // Every build: a serial zero_any queues its candidates too (see
     // compress_now_and_trim_pools()).
-    const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
-    type_registry.force_chunk_to_compress();
+    const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
+    type_registry.force_compress_all();
 }
 
 #if CHUNK_OPT_STATS
@@ -484,7 +484,7 @@ void Runtime::chunk_stats()
     // separate, and can differ widely between builds whose event counters
     // match: here, the buffers parked in the reuse pools.
     {
-        const auto&       type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        const auto&       type_registry = Singleton<TypeStateRegistry>::get_ref();
         const std::size_t pool          = type_registry.reuse_pool_bytes();
         std::println("\n----- CHUNK_RETENTION -----");
         std::println("  reuse pools    = {} MB parked at exit", pool / (1024uz * 1024));
@@ -497,13 +497,13 @@ void Runtime::chunk_stats()
 void Runtime::chunk_stats() {}
 #endif
 
-// Defined for every dynamic build; no #ifdef CHUNK_DYNAMIC: a TEMPLATE on AllT,
+// Defined for every dynamic build; no #ifdef CHUNK_DYNAMIC: a TEMPLATE on Registry,
 // never instantiated by a static build. Same rule as init_thread_structures():
-// SingletonChk<AllT>, never SingletonChk<TypeStateRegistry>, or phase-1 lookup
+// Singleton<Registry>, never Singleton<TypeStateRegistry>, or phase-1 lookup
 // rejects it in a static build.
 /// @copydoc RuntimeDynInterface<true>::register_chunk_size
-template <typename AllT>
-void RuntimeDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] unsigned int size)
+template <typename Registry>
+void RuntimeDynInterface<true, Registry>::register_chunk_size([[maybe_unused]] unsigned int size)
 {
     // Must run in every dynamic build, OpenMP or not, fast-alloc or std-alloc:
     // besides the per-thread allocators (fast-alloc), it gives the per-size
@@ -511,7 +511,7 @@ void RuntimeDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] unsig
     // Without it, buffers of DIFFERENT geometries share the legacy list and a
     // smaller buffer is popped for a larger chunk (overflow in init_block), or
     // drain_reuse_list_for_size finds no slot at the first re-chunk.
-    auto& type_registry = SingletonChk<AllT>::get_ref();
+    auto& type_registry = Singleton<Registry>::get_ref();
     type_registry.register_chunk_size(size, Runtime::block_size);
 }
 

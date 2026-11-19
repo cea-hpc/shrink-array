@@ -47,7 +47,7 @@
 namespace fast_alloc
 {
 template <typename T>
-class Singleton; // fast_allocators/internal/singleton.h; chunk names it SingletonChk
+class Singleton; // fast_allocators/internal/singleton.h; chunk names it Singleton
 } // namespace fast_alloc
 
 namespace shrink_array
@@ -220,7 +220,7 @@ struct TypeStateRegistryDynInterface<Derived, false>
  * forwards to the matching TypeStateInterface virtual, so the semantics of each
  * one are those of the manager method it calls, applied to all types at once.
  *
- * Access is through <tt>SingletonChk\<TypeStateRegistry\>\::get_ref()</tt>. The registry starts
+ * Access is through <tt>Singleton\<TypeStateRegistry\>\::get_ref()</tt>. The registry starts
  * empty and fills itself: the first array of each (chunk template, element
  * type) registers its manager from its create() (ensure_manager). The first
  * array of the process also runs Runtime::init(true) if the program
@@ -238,7 +238,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
                           public TypeStateRegistryDynInterface<TypeStateRegistry>
 {
   public:
-    friend class ::fast_alloc::Singleton<TypeStateRegistry>; // SingletonChk<TypeStateRegistry>
+    friend class ::fast_alloc::Singleton<TypeStateRegistry>; // Singleton<TypeStateRegistry>
     /// The dynamic-geometry policy records the sizes it declares (registered_sizes_).
     template <typename D, bool E>
     friend struct TypeStateRegistryDynInterface;
@@ -252,7 +252,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
      *        each type (ensure_manager), or up front through initialize<Types>().
      *
      * Private-by-convention: instances are created only by
-     * `SingletonChk<TypeStateRegistry>`, which is a friend.
+     * `Singleton<TypeStateRegistry>`, which is a friend.
      *
      * @note Out of line (type_state_registry.cpp): it checks, once per process,
      *       that the OMPT tool of an OMPT build is loaded
@@ -307,7 +307,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
     static void ensure_ready();
 
     /// Compresses every compressible chunk of every type, ignoring the candidate lists.
-    void force_chunk_to_compress() const;
+    void force_compress_all() const;
 
     /**
      * @brief Drains the compression-candidate backlog of every type.
@@ -319,10 +319,10 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
      *        purge its chunks from the lists. false does NOT drain: a
      *        caller counting "misses" after it sees only what it un-queued.
      */
-    void compress_chunk_to_compress_potentially(bool apply) const;
+    void run_compress_pass(bool apply) const;
 
     /// @return True as soon as one type has at least one pending compression candidate.
-    [[nodiscard]] bool have_chunk_to_compress_potentially() const;
+    [[nodiscard]] bool has_candidates() const;
     /// Frees the allocation blocks of every type (no-op in std-alloc builds).
     void destroy_block_chunk() const;
 
@@ -446,7 +446,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
     }
 
     /// Resizes every manager's compression-candidate list to the current thread count.
-    void resize_chunk_to_compress_potentially() const;
+    void resize_candidate_lists() const;
 
     /// The managers, owned; touched only under registry_mutex_.
     std::vector<std::unique_ptr<TypeStateInterface>> owned_;

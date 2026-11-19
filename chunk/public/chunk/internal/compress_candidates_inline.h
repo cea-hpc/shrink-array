@@ -131,13 +131,13 @@ void CompressCandidates<ChunkT, T>::resize_lists()
  * @param n_thr   Number of per-rank lists to examine.
  * @return True as soon as one list holds a candidate.
  *
- * @warning This predicate and compress_chunk_to_compress_potentially() must agree
+ * @warning This predicate and run_compress_pass() must agree
  *          branch for branch — see the @warning in the file header.
  */
 template <template <typename> typename ChunkT, typename T>
 bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
 {
-    // Mirror compress_chunk_to_compress_potentially's dispatch exactly (zero_or_value is handled
+    // Mirror run_compress_pass's dispatch exactly (zero_or_value is handled
     // whenever use_fast_block_compression is on, GNU included, not only under OMPT): see the
     // file header's @warning.
     if constexpr (chunk_config::use_fast_block_compression)
@@ -146,19 +146,19 @@ bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf           = *zero_or_value::Proxy<T>::array_registry;
-                const auto& v_all_second_val = sh_inf.get_all_second_value();
+                const auto& registry           = *zero_or_value::Proxy<T>::array_registry;
+                const auto& v_all_second_val = registry.get_all_second_value();
                 return std::ranges::any_of(v_all_second_val, [n_thr](const auto& second_value)
-                                           { return ChunkT<T>::have_chunk_to_compress(second_value, n_thr); });
+                                           { return ChunkT<T>::has_queued(second_value, n_thr); });
             }
             else
             {
-                return ChunkT<T>::have_chunk_to_compress_bool(n_thr);
+                return ChunkT<T>::has_queued_bool(n_thr);
             }
         }
         else
         {
-            return ChunkT<T>::have_chunk_to_compress(n_thr);
+            return ChunkT<T>::has_queued(n_thr);
         }
     }
 
@@ -168,7 +168,7 @@ bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
 /**
  * @brief Drain this type's compression-candidate backlog.
  *
- * The action whose predicate is have_chunk_to_compress_potentially(). zero_or_value is
+ * The action whose predicate is has_candidates(). zero_or_value is
  * driven once per registered second value; the other variants have a single
  * entry point.
  *
@@ -184,21 +184,21 @@ void CompressCandidates<ChunkT, T>::compress_pass([[maybe_unused]] bool apply)
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf          = *zero_or_value::Proxy<T>::array_registry;
-                const auto& v_all_inf_array = sh_inf.get_all_inf_array();
-                for (const auto& inf_array : v_all_inf_array)
+                const auto& registry          = *zero_or_value::Proxy<T>::array_registry;
+                const auto& all_infos = registry.all_array_infos();
+                for (const auto& array_info : all_infos)
                 {
-                    ChunkT<T>::compress_chunk_to_compress(*inf_array, apply);
+                    ChunkT<T>::compress_queued(*array_info, apply);
                 }
             }
             else
             {
-                ChunkT<T>::compress_chunk_to_compress_bool(apply);
+                ChunkT<T>::compress_queued_bool(apply);
             }
         }
         else
         {
-            ChunkT<T>::compress_chunk_to_compress(apply);
+            ChunkT<T>::compress_queued(apply);
         }
     }
 }

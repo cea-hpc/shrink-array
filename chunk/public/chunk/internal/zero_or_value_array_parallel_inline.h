@@ -51,7 +51,7 @@ void zero_or_value::FastBlockSupport<Derived, true>::drain_candidates(this Deriv
         shrink_array::set_thread_chunk_size(self.chunk_size());
     }
 
-    // bool has its own pass (the (thr, inf_array, proxy) overload static_asserts for it).
+    // bool has its own pass (the (thr, array_info, proxy) overload static_asserts for it).
     // [&] captures self where the non-bool branch uses it: an explicit capture is unused in
     // the bool instantiation (-Wunused-lambda-capture).
     const auto pass_on_rank = [&](int thr)
@@ -154,7 +154,7 @@ void zero_or_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates([
                     if (std::get<2>(tup) == array_id)
                     {
                         std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
-                        ProxyT::reset_array_inside_list_to_compress(array_id, std::get<1>(tup));
+                        ProxyT::clear_candidate_flag(array_id, std::get<1>(tup));
                         found = true;
                     }
                 }

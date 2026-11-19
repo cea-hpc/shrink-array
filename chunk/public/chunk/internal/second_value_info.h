@@ -19,7 +19,7 @@
 namespace shrink_array
 {
 /**
- * @brief zero_or_value's per-array second-value record (its `InfArrayT`): the
+ * @brief zero_or_value's per-array second-value record (its `ArrayInfo`): the
  *        second constant, its slot in the const2 registry, the array's table
  *        number.
  * @details A named aggregate rather than a tuple so the two ints cannot be

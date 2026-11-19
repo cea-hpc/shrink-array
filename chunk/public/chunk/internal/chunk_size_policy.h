@@ -366,7 +366,7 @@ class DynamicChunkSize
 // -----------------------------------------------------------------------------
 using ActiveSizePolicy = std::conditional_t<build_config::chunk_dynamic, DynamicChunkSize, StaticChunkSize>;
 
-// Extent of the shared constant buffers (m_ptr_const_val1 / const_val2): a constant
+// Extent of the shared constant buffers (first_value_buffer_ / const_val2): a constant
 // chunk is read as buffer[elem_offset], so it MUST be >= every runtime chunk size. Not
 // the type ceiling (65535): one buffer per DISTINCT const2 value accumulates
 // (const_buffer_size * sizeof(T) each). Override with

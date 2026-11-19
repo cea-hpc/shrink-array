@@ -75,7 +75,7 @@
 #include "chunk/internal/term_color.h"              // tc (the bench TUs)
 #include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                           // begin_parallel_phase, finalize_barrier_phase (bench_phases.h)
-#include "chunk/internal/singleton.h"               // SingletonChk (the bench TUs)
+#include "chunk/internal/singleton.h"               // Singleton (the bench TUs)
 #include "chunk/internal/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
 
 #include "bench_par.h" // bench_par::region, BENCH_FOR_* (the phases' regions and loops)

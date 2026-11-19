@@ -66,7 +66,7 @@ name in the model stands for one place in the source, with the same memory order
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h`: `start()`, `finish()`; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h`: `steal_mark_` and its three verbs |
 | `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h`: `values`, `values_load()`, `compare_and_swap_gen()`; `zero_any_chunk.h`: `try_mark_const_and_get_old()` |
-| `materialise()`, the scan, the element store | `zero_any_chunk_inline.h`: `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()`; `relaxed_element.h` |
+| `materialise()`, the scan, the element store | `zero_any_chunk_inline.h`: `create_value()`, `wait_before_materialise()`, `classify_candidate()`; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h`: `write_with_optional_lock_impl()` |
 
 Three properties are asserted: **P1**, a writer never stores into a buffer the pass has returned
@@ -189,7 +189,7 @@ that against a compression pass that holds the same chunk in its candidate list.
 reduced to two words, `values` (the first constant, two second-value slots, or a buffer) and
 `meta` (the type table and the slot, a plain variable: the checker reports a race on it), and a
 steal mark. The pass is `make_block_compression` as the source runs it: the three loads of
-`fill_list_to_compress` (`is_not_const_val1`, `is_const_val2`, the scan), then `block_clear_common`:
+`classify_candidate` (`is_not_first_value`, `is_second_value`, the scan), then `block_clear_common`:
 the metadata is written **before** `try_mark_const_and_get_old`'s CAS, and a failed CAS -- the chunk
 is already at a constant -- re-synchronises `values` from the metadata (the "critical re-sync").
 Three properties are asserted after the joins: **P1**, the switch the writer made is what the
@@ -234,7 +234,7 @@ read sections and the buffer's free are checked as in section 6.
 | `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()`; `internal/proxy_base_inline.h` `read_values_at()`; `pattern_chunk.h` `Chunk::motif_offset()` |
 | `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, the motif branch |
 | `pass()`, a motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
-| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_set_idx_const_val2_release()` |
+| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_register_second_value_release()` |
 
 | case | expected | verdict | executions |
 |---|---|---|---|
@@ -287,8 +287,8 @@ chunk -- this writer's. The writer spins on the mark, the compressor on the flag
 the compressor's wait is bounded (`CHUNK_COMPRESS_MAX_YIELDS`, 10,000 yields of 1,000 pauses):
 not a deadlock, but a stall of both threads for that whole budget, after which the pass is
 abandoned (the gate counter of aborts on an overly long wait, in the `CHUNK_STATS` report, counts these). It needs a
-chunk that is at a constant while sitting in a candidate list -- the case `fill_list_to_compress()`
-guards against with `is_not_const_val1()` -- so it is rare, not impossible.
+chunk that is at a constant while sitting in a candidate list -- the case `classify_candidate()`
+guards against with `is_not_first_value()` -- so it is rare, not impossible.
 
 The fix follows from the handshake itself: a fast-path writer holds its flag and has passed
 check no. 2, so a mark it sees now belongs to a compressor that is **parked** on that flag;
@@ -430,7 +430,7 @@ The fix (`chunk/internal/queue_flag.h`): as soon as the pass has scanned a candi
 its mark still keeps the writers out, the candidate's flag goes from 1 to 2, "handed back"
 (`queue_flag::hand_back`, in the scan itself, before the scan releases the mark of a chunk it
 drops, in the three variants); a writer whose marking finds 2 turns it into 3, "written meanwhile",
-rather than giving up (`queue_flag::try_queue`, every writer's site: `add_to_compression_list()`,
+rather than giving up (`queue_flag::try_queue`, every writer's site: `queue_as_candidate()`,
 its async form, the range writes through it); the pass then resets 2 -> 0 by CAS and, on a 3,
 queues the chunk again in its own rank's list (`queue_flag::release`). In the passes of `zero`,
 `zero_or_value` and `zero_any` (with `pattern`'s motif commit), threaded builds; the serial

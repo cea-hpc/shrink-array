@@ -314,7 +314,7 @@ only to a declared value), **(to be decided)** whether it deserves separate code
 ### 8.3 `zero_any`
 
 The descriptor carries the constant: it is the natural shape of `zero_any`, and the variant to
-prototype first. What disappears: the second-value registry (`array_const_val2_holder.h`), its
+prototype first. What disappears: the second-value registry (`second_value_registry.h`), its
 segments, its hash index, `reclaim_second_values()`, the `array_type_const_val` and
 `array_second_value` lines, `CHUNK_SECOND_VALUE_INDEXED`. The cost per chunk becomes uniform
 again: the descriptor.

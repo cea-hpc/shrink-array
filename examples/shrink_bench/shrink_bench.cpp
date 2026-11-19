@@ -597,7 +597,7 @@ try
     maybe_set_debug_name(array_mask, "array_mask");
     maybe_set_debug_name(array_conn, "array_conn");
 
-    SingletonChk<GlobalStatsChunkList>::get_ref().print();
+    Singleton<GlobalStatsChunkList>::get_ref().print();
 
     auto                          end             = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
@@ -880,15 +880,15 @@ try
     // no chunk uses any more, for every element type of the bench
     // (reclaim_second_values() covers all the arrays of a type, whatever their
     // index type). Static builds too, unlike the advisor. 0 or unset: never.
-    const Int const2_reclaim_period = shrink_array::env_number<Int>(
+    const Int second_value_reclaim_period = shrink_array::env_number<Int>(
         shrink_array::env_name_or_former("CHUNK_CONST2_RECLAIM", "CHUNK_CST2_RECLAIM"), 0);
-    // [&], not [const2_reclaim_period]: clang warns that the explicit capture is
+    // [&], not [second_value_reclaim_period]: clang warns that the explicit capture is
     // not needed (-Wunused-lambda-capture) where the branch below is discarded.
-    const auto const2_reclaim_tick = [&](Int k_iter)
+    const auto second_value_reclaim_tick = [&](Int k_iter)
     {
         if constexpr (chunk_config::use_zero_any)
         {
-            if (const2_reclaim_period <= 0 || (k_iter % const2_reclaim_period) != 0)
+            if (second_value_reclaim_period <= 0 || (k_iter % second_value_reclaim_period) != 0)
             {
                 return;
             }
@@ -950,7 +950,7 @@ try
         if (k > 0)
         {
             advisor_tick(k);
-            const2_reclaim_tick(k);
+            second_value_reclaim_tick(k);
         }
         if (k % 100 == 0)
         {
@@ -1199,8 +1199,8 @@ try
             if constexpr (chunk_config::use_fast_block_compression && chunk_config::has_ompt &&
                           build_config::use_openmp)
             {
-                const bool have_to_compress = k % freq_compress == 0;
-                if (have_to_compress)
+                const bool compress_now = k % freq_compress == 0;
+                if (compress_now)
                 {
                     bench_par::region(
                         [&]([[maybe_unused]] bench_par::Team& team)

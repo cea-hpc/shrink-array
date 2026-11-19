@@ -384,8 +384,8 @@ void read_check_binary_file(Int                idx,
             const Int elem_offset = index % static_cast<Int>(data_check.chunk_size());
 
             bool                  is_values     = false;
-            bool                  is_const_val1 = false;
-            [[maybe_unused]] bool is_const_val2 = false; // read only by the zero_or_value / zero_any traces
+            bool                  is_first_value = false;
+            [[maybe_unused]] bool is_second_value = false; // read only by the zero_or_value / zero_any traces
             while (std::getline(trace_file, line))
             {
                 if (line.contains("is_values"))
@@ -393,9 +393,9 @@ void read_check_binary_file(Int                idx,
                     is_values = true;
                     break;
                 }
-                if (line.contains("is_const_val1"))
+                if (line.contains("is_first_value"))
                 {
-                    is_const_val1 = true;
+                    is_first_value = true;
                     break;
                 }
                 // Pure text search on the trace line -- no variant API at all -- and the
@@ -403,9 +403,9 @@ void read_check_binary_file(Int                idx,
                 // `if constexpr` written with the preprocessor.
                 if constexpr (chunk_config::use_second_value)
                 {
-                    if (line.contains("is_const_val2"))
+                    if (line.contains("is_second_value"))
                     {
-                        is_const_val2 = true;
+                        is_second_value = true;
                         break;
                     }
                 }
@@ -413,12 +413,12 @@ void read_check_binary_file(Int                idx,
 
             const auto& chunk_t = data_check.get_chunk_list()[chunk_index];
 
-            const bool is_val1 = chunk_t.is_const_val1();
+            const bool is_first = chunk_t.is_first_value();
 
             // false everywhere but zero_or_value, exactly as the #else branch gave --
             // and for a zero_any-family array in a zero_or_value build (array_conn's
             // pattern::Array): as in a zero_any build.
-            bool is_val2 = false;
+            bool is_second = false;
             if constexpr (chunk_config::use_zero_or_value &&
                           !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
             {
@@ -427,11 +427,11 @@ void read_check_binary_file(Int                idx,
 
                 if constexpr (is_not_bool)
                 {
-                    is_val2 = chunk_t.is_const_val2(data_check.get_idx_second_value());
+                    is_second = chunk_t.is_second_value(data_check.get_idx_second_value());
                 }
                 else
                 {
-                    is_val2 = chunk_t.is_const_val2();
+                    is_second = chunk_t.is_second_value();
                 }
             }
 
@@ -441,10 +441,10 @@ void read_check_binary_file(Int                idx,
                 std::println(stderr, "chunk number        : {}", chunk_index);
                 std::println(stderr, "number inside chunk : {}", elem_offset);
                 std::println(stderr, "is values           : {:d}", is_values);
-                std::println(stderr, "is_const_val1         : {:d}", is_val1);
+                std::println(stderr, "is_first_value         : {:d}", is_first);
                 if constexpr (chunk_config::use_second_value)
                 {
-                    std::println(stderr, "is_const_val2         : {:d}", is_val2);
+                    std::println(stderr, "is_second_value         : {:d}", is_second);
                 }
 
                 if constexpr (chunk_config::ring_log_debug)
@@ -454,9 +454,9 @@ void read_check_binary_file(Int                idx,
             };
 
             // Detect value category
-            if (is_const_val1)
+            if (is_first_value)
             {
-                if (is_val1)
+                if (is_first)
                 {
                     std::println(stderr, "\nwas const_val1 it is");
                     lbd_print();
@@ -470,9 +470,9 @@ void read_check_binary_file(Int                idx,
 
             if constexpr (chunk_config::use_second_value)
             {
-                if (is_const_val2)
+                if (is_second_value)
                 {
-                    if (is_val2)
+                    if (is_second)
                     {
                         std::println(stderr, "\nwas const_val2 it is");
                         lbd_print();
@@ -486,7 +486,7 @@ void read_check_binary_file(Int                idx,
             }
             if (is_values)
             {
-                if (!is_val1 && !is_val2)
+                if (!is_first && !is_second)
                 {
                     std::println(stderr, "\nwas values it is");
                     lbd_print();
@@ -669,13 +669,13 @@ void read_check_binary_file(Int                idx,
 
                     if constexpr (chunk_config::use_zero_or_value)
                     {
-                        if (chunk_t.is_const_val1())
+                        if (chunk_t.is_first_value())
                         {
-                            log_message("is_const_val1\n");
+                            log_message("is_first_value\n");
                         }
-                        else if (chunk_t.is_const_val2())
+                        else if (chunk_t.is_second_value())
                         {
-                            log_message("is_const_val2\n");
+                            log_message("is_second_value\n");
                         }
                         else
                         {
@@ -845,15 +845,15 @@ void read_check_binary_file(Int                idx,
                     const Int chunk_index = k / static_cast<Int>(data_check.chunk_size());
 
                     if (const auto& chunk_t = data_check.chunk_list_[chunk_index];
-                        chunk_t.is_const_val1() && value != zero)
+                        chunk_t.is_first_value() && value != zero)
                     {
-                        log_message("\nis_const_val1 should be not !\n");
+                        log_message("\nis_first_value should be not !\n");
                         {
                             const T* vals = chunk_t.values_;
                             log_values_compacted(log_message, vals, data_check.chunk_size());
                         }
                     }
-                    // IIFE: the two spellings of is_const_val2 cannot each be an
+                    // IIFE: the two spellings of is_second_value cannot each be an
                     // `else if` condition. We are inside a function template, so the
                     // discarded branch is not instantiated.
                     else if (
@@ -864,15 +864,15 @@ void read_check_binary_file(Int                idx,
                             if constexpr (chunk_config::use_zero_or_value && !shrink_array::is_bool_like_v<T> &&
                                           !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
                             {
-                                return chunk_t.is_const_val2(data_check.get_idx_second_value());
+                                return chunk_t.is_second_value(data_check.get_idx_second_value());
                             }
                             else
                             {
-                                return chunk_t.is_const_val2();
+                                return chunk_t.is_second_value();
                             }
                         }())
                     {
-                        log_message("\n[Debug] is_const_val2 should be not !\n");
+                        log_message("\n[Debug] is_second_value should be not !\n");
 
                         bool test_zero = true;
 
@@ -900,7 +900,7 @@ void read_check_binary_file(Int                idx,
                         if constexpr (chunk_config::use_zero_any)
                         {
                             const T* m_ptr_const_values = chunk_t.values_load(); // a const2 chunk reads from its array
-                            log_message("\nm_ptr_const_val2 contain : ");
+                            log_message("\nsecond_value_buffer_ contain : ");
                             log_values_compacted(log_message, m_ptr_const_values, data_check.chunk_size());
                         }
                     }
