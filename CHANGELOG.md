@@ -78,6 +78,12 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `zero_any`: every `a[i] += x` ran `ensure_writable_storage()`, which re-armed the per-chunk
+  pointers the write engine's `set_info_on_chunk()` had just armed and tested both constants,
+  on a chunk already materialised as well: about 44 instructions per operation. It runs only on
+  a constant chunk now (a materialised one stays so for the write session); `pattern::Array`,
+  whose motif chunks are neither constant, keeps the full path. Instructions per `+=` (1
+  thread, steady state): 308 -> 259.
 - `zero_or_value` and `zero_any` (and `pattern::Array`): `a[i] += x` cost more than a read plus a
   write (16.4 ns on Grace), and `zero_any`'s `a[i] = v` paid the same stall. Every write runs
   `set_info_on_chunk()`, which was called out of line: it stored into the proxy, on the caller's
