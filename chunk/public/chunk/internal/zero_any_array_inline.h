@@ -187,36 +187,46 @@ void zero_any::ArrayImpl<Derived>::clear()
     if constexpr (build_config::any_check)
     {
         // The scan only feeds the advisor's info line: skipped when it is not shown.
+        // Inside try: clear() runs from the destructor (destroy_storage()), which
+        // is noexcept, and the summary's allocation or the report's formatting can
+        // throw (std::bad_alloc). A log line: given up, never std::terminate()
+        // (Coverity 661905, 661906).
         if (chunk_count_ > 0 && logging::enabled(logging::Channel::advisor, logging::Level::info))
         {
-            const auto                      csz = static_cast<unsigned int>(this->size_policy_.size());
-            std::vector<std::pair<bool, T>> summary(static_cast<std::size_t>(chunk_count_));
-            pmp::parallel_for(0, chunk_count_,
-                              pmp::Options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && chunk_count_ > 500},
-                              [&](int j)
-                              {
-                                  const auto& ck = chunk_list_[j];
-                                  if (!ck.written())
+            try
+            {
+                const auto                      csz = static_cast<unsigned int>(this->size_policy_.size());
+                std::vector<std::pair<bool, T>> summary(static_cast<std::size_t>(chunk_count_));
+                pmp::parallel_for(0, chunk_count_,
+                                  pmp::Options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && chunk_count_ > 500},
+                                  [&](int j)
                                   {
-                                      if constexpr (has_motif_state_v<ChunkType>)
+                                      const auto& ck = chunk_list_[j];
+                                      if (!ck.written())
                                       {
-                                          // A motif chunk is no constant (stage 1: no advice on motifs).
-                                          if (ChunkType::is_motif_ptr(ck.values_load()))
+                                          if constexpr (has_motif_state_v<ChunkType>)
                                           {
-                                              summary[static_cast<std::size_t>(j)] = {false, T{}};
-                                              return;
+                                              // A motif chunk is no constant (stage 1: no advice on motifs).
+                                              if (ChunkType::is_motif_ptr(ck.values_load()))
+                                              {
+                                                  summary[static_cast<std::size_t>(j)] = {false, T{}};
+                                                  return;
+                                              }
                                           }
+                                          summary[static_cast<std::size_t>(j)] = {true, ck.read_value_scan(0)};
+                                          return;
                                       }
-                                      summary[static_cast<std::size_t>(j)] = {true, ck.read_value_scan(0)};
-                                      return;
-                                  }
-                                  const auto v0                        = ck.constant_value(csz);
-                                  summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
-                              });
-            const auto& sh_inf      = *ProxyType::array_registry;
-            const int   array_index = sh_inf.get_array_id(this->registry_key());
-            report_size_prediction<T>(summary, csz, array_index, "zero_any",
-                                      sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
+                                      const auto v0                        = ck.constant_value(csz);
+                                      summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
+                                  });
+                const auto& sh_inf      = *ProxyType::array_registry;
+                const int   array_index = sh_inf.get_array_id(this->registry_key());
+                report_size_prediction<T>(summary, csz, array_index, "zero_any",
+                                          sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
+            }
+            catch (...) // the prediction is a log line only: skipped
+            {
+            }
         }
     }
 

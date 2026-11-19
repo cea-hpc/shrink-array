@@ -64,6 +64,10 @@ the tag's checksum to the recipe.
   inline. `access_cost`, x86, 1 thread: `rmw` 13.2 -> 6.0 ns (`zero_or_value`), 17.1 -> 9.8 ns
   (`zero_any`), `zero_any`'s `write-varied` 14.5 -> 8.9 ns; 14 threads, `zero_or_value`'s `rmw`
   1.60 -> 0.85 ns. Not measured on Grace yet.
+- Check builds, `zero_any` and `pattern::Array`: the destructor (noexcept) runs `clear()`, whose
+  chunk-size prediction allocates a summary and formats a log line; a `std::bad_alloc` there
+  would have called `std::terminate()`. The prediction, a log line only, is skipped on an
+  exception (Coverity 661905, 661906).
 
 ## 0.3.0 -- 2026-11-18
 
