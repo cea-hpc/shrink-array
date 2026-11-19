@@ -835,18 +835,28 @@ template <typename T, typename Derived, typename ChunkT>
 template <typename ModifyFn>
 void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_simple_operation(ModifyFn modify_fn)
 {
-    ensure_writable_storage();
-
     // Under fast block compression the body (arithmetic_assign's, the only
     // caller) marks from its own (old, new) pair, read in the same session:
     // marking here as well read the element twice more and ran the same test
     // a second time.
     if constexpr (chunk_config::use_fast_block_compression)
     {
+        // A materialised chunk has nothing to materialise: skip
+        // ensure_writable_storage(), which re-armed the per-chunk pointers the
+        // engine's set_info_on_chunk() (lbd_info) has just armed and tested both
+        // constants -- about 44 instructions on every a[i] += x. Inside the
+        // write session a materialised chunk stays so (no compressor can take
+        // it back to a constant). pattern::Array keeps the full path: its motif
+        // chunks are neither constant.
+        if (has_motif_state_v<ChunkT> || !chunk_.written())
+        {
+            ensure_writable_storage();
+        }
         modify_fn();
     }
     else
     {
+        ensure_writable_storage();
         const InT<T> v_old = read_values();
 
         modify_fn();
@@ -1091,7 +1101,8 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
             }
             {
                 // No-op arm (result == second value on second_value): re-test before exiting.
-                if (proxy.is_second_value() && same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())))
+                if (proxy.is_second_value() &&
+                    same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())))
                 {
                     break;
                 }

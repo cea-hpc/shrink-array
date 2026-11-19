@@ -34,7 +34,7 @@
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/zero_or_value_array.h"                  // zero_or_value::Array, the class these bodies belong to
 #include "chunk/internal/type_name.h"                   // type_name<T>
-#include "chunk/internal/singleton.h"                   // SingletonChk<TypeStateRegistry>::get_ref
+#include "chunk/internal/singleton.h"                   // Singleton<TypeStateRegistry>::get_ref
 #include "chunk/internal/zero_or_value_proxy.h"         // zero_or_value::Proxy<T>
 #include "chunk/internal/chunk_stats.h"                 // inc_chunk_teardown_clear, add_chunk_released
 #include "chunk/internal/type_state_registry.h"         // TypeStateRegistry::ensure_manager
@@ -309,7 +309,7 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
                     const auto& vec_ref    = Manager::zero_or_value_candidates_thr[thr][idx];
-                    const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk, T>>(vec_ref);
+                    const auto  shared_vec = std::make_shared<CandidateList<Chunk, T>>(vec_ref);
                     Manager::zero_or_value_candidates_map_thr[thr][sec_value] = shared_vec;
                 }
             }
@@ -401,7 +401,7 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
             {
                 Manager::zero_or_value_candidates_thr[thr].resize(1);
                 const auto& vec_ref    = Manager::zero_or_value_candidates_thr[thr][0];
-                const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk, T>>(vec_ref);
+                const auto  shared_vec = std::make_shared<CandidateList<Chunk, T>>(vec_ref);
                 Manager::zero_or_value_candidates_map_thr[thr][sec_value] = shared_vec;
             }
         }
@@ -634,7 +634,7 @@ void zero_or_value::Array<T, IntType>::clear_core()
     {
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+            const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
 
             // Not for a work array torn down in a region: that pass walks every
             // rank's list, of every type.
@@ -827,7 +827,7 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
         if (!chunk_config::aggressive_compression() && !CHUNK_PMP_IN_PARALLEL_REGION)
         // run-time switch: chunk/config.h
         {
-            if (const auto& type_registry = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
+            if (const auto& type_registry = shrink_array::Singleton<shrink_array::TypeStateRegistry>::get_ref();
                 type_registry.have_chunk_to_compress_potentially())
             {
                 type_registry.compress_chunk_to_compress_potentially(true);

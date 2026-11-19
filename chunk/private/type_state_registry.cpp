@@ -26,7 +26,7 @@
 #include <malloc.h> // malloc_trim, mallopt
 
 #include "chunk/config.h"                       // build_config::threaded / use_openmp, chunk_config
-#include "chunk/internal/singleton.h"           // SingletonChk
+#include "chunk/internal/singleton.h"           // Singleton
 #include "chunk/internal/type_state.h"          // TypeStateInterface, TypeStateParallelImpl
 #include "chunk/internal/type_state_registry.h" // the declarations defined here
 #include "chunk/internal/churn_counters.h"      // churn::note_phase_end
@@ -63,7 +63,7 @@ void TypeStateRegistry::ensure_ready()
     std::call_once(once,
                    []
                    {
-                       auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+                       auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
                        bool  ready         = false;
                        {
                            const std::scoped_lock lock(type_registry.registry_mutex_);
@@ -175,7 +175,7 @@ void finalize_parallel_phase_only_flush()
         //    which is stable inside the current parallel region
         pmp::current_team().barrier();
 
-        auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
         type_registry.flush_all_deferred(true);
     }
 }
@@ -190,7 +190,7 @@ void finalize_parallel_phase_after_flush()
     // use_openmp: a shape of the phase contract only OpenMP has (phases.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
-        const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
         type_registry.destroy_after_flush(false);
 
         reset_all();
@@ -230,7 +230,7 @@ void finalize_parallel_phase()
     }
     if constexpr (build_config::threaded && chunk_config::is_shrink_enabled)
     {
-        auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
         type_registry.flush_all_deferred(false);
 
         reset_all();
@@ -266,7 +266,7 @@ void finalize_parallel_phase()
         // (the gate always says "nothing").
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            SingletonChk<TypeStateRegistry>::get_ref().force_chunk_to_compress();
+            Singleton<TypeStateRegistry>::get_ref().force_chunk_to_compress();
         }
     }
 }
@@ -277,7 +277,7 @@ bool finalize_barrier_phase()
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         // NOT const: flush_all_deferred() mutates the managers it drains.
-        auto&      type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        auto&      type_registry = Singleton<TypeStateRegistry>::get_ref();
         const bool flushed       = type_registry.flush_all_deferred(true);
 
         return flushed;
@@ -525,7 +525,7 @@ void TypeStateRegistry::print_reuse_pool_breakdown(const char* label) const
 
 void print_all_reuse_pool_breakdown(const char* label)
 {
-    SingletonChk<TypeStateRegistry>::get_ref().print_reuse_pool_breakdown(label);
+    Singleton<TypeStateRegistry>::get_ref().print_reuse_pool_breakdown(label);
 }
 
 template <typename Derived>

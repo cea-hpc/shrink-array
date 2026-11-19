@@ -30,7 +30,7 @@
 #include "chunk/internal/zero_or_value_pointer_map.h"   // zero_or_value::PointerMap
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
-#include "chunk/internal/chunk_tuples.h"                // VectorTuple4ChunkInt2
+#include "chunk/internal/chunk_tuples.h"                // CandidateList
 
 #include "chunk/internal/zero_or_value_candidate_list_check.h" // zero_or_value_missing_candidate_list
 #include "chunk/internal/proxy_base.h"                         // ProxyBase
@@ -490,7 +490,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      *          This allows grouping chunks with the same second_value for batch compression.
      */
 
-    VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept;
+    CandidateList<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept;
 
     /**
      * @brief Async-context counterpart of get_vec_tuple_to_compress_potentially_thr().
@@ -498,7 +498,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      * @param thr Thread rank [0, MAX_THREADS).
      * @return Reference to vector of (chunk*, chunk_idx, array_idx) tuples.
      */
-    VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const;
+    CandidateList<Chunk, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const;
 
     /**
      * @brief Mark for compression with explicit old value

@@ -46,7 +46,7 @@ e  * @file type_state_inline.h
 #include "chunk/internal/concept_chunk.h"           // IsChunk, IsZeroOrValue, IsZeroAnyFamily
 #include "chunk/internal/global_stats_chunk_list.h" // GlobalStatsChunkList
 #include "chunk/internal/type_name.h"               // type_name<T>
-#include "chunk/internal/singleton.h"               // SingletonChk
+#include "chunk/internal/singleton.h"               // Singleton
 
 namespace shrink_array
 {
@@ -181,7 +181,7 @@ void TypeState<ChunkT, T>::compute_size_buffer_reuse()
 template <template <typename> typename ChunkT, typename T>
 void TypeState<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress()
 {
-    auto& global_stats = SingletonChk<GlobalStatsChunkList>::get_ref();
+    auto& global_stats = Singleton<GlobalStatsChunkList>::get_ref();
 
     // Take the tuning constants from THIS manager's own variant: they differ a great deal
     // (see ChunkDef / zero_or_value::ChunkDef / zero_any::ChunkDef). The value is divided by the thread count, so at

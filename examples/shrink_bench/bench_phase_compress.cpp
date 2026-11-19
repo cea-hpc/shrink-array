@@ -79,10 +79,10 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         {
             if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
             {
-                const auto& ens = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
-                if (ens.have_chunk_to_compress_potentially())
+                const auto& type_registry = shrink_array::Singleton<shrink_array::TypeStateRegistry>::get_ref();
+                if (type_registry.have_chunk_to_compress_potentially())
                 {
-                    ens.compress_chunk_to_compress_potentially(true);
+                    type_registry.compress_chunk_to_compress_potentially(true);
                 }
             }
         }

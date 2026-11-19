@@ -1346,7 +1346,7 @@ zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compare_and_swap_bool(T
 }
 
 template <typename T, typename Derived, bool Enabled>
-VectorTuple4ChunkInt2<zero_or_value::Chunk, T>&
+CandidateList<zero_or_value::Chunk, T>&
 zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::get_vec_tuple_to_compress_potentially_thr(
     int    thr,
     InT<T> second_value) noexcept

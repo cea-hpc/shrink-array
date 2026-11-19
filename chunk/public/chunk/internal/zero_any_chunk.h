@@ -35,7 +35,7 @@
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
 #include "chunk/internal/chunk_stats.h"             // inc_chunk_write
 
-#include "chunk/internal/chunk_tuples.h"    // ZeroAnyCompOf, VectorTuple4ChunkInt2
+#include "chunk/internal/chunk_tuples.h"    // ZeroAnyCompOf, CandidateList
 #include "chunk/internal/immortal.h"        // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (init_chunks_const_val)
 
@@ -434,7 +434,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
     friend ProxyType;
 
     using Manager = ChunkTraits<Derived>::ManagerType;
-    // Same tuple as chunk_tuples.h's VectorTuple4ChunkInt2 (the manager storage).
+    // Same tuple as chunk_tuples.h's CandidateList (the manager storage).
     using CandidateTuples      = std::vector<std::tuple<Derived*, int, int, ChunkElems>>;
     using CandidateValueTuples = std::vector<std::tuple<Derived*, T, int, int, ChunkElems>>;
 

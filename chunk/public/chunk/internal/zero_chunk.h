@@ -54,7 +54,7 @@ class TypeStateRegistry;
  *        the thread model.
  *
  * @tparam Enabled build_config::threaded.
- * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING (as on
+ * @tparam Registry    The TypeStateRegistry facade. LOAD-BEARING (as on
  *                 RuntimeParallelInterface, runtime.h): it keeps the
  *                 bodies TEMPLATES, so a build instantiates only its own, and
  *                 the calls DEPENDENT, so phase-1 lookup does not resolve them
@@ -66,12 +66,12 @@ class TypeStateRegistry;
  *       guard; those with nothing to do in a model are no-ops.
  * @see release_chunk_pools(), the verb for "let go of the reuse pools" in any build.
  */
-template <bool Enabled = build_config::threaded, typename AllT = TypeStateRegistry>
+template <bool Enabled = build_config::threaded, typename Registry = TypeStateRegistry>
 struct ChunkPoolParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the pools are per-rank.
-template <typename AllT>
-struct ChunkPoolParallelInterface<true, AllT>
+template <typename Registry>
+struct ChunkPoolParallelInterface<true, Registry>
 {
     /// @return True as soon as the per-rank free lists are unbalanced enough to
     ///         be worth a pass.
@@ -91,8 +91,8 @@ struct ChunkPoolParallelInterface<true, AllT>
 };
 
 /// @brief Serial builds: one allocator, no per-rank lists to balance or clear.
-template <typename AllT>
-struct ChunkPoolParallelInterface<false, AllT>
+template <typename Registry>
+struct ChunkPoolParallelInterface<false, Registry>
 {
     /// @return Always false: there is a single free list, so nothing to balance.
     [[nodiscard]] static bool need_load_balance_list_block_free()

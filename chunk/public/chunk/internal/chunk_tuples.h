@@ -22,7 +22,7 @@
 #include <memory> // std::shared_ptr
 
 #include "chunk/internal/value_less.h"        // ValueLess
-#include "chunk/internal/chunk_size_policy.h" // ChunkElems (VectorTuple4ChunkInt2)
+#include "chunk/internal/chunk_size_policy.h" // ChunkElems (CandidateList)
 
 namespace shrink_array
 {
@@ -35,23 +35,23 @@ namespace shrink_array
 ///          which after a rechunk overflows a buffer of another geometry.
 ///          Producers and consumers must share this single alias.
 template <template <typename> class ChunkTemplate, typename T>
-using VectorTuple4ChunkInt2 = std::vector<std::tuple<ChunkTemplate<T>*, int, int, ChunkElems>>;
+using CandidateList = std::vector<std::tuple<ChunkTemplate<T>*, int, int, ChunkElems>>;
 
 /// @brief Map from a second value to the shared list of queued chunks
 ///        (4-element tuples) holding it.
-/// @details Tuples as VectorTuple4ChunkInt2. Ordered by ValueLess (value_less.h).
+/// @details Tuples as CandidateList. Ordered by ValueLess (value_less.h).
 template <template <typename> class ChunkTemplate, typename T>
-using ZeroOrValueCompByValue = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<ChunkTemplate, T>>, ValueLess<T>>;
+using ZeroOrValueCompByValue = std::map<T, std::shared_ptr<CandidateList<ChunkTemplate, T>>, ValueLess<T>>;
 
 /// @brief zero_or_value's candidate lists, one per second value.
 /// @details Copied into zero_or_value_candidates_map_thr's shared_ptr
 ///          (zero_or_value::Array::set_second_value): same tuples as ZeroOrValueCompByValue.
 template <template <typename> class ChunkTemplate, typename T>
-using ZeroOrValueComp = std::vector<VectorTuple4ChunkInt2<ChunkTemplate, T>>;
+using ZeroOrValueComp = std::vector<CandidateList<ChunkTemplate, T>>;
 
 /// @brief zero_any's candidate list.
 template <template <typename> class ChunkTemplate, typename T>
-using ZeroAnyComp = VectorTuple4ChunkInt2<ChunkTemplate, T>;
+using ZeroAnyComp = CandidateList<ChunkTemplate, T>;
 
 /// @brief ZeroAnyComp named by the chunk type rather than by its template:
 ///        the same type, for the zero_any family's CRTP bases, which know
@@ -59,9 +59,9 @@ using ZeroAnyComp = VectorTuple4ChunkInt2<ChunkTemplate, T>;
 template <typename ChunkType>
 using ZeroAnyCompOf = std::vector<std::tuple<ChunkType*, int, int, ChunkElems>>;
 
-/// @brief Chunk's candidate list (tuples: see VectorTuple4ChunkInt2).
+/// @brief Chunk's candidate list (tuples: see CandidateList).
 template <template <typename> class ChunkTemplate, typename T>
-using ZeroComp = VectorTuple4ChunkInt2<ChunkTemplate, T>;
+using ZeroComp = CandidateList<ChunkTemplate, T>;
 
 /**
  * @brief One thread's slot in a per-thread candidate store, on cache lines of
@@ -91,7 +91,7 @@ using ZeroOrValueCompThr = std::vector<PerThreadSlot<ZeroOrValueComp<ChunkTempla
 
 /// @brief Chunk's candidate lists, one slot per thread.
 template <template <typename> class ChunkTemplate, typename T>
-using ZeroCompThr = std::vector<PerThreadSlot<VectorTuple4ChunkInt2<ChunkTemplate, T>>>;
+using ZeroCompThr = std::vector<PerThreadSlot<CandidateList<ChunkTemplate, T>>>;
 
 /// @brief zero_or_value's candidate store: one map keyed by second value per thread.
 /// @details Only the OpenMP fast-block code reaches it; a serial build keeps

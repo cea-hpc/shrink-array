@@ -606,7 +606,7 @@ try
     maybe_set_debug_name(array_mask, "array_mask");
     maybe_set_debug_name(array_conn, "array_conn");
 
-    SingletonChk<GlobalStatsChunkList>::get_ref().print();
+    Singleton<GlobalStatsChunkList>::get_ref().print();
 
     auto                          end             = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;

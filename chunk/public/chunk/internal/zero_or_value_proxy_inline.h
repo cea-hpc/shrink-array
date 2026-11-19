@@ -1192,7 +1192,7 @@ template <typename Derived, typename T, typename ChunkT, bool Enabled>
 }
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-VectorTuple4ChunkInt2<zero_or_value::Chunk, T>&
+CandidateList<zero_or_value::Chunk, T>&
 zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_to_compress_potentially_thr(
     int thr) const noexcept
 {
@@ -1209,7 +1209,7 @@ zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_t
 }
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-VectorTuple4ChunkInt2<zero_or_value::Chunk, T>&
+CandidateList<zero_or_value::Chunk, T>&
 zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_to_compress_potentially_async_thr(
     auto* ctx,
     int   thr) const

@@ -42,7 +42,7 @@
 #include <string_view> // std::string_view (the CHUNK_REQUIRE_OMPT messages)
 
 #include "chunk/config.h"                   // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
-#include "chunk/internal/singleton.h"       // SingletonChk
+#include "chunk/internal/singleton.h"       // Singleton
 #include "chunk/phases.h"                   // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
 #include "chunk/internal/pmp_chunk.h"       // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
 #include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
@@ -307,7 +307,7 @@ void parallel_end_chunk_work()
         return;
     }
 
-    const auto& type_registry = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
+    const auto& type_registry = shrink_array::Singleton<shrink_array::TypeStateRegistry>::get_ref();
 
     if (!type_registry.have_chunk_to_compress_potentially())
     {

@@ -30,6 +30,6 @@ namespace shrink_array
 /// @note An alias: a class befriending it, or declaring it in advance, names
 ///       fast_alloc::Singleton itself (see TypeStateRegistry).
 template <typename T>
-using SingletonChk = ::fast_alloc::Singleton<T>;
+using Singleton = ::fast_alloc::Singleton<T>;
 
 } // namespace shrink_array

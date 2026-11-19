@@ -39,7 +39,7 @@
 #include "chunk/internal/zero_or_value_proxy.h"                // zero_or_value::Proxy
 #include "chunk/internal/second_value_chunk_base.h"            // SecondValueChunkBase
 #include "chunk/internal/conditional_counter.h"                // ConditionalCounter, CounterValueT
-#include "chunk/internal/chunk_tuples.h"                       // VectorTuple4ChunkInt2 (the candidate lists)
+#include "chunk/internal/chunk_tuples.h"                       // CandidateList (the candidate lists)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 #include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (init_chunks_const_val)
@@ -681,7 +681,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * @param second_value The type-2 constant these chunks are candidates for.
      * @return Reference to the (thr, second_value) candidate list.
      */
-    static VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
+    static CandidateList<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
                                                                                       InT<T> second_value) noexcept;
 
     /**
