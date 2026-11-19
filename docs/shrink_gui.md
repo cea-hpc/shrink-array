@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> November 2026, `shrink_gui` 0.17 (prototype). A window on the laptop to submit
+> November 2026, `shrink_gui` 0.18 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
@@ -226,9 +226,11 @@ not depend on the window: closing it leaves the run going, as a batch job would.
   The QoS and directive fields belong to the scheduler, so they are hidden.
 - **Submission**: "in the background on this machine". `launch.sh` runs `run.sh`, under
   `timeout` when a maximum duration is set (exit code 124 once it is exceeded).
-- **Launcher**: a prefix of `run.sh`, remembered. To cap the memory of a run, and keep an
-  out-of-memory run from bringing WSL down:
-  `systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0`.
+- **Launcher**: a prefix of `run.sh`, remembered. By default, where `systemd-run --user` works,
+  `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0`: a run past 90% of the RAM
+  is killed on its own instead of bringing WSL down (empty where systemd-run does not work, and
+  as it was saved for a machine whose launcher was saved before 0.18). A fixed cap also works:
+  `-p MemoryMax=16G`.
 - **Repository, Runs**: kept separate from the cluster's (by default `~/shrink-array` and
   `~/shrink_runs` of this machine); switching back and forth keeps both.
 - **Start, Builds up to date, Stop, Fetch, Delete**: as on the cluster. "Start: after" waits

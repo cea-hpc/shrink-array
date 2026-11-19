@@ -113,4 +113,4 @@ Modules:
     tooltips.py         the tooltip texts
 """
 
-__version__ = "0.17"
+__version__ = "0.18"

@@ -56,6 +56,10 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `shrink_gui` 0.18, "cette machine": the launcher defaults to
+  `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` where `systemd-run --user`
+  works, so that a run out of memory is killed alone instead of bringing WSL down (a launcher
+  saved before stays as it was).
 - `CHUNK_NATIVE_TUNING` defaults to OFF in a project that consumes the library (`add_subdirectory`,
   FetchContent): the library's objects no longer get `-march=native` / `-mcpu=native` while the
   project's do not; the project's own target flags apply. It sets `CHUNK_NATIVE_TUNING=ON` before
@@ -76,18 +80,24 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- `python/multi_launch_stress_gdb.py`: referenced nowhere (no script, document or `shrink_gui`
+  program).
 - `CHUNK_CST_VAL2_ID_LIMIT` and `CHUNK_CST2_RECLAIM`, the names these two settings had before
   0.3.0, as 0.3.0 announced: `CHUNK_SECOND_VALUE_ID_LIMIT` and `CHUNK_SECOND_VALUE_RECLAIM`
   above.
 
 ### Fixed
 
+- `shrink_gui`, "Supprimer" with the run's own output directory: the directory the log announces
+  is removed whole only when every file in it was written after the run was submitted, it holds
+  no git repository and is no mount point; the former guard (absolute, not `/` nor the home,
+  three levels deep) let a log naming e.g. `~/Documents` have it removed.
 - A relocatable install with the optimised libm: `SHRINK_INTEL_LIBM` (on by default, when oneAPI's
   `libimf` is found) and `SHRINK_ARM_LIBM` linked it into every target of the directory with an
-  absolute path and rpath, the libraries included: `chunk-targets.cmake` and
-  `fast_allocators-targets.cmake` named `/opt/intel/.../libimf.so`. Only the project's executables
+  absolute path and rpath, the libraries included: the installed chunk-targets.cmake and
+  fast_allocators-targets.cmake named `/opt/intel/.../libimf.so`. Only the project's executables
   (`examples/`) link it now.
-- `fast_allocators-config.cmake` calls `find_dependency(Threads)`: with the std backend its target
+- The installed fast_allocators-config.cmake calls `find_dependency(Threads)`: with the std backend its target
   links `Threads::Threads`, and a project that found fast_allocators alone (without chunk) failed
   to link.
 - `zero_any`: every `a[i] += x` ran `ensure_writable_storage()`, which re-armed the per-chunk

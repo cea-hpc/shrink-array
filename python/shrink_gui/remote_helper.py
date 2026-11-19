@@ -1342,7 +1342,9 @@ def outputs_to_delete(base, rid, d, meta, own):
     @p own says ("dir": the output directory its log announces; a list: those
     entries of that directory). Refused when another run announces the same
     directory -- any other one for "dir", for a list one still active or
-    newer (the files are then its own, rewritten after ours)."""
+    newer (the files are then its own, rewritten after ours) -- and, for
+    "dir", when the directory holds a file older than the run, a git
+    repository, or is a mount point."""
     od = out_dir(d, meta)
     if not od:
         return None, "pas de dossier de sortie annoncé dans le log de %s" % rid
@@ -1362,6 +1364,22 @@ def outputs_to_delete(base, rid, d, meta, own):
         if other:
             return None, "%s, plus récent ou actif, écrit aussi dans %s : rien supprimé" % (other, od)
     if own == "dir":
+        # The whole directory goes: it must be this run's alone, made by it --
+        # every file written since the run was submitted, no repository, no
+        # mount point. A log that announced an older directory (a mistyped
+        # option, ~/Documents) would otherwise have it removed whole.
+        t0 = submitted_at(d)
+        if t0 is None:
+            return None, "date de soumission de %s illisible : rien supprimé" % rid
+        if os.path.ismount(od):
+            return None, "%s est un point de montage : rien supprimé" % od
+        for top, dirs, files in os.walk(od):
+            if ".git" in dirs or ".git" in files:
+                return None, "%s contient un dépôt git : rien supprimé" % top
+            for f in files:
+                if not written_since(os.path.join(top, f), t0):
+                    return None, "%s contient des fichiers antérieurs à %s (%s) : rien supprimé" % (
+                        od, rid, os.path.relpath(os.path.join(top, f), od))
         return [od], None
     # A shared directory: what this run wrote, i.e. after it was submitted
     # (meta.json) -- run_logs/ also holds the older runs' logs, kept.

@@ -2,7 +2,7 @@
 
 > English version: [shrink_gui.md](shrink_gui.md).
 
-> Novembre 2026, `shrink_gui` 0.17 (prototype). Une fenêtre sur le portable pour soumettre
+> Novembre 2026, `shrink_gui` 0.18 (prototype). Une fenêtre sur le portable pour soumettre
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
@@ -239,9 +239,11 @@ Il ne dépend pas de la fenêtre : la fermer laisse le run continuer, comme un j
   gestionnaire de jobs : masquées.
 - **Soumission** : « en arrière-plan sur cette machine ». `launch.sh` lance `run.sh`, sous
   `timeout` quand une durée max est donnée (code 124 au-delà).
-- **Lanceur** : un préfixe de `run.sh`, mémorisé. Pour plafonner la mémoire d'un run, et
-  qu'un run trop gourmand ne fasse pas tomber WSL :
-  `systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0`.
+- **Lanceur** : un préfixe de `run.sh`, mémorisé. Par défaut, là où `systemd-run --user`
+  fonctionne, `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` : un run qui
+  dépasse 90 % de la RAM est tué seul au lieu de faire tomber WSL (vide là où systemd-run ne
+  fonctionne pas, et tel qu'il a été mémorisé si le lanceur l'a été avant la 0.18). Un plafond
+  fixe convient aussi : `-p MemoryMax=16G`.
 - **Dépôt, Runs** : distincts de ceux du calculateur (par défaut `~/shrink-array` et
   `~/shrink_runs` de cette machine) ; passer de l'un à l'autre garde les deux.
 - **Démarrage, Builds à jour, Arrêter, Récupérer, Supprimer** : comme sur le calculateur.

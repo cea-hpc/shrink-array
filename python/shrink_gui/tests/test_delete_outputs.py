@@ -54,6 +54,29 @@ def test_own_output_dir_shared_is_refused(site):
     assert _delete(site, "a1")["ok"] and od.exists()            # without the option: the run only
 
 
+def test_own_output_dir_with_older_files_is_refused(site):
+    # A log announcing a directory the run did not make (a mistyped option):
+    # its files predate the submission, nothing of it goes.
+    import os
+    od = site.home / "Documents"
+    (od / "notes").mkdir(parents=True)
+    (od / "notes" / "keep.txt").write_text("precious")
+    old = os.path.getmtime(od / "notes" / "keep.txt") - 3600
+    os.utime(od / "notes" / "keep.txt", (old, old))
+    _fake_run(site, "m1", f"📁 Outputs, CSV and log in {od}", "2026-10-08 10:00:00")
+    r = _delete(site, "m1", MULTI)
+    assert "antérieurs à m1" in r["error"] and "notes/keep.txt" in r["error"]
+    assert (od / "notes" / "keep.txt").read_text() == "precious" and (site.runs / "m1").exists()
+
+
+def test_own_output_dir_with_a_repository_is_refused(site):
+    od = site.home / "work"
+    (od / ".git").mkdir(parents=True)
+    _fake_run(site, "g1", f"📁 Outputs, CSV and log in {od}", "2026-10-08 10:00:00")
+    (od / "fresh.csv").write_text("x")
+    assert "dépôt git" in _delete(site, "g1", MULTI)["error"] and (od / ".git").exists()
+
+
 def _bench_dir(site):
     od = site.home / "bench_results" / "aarch64"
     for f in ("bench_output.log", "bench_errors.log", "failed_cases.jsonl", "bench_summary.csv"):
@@ -104,8 +127,8 @@ def test_no_output_dir_announced(site):
 def test_delete_many_in_one_call(site):
     out_a = site.home / "out_a"
     out_a.mkdir()
-    (out_a / "timings_summary.csv").write_text("x\n")
     _fake_run(site, "m1", f"Outputs, CSV and log in {out_a}", "2026-10-16 10:00:00")
+    (out_a / "timings_summary.csv").write_text("x\n")       # written by the run, after its submission
     _fake_run(site, "m2", "nothing announced", "2026-10-16 10:01:00")
     items = [{"id": "m1", "own": MULTI}, {"id": "m2"}, {"id": "nope"}, {"id": "../x"}]
     blob = base64.b64encode(json.dumps(items).encode()).decode()

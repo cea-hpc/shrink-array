@@ -28,11 +28,41 @@ i18n.set_site_words(SITE.words())
 PRESETS = {key: {"label": p["label"], "arch": p["arch"], "msub": p["directives"], "launcher": p["launcher"],
                  "mprun": p["detached"]}
            for key, p in SITE.partitions.items()}
+# This machine's default launcher: a memory cap on the run, when systemd's
+# user manager can give one (systemd-run --user works here). A run past it is
+# killed alone (no swap: MemorySwapMax=0), instead of taking the machine down
+# -- an out-of-memory run once crashed WSL. 90% of the RAM: the benches at
+# --multiply 3 take 32.7 GB of a 39 GB machine. Editable in the window, and
+# remembered once changed; empty where systemd-run does not work.
+LOCAL_MEMORY_CAP = "systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0"
+
+
+def local_launcher_default():
+    """LOCAL_MEMORY_CAP when `systemd-run --user --scope` runs a command on
+    this machine, else "" (no systemd user manager: WSL without systemd,
+    macOS). Asked once."""
+    global _local_launcher
+    if _local_launcher is None:
+        import shutil
+        import subprocess
+        ok = False
+        if shutil.which("systemd-run"):
+            try:
+                ok = subprocess.run(["systemd-run", "--user", "--scope", "-q", "true"], capture_output=True,
+                                    timeout=10, check=False).returncode == 0
+            except (OSError, subprocess.SubprocessError):
+                ok = False
+        _local_launcher = LOCAL_MEMORY_CAP if ok else ""
+    return _local_launcher
+
+
+_local_launcher = None
+
 PRESETS.update({
     # This machine ("cette machine" beside the host field): no scheduler, the
     # run goes in the background here (launch.sh, mode "local"). Its own
-    # defaults ("arch" local), no #MSUB lines; "launcher" prefixes run.sh, for
-    # a memory cap: systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0.
+    # defaults ("arch" local), no #MSUB lines; "launcher" prefixes run.sh:
+    # local_launcher_default(), a memory cap, read when the window shows it.
     LOCAL: {
         "label": "cette machine",
         "arch": LOCAL,

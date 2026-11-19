@@ -125,3 +125,20 @@ def test_times_of_a_run_older_than_start_time(site):
     assert run["status"] == "interrompu"
     started, ended = run["times"]
     assert ended - started == 4 * 3600 - 7
+
+
+def test_local_launcher_default_caps_memory_where_systemd_run_works(monkeypatch):
+    # The default launcher of "cette machine": the memory cap when
+    # systemd-run --user works, nothing where it does not.
+    import shutil
+    import subprocess
+
+    from shrink_gui import config
+    monkeypatch.setattr(config, "_local_launcher", None)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert config.local_launcher_default() == ""
+    monkeypatch.setattr(config, "_local_launcher", None)
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/systemd-run")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0))
+    assert config.local_launcher_default() == config.LOCAL_MEMORY_CAP
+    assert "MemoryMax=" in config.LOCAL_MEMORY_CAP and "MemorySwapMax=0" in config.LOCAL_MEMORY_CAP

@@ -162,7 +162,8 @@ class MachinePanel:
         self._preset_key = self._directives_key()
         self.directives.setPlainText(self.settings.value(self._preset_key, builtin))
         self._launcher_key = f"launcher/{self.preset.currentData()}"
-        self.launcher.setText(self.settings.value(self._launcher_key, p.get("launcher", "")))
+        default = config.local_launcher_default() if p.get("local") else p.get("launcher", "")
+        self.launcher.setText(self.settings.value(self._launcher_key, default))
         # the launcher: of run.sh in the batch job, or on this machine
         has_launcher = self.mode.currentData() in ("msub", "local")
         self.launcher.setVisible(has_launcher)
