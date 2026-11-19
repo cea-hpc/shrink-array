@@ -149,7 +149,7 @@ namespace shrink_array
  *          exactly one thread, the reads are const, and the write path
  *          partitions allocator / compression state by thread rank.
  *
- *          Materialisation is tracked with is_const_val1() (values == the const1
+ *          Materialisation is tracked with is_first_value() (values == the const1
  *          sentinel), universal and index-free -- unlike written()/is_const_val()
  *          on zero_or_value, which need the second_value index. While filled,
  *          a chunk only goes const1 -> real buffer (never const2, a compression

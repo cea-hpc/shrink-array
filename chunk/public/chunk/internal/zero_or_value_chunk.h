@@ -18,7 +18,7 @@
 
 #include <algorithm>   // std::fill_n
 #include <array>       // std::array
-#include <deque>       // array_m_ptr_const_val2: grows without moving its arrays
+#include <deque>       // second_value_buffers: grows without moving its arrays
 #include <cstddef>     // std::size_t
 #include <tuple>       // the candidate-list entries
 #include <type_traits> // std::is_same_v, std::conditional_t
@@ -60,7 +60,7 @@ namespace zero_or_value
 template <typename T>
 class Proxy;
 
-/// @brief Static table of the registered second-constant arrays of element type T (array_m_ptr_const_val2),
+/// @brief Static table of the registered second-constant arrays of element type T (second_value_buffers),
 ///        with the lookups and checks on it.
 template <typename T>
 class ChunkSpec
@@ -79,7 +79,7 @@ class ChunkSpec
      * \param idx Index of the second value.
      * \return Pointer to the constant value array.
      */
-    [[nodiscard]] static T* get_const_val2(int idx) noexcept;
+    [[nodiscard]] static T* second_value_ptr(int idx) noexcept;
     /*!
      * \brief Checks whether `values` IS the second constant's pointer at
      *        index `idx` (i.e. the chunk is currently compressed to it).
@@ -87,9 +87,9 @@ class ChunkSpec
      * \param idx Index of the second value.
      * \return True if values equals the second constant at idx.
      */
-    [[nodiscard]] bool is_const_val2(const T* values, int idx) const noexcept
+    [[nodiscard]] bool is_second_value(const T* values, int idx) const noexcept
     {
-        return values == get_const_val2(idx);
+        return values == second_value_ptr(idx);
     }
 
 
@@ -106,26 +106,26 @@ class ChunkSpec
         std::fill_n(values_loc, alloc_chunk_count(), value);
     }
 
-    static inline constinit internal::LazyImmortal<VecArrayChunkSizeMax> array_m_ptr_const_val2;
+    static inline constinit internal::LazyImmortal<VecArrayChunkSizeMax> second_value_buffers;
 
-    // mm_protect mode only: element count allocated at (*array_m_ptr_const_val2)[idx] (a raw
+    // mm_protect mode only: element count allocated at (*second_value_buffers)[idx] (a raw
     // mmap'd T*; the plain mode uses fixed const_buffer_size arrays). Lets set_second_value's
     // reuse path (a known second_value registered at a LARGER geometry) grow an undersized
     // allocation instead of overrunning it. Declared but unused in the other builds.
-    static inline constinit internal::Immortal<std::vector<std::size_t>> array_m_ptr_const_val2_mm_elems_storage_{};
-    static inline std::vector<std::size_t>&                              array_m_ptr_const_val2_mm_elems =
-        array_m_ptr_const_val2_mm_elems_storage_.value;
+    static inline constinit internal::Immortal<std::vector<std::size_t>> second_value_buffers_mm_elems_storage_{};
+    static inline std::vector<std::size_t>&                              second_value_buffers_mm_elems =
+        second_value_buffers_mm_elems_storage_.value;
 
   protected:
     /*!
      * \brief Whether `vals` is ANY of the registered second-constant pointers,
      *        regardless of index. For teardown, where the chunk's own index is not
-     *        to hand: is_const_val2(vals, idx) with a wrong index would read the marker
+     *        to hand: is_second_value(vals, idx) with a wrong index would read the marker
      *        of a chunk compressed at another index as a live buffer.
      * \param vals Pointer to test.
      * \return True if vals matches the second constant at some index.
      */
-    [[nodiscard]] static bool is_const_val2_any(const T* vals) noexcept;
+    [[nodiscard]] static bool is_any_second_value(const T* vals) noexcept;
 
   private:
     static constexpr bool use_mm_protect = build_config::use_mm_protect;
@@ -137,9 +137,9 @@ class ChunkSpec
      * \return True if the chunk's own values pointer differs from the
      *         second constant at idx.
      */
-    [[nodiscard]] bool is_not_const_val2(int idx) const noexcept
+    [[nodiscard]] bool is_not_second_value(int idx) const noexcept
     {
-        return !is_const_val2(idx);
+        return !is_second_value(idx);
     }
 };
 
@@ -153,9 +153,9 @@ class ChunkSpec<T>
      * \brief Gets the pointer to the (single, shared) second constant value.
      * \return Pointer to the constant value array.
      */
-    [[nodiscard]] static T* get_const_val2() noexcept
+    [[nodiscard]] static T* second_value_ptr() noexcept
     {
-        return m_ptr_const_val2.data();
+        return second_value_buffer_.data();
     }
 
     /*!
@@ -164,9 +164,9 @@ class ChunkSpec<T>
      * \param values Pointer to compare.
      * \return True if values equals the second constant.
      */
-    [[nodiscard]] static bool is_const_val2(const T* values) noexcept
+    [[nodiscard]] static bool is_second_value(const T* values) noexcept
     {
-        return values == get_const_val2();
+        return values == second_value_ptr();
     }
 
     /*!
@@ -179,7 +179,7 @@ class ChunkSpec<T>
   protected:
     // Bit: every BIT set -- the buffer is read as 64-bit words, hence the
     // bytes 0xFF (a Bit{true} object is the byte 0x01) and the alignment.
-    alignas(bits::WordT) static inline std::array<T, const_buffer_size> m_ptr_const_val2 = []
+    alignas(bits::WordT) static inline std::array<T, const_buffer_size> second_value_buffer_ = []
     {
         std::array<T, const_buffer_size> arr{};
         if constexpr (is_packed_bit_v<T>)
@@ -195,13 +195,13 @@ class ChunkSpec<T>
 
   private:
     /*!
-     * \brief Negation of is_const_val2().
+     * \brief Negation of is_second_value().
      * \param values Pointer to compare.
      * \return True if values does NOT equal the second constant.
      */
-    [[nodiscard]] static bool is_not_const_val2(const T* values) noexcept
+    [[nodiscard]] static bool is_not_second_value(const T* values) noexcept
     {
-        return !is_const_val2(values);
+        return !is_second_value(values);
     }
 };
 
@@ -585,19 +585,19 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      *        to a newly materialised buffer.
      * @param values_loc New buffer to install on success.
      * @param idx Index used to resolve the expected second-value constant.
-     * @param expected_is_const_val2 Whether the expected current state is the
+     * @param expected_second_value Whether the expected current state is the
      *                             second constant (vs the first).
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap(T* values_loc, int idx, bool expected_is_const_val2) noexcept;
+    [[nodiscard]] bool compare_and_swap(T* values_loc, int idx, bool expected_second_value) noexcept;
 
     /**
      * @brief Bool path of compare_and_swap() -- no idx (bool has a single shared array).
      * @param values_loc New buffer to install on success.
-     * @param expected_is_const_val2 Whether the expected current state is the second constant.
+     * @param expected_second_value Whether the expected current state is the second constant.
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap_bool(T* values_loc, bool expected_is_const_val2) noexcept;
+    [[nodiscard]] bool compare_and_swap_bool(T* values_loc, bool expected_second_value) noexcept;
 
     /**
      * @brief Compress every non-bool candidate chunk of (thr_rank, inf_array's second value).
@@ -791,7 +791,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param chunk_index This chunk's index within its array.
      * \param array_id Which array this chunk belongs to.
      * \param get_second_value Supplies the second constant to compare against.
-     * \param check_const_val2 Whether to test the second constant (skipped when the
+     * \param check_second_value Whether to test the second constant (skipped when the
      *                        chunk is already known to hold it).
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
@@ -801,7 +801,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
                                     int               chunk_index,
                                     int               array_id,
                                     SecondValueFunc&& get_second_value,
-                                    bool              check_const_val2,
+                                    bool              check_second_value,
                                     unsigned int      n_elems);
 
     /*!
@@ -837,7 +837,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
                                     unsigned int     n_elems)
     {
         fill_list_to_compress_impl(
-            ll_compt1, ll_compt2, chunk_index, array_id, [] { return true; }, derived().is_not_const_val2(), n_elems);
+            ll_compt1, ll_compt2, chunk_index, array_id, [] { return true; }, derived().is_not_second_value(), n_elems);
     }
 };
 
@@ -990,11 +990,11 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Point this chunk's values at the shared first-constant buffer
-     *        (compress to const_val1).
+     *        (compress to first_value).
      */
-    void init_values_const_val1() noexcept
+    void init_to_first_value() noexcept
     {
-        values_ = Base::get_const_val1();
+        values_ = Base::first_value_ptr();
     }
 
     /*!
@@ -1025,8 +1025,8 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Whether this chunk owns a real heap buffer that must be
-     *        parked/freed at teardown, as opposed to pointing at const_val1 or
-     *        ANY const_val2 marker.
+     *        parked/freed at teardown, as opposed to pointing at first_value or
+     *        ANY second_value marker.
      * \note clear_core must key on THIS, not written(idx): a single index misclassifies
      *       chunks compressed at other indices, and their static markers would be
      *       parked/freed as if allocated.
@@ -1048,14 +1048,14 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \param idx Index of the second value.
      * \return True if values equals the second constant at idx.
      */
-    [[nodiscard]] bool is_const_val2(int idx) const noexcept;
+    [[nodiscard]] bool is_second_value(int idx) const noexcept;
 
     /*!
      * \brief Bool-only: checks whether the chunk IS currently compressed to
      *        the (single, shared) second constant.
      * \return True if values equals the second constant.
      */
-    [[nodiscard]] bool is_const_val2() const noexcept;
+    [[nodiscard]] bool is_second_value() const noexcept;
 
     /*!
      * \brief Checks that the chunk does NOT use the second constant at
@@ -1063,13 +1063,13 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \param idx Index of the second value.
      * \return True if values differs from the second constant at idx.
      */
-    [[nodiscard]] bool is_not_const_val2(int idx) const noexcept;
+    [[nodiscard]] bool is_not_second_value(int idx) const noexcept;
 
     /*!
-     * \brief Bool-only: negation of is_const_val2().
+     * \brief Bool-only: negation of is_second_value().
      * \return True if values does NOT equal the (single, shared) second constant.
      */
-    [[nodiscard]] bool is_not_const_val2() const noexcept;
+    [[nodiscard]] bool is_not_second_value() const noexcept;
 
     /*!
      * \brief Materialise this chunk if it is currently compressed to either
@@ -1107,9 +1107,9 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     void values_store(T* ptr) noexcept;
 
     /*!
-     * \brief Attempt to atomically compress the chunk to either const_val1 or
-     *        const_val2(idx).
-     * \param const_index 0 to target const_val1, non-zero for the second at `idx`.
+     * \brief Attempt to atomically compress the chunk to either first_value or
+     *        second_value(idx).
+     * \param const_index 0 to target first_value, non-zero for the second at `idx`.
      * \param idx Index of the second constant (unused when const_index == 0).
      * \return nullptr if the chunk was already compressed or another thread
      *         won the race (caller must not free anything); otherwise the

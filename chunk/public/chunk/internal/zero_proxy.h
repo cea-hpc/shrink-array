@@ -451,7 +451,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] bool is_const_val() const noexcept
     {
-        return chunk_.is_const_val1();
+        return chunk_.is_first_value();
     }
 
     /**
@@ -628,7 +628,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] bool is_not_const_val() const noexcept
     {
-        return chunk_.is_not_const_val1();
+        return chunk_.is_not_first_value();
     }
 
     /**

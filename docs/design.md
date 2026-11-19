@@ -82,7 +82,7 @@ flowchart TB
     subgraph per_type["per (variant, element type)"]
         mgr["TypeState<br/>reuse pools, compression candidates,<br/>per-rank allocators, deferred flush"]
         cmp["CompressionManager<br/>passes, deferred writes"]
-        reg["shared constants<br/>const_val1, second-value registry, motif region"]
+        reg["shared constants<br/>first_value_buffer_, second-value registry, motif region"]
     end
     subgraph per_process["per process"]
         all["TypeStateRegistry<br/>registry of every manager"]
@@ -110,7 +110,7 @@ flowchart TB
 | chunks | `zero::Chunk`, `zero_or_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_or_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | an element of the array's chunk list |
 | proxies, write engine | `ProxyBase`, `WriteCompressSyncPolicy`, the variants' `Proxy` | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | a temporary per write |
 | per-type state | `TypeState` (facade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | one per (variant, element type), static |
-| shared constants | `ArrayConstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/array_const_val2_holder.h`, `internal/motif_region.h` | one per element type |
+| shared constants | `SecondValueRegistry`, `GlobalVecHolder`, `MotifRegion` | `internal/second_value_registry.h`, `internal/motif_region.h` | one per element type |
 | process registry, startup | `TypeStateRegistry`, `Runtime` | `internal/type_state_registry_decl.h`, `chunk/runtime.h` | one per process |
 | phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/phases.h`, `chunk/private/manage_ompt.cpp` | one phase at a time |
 | backend, ranks | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/pmp_chunk.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | process-wide |

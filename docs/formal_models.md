@@ -202,7 +202,7 @@ read sections and the buffer's free are checked as in section 6.
 | `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()`; `internal/proxy_base_inline.h` `read_values_at()`; `pattern_chunk.h` `Chunk::motif_offset()` |
 | `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, the motif branch |
 | `pass()`, a motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
-| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_set_idx_const_val2_release()` |
+| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_register_second_value_release()` |
 
 | case | expected | verdict | executions |
 |---|---|---|---|
@@ -256,7 +256,7 @@ the compressor's wait is bounded (`CHUNK_COMPRESS_MAX_YIELDS`, 10,000 yields of 
 not a deadlock, but a stall of both threads for that whole budget, after which the pass is
 abandoned (the gate counter of aborts on an overly long wait, in the `CHUNK_STATS` report, counts these). It needs a
 chunk that is at a constant while sitting in a candidate list -- the case `fill_list_to_compress()`
-guards against with `is_not_const_val1()` -- so it is rare, not impossible.
+guards against with `is_not_first_value()` -- so it is rare, not impossible.
 
 The fix follows from the handshake itself: a fast-path writer holds its flag and has passed
 check no. 2, so a mark it sees now belongs to a compressor that is **parked** on that flag;

@@ -150,6 +150,12 @@ ALLOWED = {
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
     "is_cst_val_new_value_is_other_cst_val",  # now passes_mark_pre_check()
+    # const_val1 / const_val2 -> first_value / second_value (CHANGELOG.md, Unreleased, Changed)
+    "const_val1", "const_val2", "is_const_val1", "is_const_val2", "get_const_val1", "get_const_val2",
+    "ArrayConstVal2Holder", "find_or_set_idx_const_val2", "find_or_set_ind_cst_val2",
+    "const2_registry_validation", "const2_reclaim_validation", "chunk/internal/array_const_val2_holder.h",
+    # removed: the names before 0.3.0 (CHANGELOG.md, Unreleased, Removed)
+    "CHUNK_CST_VAL2_ID_LIMIT", "CHUNK_CST2_RECLAIM",
     "is_power_of_two",  # pow2.h's, never called: removed (lint lot 4)
     # the developer settings fixed after the Milan measurements, and CHUNK_THP's functions
     "CHUNK_RECHUNK_KEEP_RECYCLED_MB", "alloc_config::thp_advise", "thp_never", "advise_thp_region",

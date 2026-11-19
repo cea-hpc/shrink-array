@@ -209,7 +209,7 @@ class PointerMap
     void report_key_not_found(Key key, const char* site) const noexcept;
 
     /// Map from values to constant index values.
-    MapType map_idx_const_val2_;
+    MapType second_value_idx_map_;
 
   public:
     /// @brief The policy's insert(second value, inf_array pointer), protected
@@ -250,9 +250,9 @@ class PointerMap
 
     /// @brief Record that second value @p key sits at index @p idx of the
     ///        shared value table.
-    void insert_map_idx_const_val2(InT<T> key, int idx)
+    void insert_second_value_idx(InT<T> key, int idx)
     {
-        map_idx_const_val2_[key] = idx;
+        second_value_idx_map_[key] = idx;
     }
 
     /// @brief Every registered second value, in map order.

@@ -867,7 +867,7 @@ try
                                                    shrink_array::logging::Level::info))
                 {
                     // STEP B — const2 GC mark report (read-only) : zero_any::Array-only API
-                    // (per-chunk const_val2 pointer registry has no equivalent on zero /
+                    // (per-chunk second_value pointer registry has no equivalent on zero /
                     // zero_or_value, which have no per-chunk GC-able registry to report on).
                     CHUNK_LOG(info, compress, "const2-gc @ iter {}", k_iter);
                     // Spelled out rather than Array<T>: the enclosing
@@ -885,13 +885,13 @@ try
             }
         }
     };
-    // CHUNK_CONST2_RECLAIM=N: every N iterations, free the zero_any second values
+    // CHUNK_SECOND_VALUE_RECLAIM=N: every N iterations, free the zero_any second values
     // no chunk uses any more, for every element type of the bench
     // (reclaim_second_values() covers all the arrays of a type, whatever their
     // index type). Static builds too, unlike the advisor. 0 or unset: never.
-    const Int const2_reclaim_period = []() -> Int
+    const Int second_value_reclaim_period = []() -> Int
     {
-        const char* const name = shrink_array::env_name_or_former("CHUNK_CONST2_RECLAIM", "CHUNK_CST2_RECLAIM");
+        const char* const name = shrink_array::env_name_or_former("CHUNK_SECOND_VALUE_RECLAIM", "CHUNK_CONST2_RECLAIM");
         if (const char* env = std::getenv(name); env != nullptr && *env != '\0')
         {
             if (Int value = 0; parse_number(env, value))
@@ -902,13 +902,13 @@ try
         }
         return 0;
     }();
-    // [&], not [const2_reclaim_period]: clang warns that the explicit capture is
+    // [&], not [second_value_reclaim_period]: clang warns that the explicit capture is
     // not needed (-Wunused-lambda-capture) where the branch below is discarded.
-    const auto const2_reclaim_tick = [&](Int k_iter)
+    const auto second_value_reclaim_tick = [&](Int k_iter)
     {
         if constexpr (chunk_config::use_zero_any)
         {
-            if (const2_reclaim_period <= 0 || (k_iter % const2_reclaim_period) != 0)
+            if (second_value_reclaim_period <= 0 || (k_iter % second_value_reclaim_period) != 0)
             {
                 return;
             }
@@ -970,7 +970,7 @@ try
         if (k > 0)
         {
             advisor_tick(k);
-            const2_reclaim_tick(k);
+            second_value_reclaim_tick(k);
         }
         if (k % 100 == 0)
         {

@@ -42,7 +42,7 @@
 // windows of C elements, each classified from the CURRENT chunks it overlaps
 // (details at "The window model" in internal/chunk_size_scan.h, whose
 // ChunkSizeScan does the counting). For zero_any the identity of a
-// const_val2 constant IS the values_load() pointer (a ArrayConstVal2Holder slot), so
+// second_value constant IS the values_load() pointer (a SecondValueRegistry slot), so
 // a constant run is a pointer comparison:
 //         const1 + const1           -> const1
 //         const2(p) + const2(p)     -> const2
@@ -81,7 +81,7 @@ struct ChunkSizeEstimate
     uint32_t size      = 0;  ///< candidate chunk size (elements)
     int64_t  n_chunks  = 0;  ///< total chunks at that size
     int64_t  mat       = 0;  ///< materialized chunks (estimated or exact)
-    int64_t  constant  = 0;  ///< compressed chunks (const_val1 + const_val2)
+    int64_t  constant  = 0;  ///< compressed chunks (first_value + second_value)
     double   mem_bytes = 0.; ///< model memory (bytes): metadata, materialised data and,
                              ///< for pattern::Array, one entry per distinct motif
     bool    exact = false;   ///< true: exact fold; false: sampled estimate

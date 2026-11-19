@@ -314,7 +314,7 @@ only to a declared value), **(to be decided)** whether it deserves separate code
 ### 8.3 `zero_any`
 
 The descriptor carries the constant: it is the natural shape of `zero_any`, and the variant to
-prototype first. What disappears: the second-value registry (`array_const_val2_holder.h`), its
+prototype first. What disappears: the second-value registry (`second_value_registry.h`), its
 segments, its hash index, `reclaim_second_values()`, the `array_type_const_val` and
 `array_second_value` lines, `CHUNK_SECOND_VALUE_INDEXED`. The cost per chunk becomes uniform
 again: the descriptor.
@@ -397,7 +397,7 @@ It comes **after** fixed geometry in the plan (section 13).
 - **Common format**: the device descriptor `{buf, constant}` is also a valid CPU format, with two
   differences: the CPU version points to a shared constant buffer where the device puts
   `nullptr`, and carries the OpenMP gates in the chunk object. A **converter** both ways is
-  simple: per chunk, `nullptr` ↔ `const_val1` / registry buffer, and the materialised buffers
+  simple: per chunk, `nullptr` ↔ `first_value_buffer_` / registry buffer, and the materialised buffers
   are copied as they are (same S, same layout). It fits in one kernel plus a host loop, and
   makes the host ↔ device transfer **without decompressing**: only the materialised buffers
   and the descriptor table are transferred.

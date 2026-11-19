@@ -133,12 +133,12 @@
 #                           the build flags -- otherwise a zero_or_value::Array
 #                           filled with its second value stays materialised.
 #                           The one harness that is not variant-agnostic.
-#   const2_registry_validation  zero_any's second-value registry is freed by the
+#   second_value_registry_validation  zero_any's second-value registry is freed by the
 #                           last array of every generation, not only the
 #                           first (its reinstall took a phantom reference),
 #                           and overlapping arrays free nothing early.
 #                           zero_any only, default static size.
-#   const2_reclaim_validation  zero_any::Array::reclaim_second_values() frees
+#   second_value_reclaim_validation  zero_any::Array::reclaim_second_values() frees
 #                           exactly the second values nothing refers to,
 #                           every element still reads back, and the
 #                           identifiers are reused (a run past the
@@ -219,7 +219,7 @@ endfunction()
 #     validation_zero_any_256 compress_roundtrip_validation [args...]
 #
 # The ctest names are the ones of the one-executable-per-harness layout
-# (compress_roundtrip_zero_any_256_8thr, rechunk_validation_zero_dyn_val2-grow,
+# (compress_roundtrip_zero_any_256_8thr, rechunk_validation_zero_dyn_second-value-grow,
 # ...), so `ctest -R` and python/bench_and_test.py see no difference.
 # CHUNK_VALIDATION_UNITY=OFF goes back to one executable per harness, named as
 # before -- the one to debug a harness alone. CHUNK_VALIDATION_UNITY_BATCH caps
@@ -368,16 +368,16 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_vname STREQUAL "zero_or_value")
       list(APPEND _group bits_container_validation)
     endif()
-    # const2_registry_validation: zero_any's second-value registry lifecycle.
+    # second_value_registry_validation: zero_any's second-value registry lifecycle.
     # zero_any only, at the default static size.
     if (_vname STREQUAL "zero_any" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group const2_registry_validation)
+      list(APPEND _group second_value_registry_validation)
     endif()
-    # const2_reclaim_validation: reclaim_second_values() frees what nothing
+    # second_value_reclaim_validation: reclaim_second_values() frees what nothing
     # refers to and the identifiers are reused. zero_any only, at the default
     # static size and at dyn (where it reclaims across a re-chunk too).
     if (_vname STREQUAL "zero_any")
-      list(APPEND _group const2_reclaim_validation)
+      list(APPEND _group second_value_reclaim_validation)
     endif()
     # zero_or_value_registry_growth_validation: zero_or_value's second-value registry must
     # not move the constant arrays chunks point at when a new value is
@@ -455,10 +455,10 @@ foreach(_geom IN LISTS _rt_geometries)
         # must match the case table of rechunk_validation.cpp -- an unknown
         # --case fails the test, so a drift shows up at once.
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
-                      shrink-to-smaller all-same all-different val2-grow val2-shrink
+                      shrink-to-smaller all-same all-different second-value-grow second-value-shrink
                       invalid-size-refused active-size-refused multiple-of-64-chain index-split
                       bool-grow bool-shrink bool-uneven bool-sliced sliced-grow sliced-shrink
-                      sliced-val2-grow sliced-val2-uneven)
+                      sliced-second-value-grow sliced-second-value-uneven)
           validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
         endforeach()
       elseif (_h STREQUAL "dyn_geometry_validation")

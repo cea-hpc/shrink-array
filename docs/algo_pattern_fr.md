@@ -127,8 +127,8 @@ Le déroulé de la passe ; les étapes jusqu'au parcours sont celles de `zero_an
 ```mermaid
 flowchart TD
     A["passe de zero_any jusqu'au parcours :<br/>test du vidage, steal_mark, start"] --> E["fill_list_to_compress à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
-    E -->|"tout = 0"| F["type 0 : reset_release de la case,<br/>CAS values -> const_val1"]
-    E -->|"tout = élément 0"| G["type 1 : find_or_set_idx_const_val2_release,<br/>CAS values -> le tableau du registre"]
+    E -->|"tout = 0"| F["type 0 : reset_release de la case,<br/>CAS values -> first_value_buffer_"]
+    E -->|"tout = élément 0"| G["type 1 : find_or_register_second_value_release,<br/>CAS values -> le tableau du registre"]
     E -->|"ni l'un ni l'autre"| M["classify_motif : read_block,<br/>soustraire l'élément 0, hacher, find_or_admit"]
     M -->|"motif enregistré"| MC["motif_candidates_, réservation gardée"]
     M -->|"non admis"| N["steal_unmark : reste matérialisé"]
@@ -144,7 +144,7 @@ flowchart TD
 `find_or_admit` ne rend un motif qu'à partir de sa seconde observation, par un autre chunk (§3) ;
 le CAS du motif se fait sur un chunk réservé, et son échec est une violation d'invariant. Les deux
 constantes utilisent les formes release des écritures de la case (`reset_release`,
-`find_or_set_idx_const_val2_release`), pour les lecteurs du §6.
+`find_or_register_second_value_release`), pour les lecteurs du §6.
 
 **Avec OMPT** (clang, Intel : `CHUNK_HAVE_OMPT`), la passe entre régions n'est pas
 `make_block_compression()` : `ompt_callback_parallel_end` lance
@@ -196,13 +196,13 @@ diffère.
 
 ```mermaid
 flowchart TD
-    A["pattern::Proxy : zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à const_val1,<br/>aucune opération différée en attente ?"}
+    A["pattern::Proxy : zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à first_value_buffer_,<br/>aucune opération différée en attente ?"}
     B -->|oui| B1["rien à faire"]
     B -->|non| C["moteur du 7.2<br/>(write_with_optional_lock_with_set_ptr)"]
     C --> D{"revérification :<br/>compresseur ?"}
     D -->|oui| D1["end_write + écriture DIFFÉRÉE"]
     D -->|non| E["corps handle_no_bool_assignment :<br/>charger values, armer la case"]
-    E --> F{"constante du registre = valeur ?<br/>(is_const_val2_ptr_of : jamais un motif)"}
+    E --> F{"constante du registre = valeur ?<br/>(is_second_value_ptr_of : jamais un motif)"}
     F -->|oui| F1["rien à faire"]
     F -->|non| G{"premier ou dernier élément<br/>(is_completion_write),<br/>ou un critère de zero_any ?"}
     G -->|oui| G1["add_to_compression_list"]
@@ -226,7 +226,7 @@ et la passe compresse chaque candidat à sa propre taille.
 
 - **Rechunk.** `rechunk_to()` reconstruit le tableau depuis les valeurs des anciens chunks : un
   chunk motif est lu comme son motif plus son offset, jamais comme le raccourci « même seconde
-  constante » de `zero_any` (`is_const_val2()` est vrai pour un chunk motif, compressé pour le
+  constante » de `zero_any` (`is_second_value()` est vrai pour un chunk motif, compressé pour le
   moteur d'écriture). Les chunks reconstruits, écrits par les proxies, sont mis en file par la
   règle de complétion et compressés en motifs de la nouvelle taille par la passe suivante.
 - **Conseiller.** `ChunkSizeAdvisor` compte à part les chunks motifs

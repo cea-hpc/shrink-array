@@ -514,13 +514,13 @@ template <typename T, typename Derived, bool Enabled>
 T* zero::ChunkThreadPolicy<T, Derived, Enabled>::try_mark_const_and_get_old()
 {
     T* old = Base::values_load();
-    if (old == Base::get_const_val1()) [[unlikely]]
+    if (old == Base::first_value_ptr()) [[unlikely]]
     {
         return nullptr;
     }
 
     T* expected = old;
-    T* new_ptr  = Base::get_const_val1();
+    T* new_ptr  = Base::first_value_ptr();
 
     if (!values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
         [[unlikely]]
@@ -574,7 +574,7 @@ zero::Chunk<T>& zero::Chunk<T>::operator=(const Chunk<T>& other)
 template <typename T>
 void zero::Chunk<T>::alloc_chunk([[maybe_unused]] int thr_rank)
 {
-    if (is_const_val1())
+    if (is_first_value())
     {
         if constexpr (chunk_config::stats)
         {

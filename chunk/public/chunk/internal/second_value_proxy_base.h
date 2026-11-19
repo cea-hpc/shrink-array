@@ -58,8 +58,8 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base::chunk_index_;
     using Base::derived;
     using Base::elem_offset_;
-    using Base::is_const_val1;
-    using Base::is_not_const_val1;
+    using Base::is_first_value;
+    using Base::is_not_first_value;
     using Base::values_;
 
     using typename Base::AtomicPtrRefT;
@@ -80,9 +80,9 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *        index/idx for non-bool types).
      * @return true if the chunk is compressed to the second constant.
      */
-    [[nodiscard]] bool is_const_val2() const noexcept
+    [[nodiscard]] bool is_second_value() const noexcept
     {
-        return derived().is_const_val2();
+        return derived().is_second_value();
     }
 
     /**
@@ -186,12 +186,12 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
-     * @brief Negation of is_const_val2().
+     * @brief Negation of is_second_value().
      * @return true if the chunk is NOT compressed to the second constant.
      */
-    [[nodiscard]] bool is_not_const_val2() const noexcept
+    [[nodiscard]] bool is_not_second_value() const noexcept
     {
-        return !is_const_val2();
+        return !is_second_value();
     }
 
     /**
@@ -200,7 +200,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      */
     [[nodiscard]] bool is_const_val() const noexcept
     {
-        return is_const_val1() || is_const_val2();
+        return is_first_value() || is_second_value();
     }
 
     /**
@@ -213,7 +213,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *          pass, on its first write of a constant over something else.
      *
      *          Not only a chunk ALREADY at one constant being written the
-     *          other: a chunk materialised by a plain value (2.5 over const_val1)
+     *          other: a chunk materialised by a plain value (2.5 over first_value)
      *          and then written back to a constant element by element must be
      *          queued too, or it stays materialised for the run. The cost is
      *          paid only by writes of a constant: an old-value read and a

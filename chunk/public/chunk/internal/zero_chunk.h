@@ -210,7 +210,7 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
 
     using Base::derived;
     using Base::init_block;
-    using Base::is_const_val1;
+    using Base::is_first_value;
     using Base::self;
     using Base::values_;
 
@@ -426,9 +426,9 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
  * @brief One chunk of a ChunkArray: a block of chunk-size elements that collapses to zero.
  *
  * @details The simplest of the three variants. A chunk holds either a real
- *          buffer or, once every element is zero, the shared const_val1 constant
+ *          buffer or, once every element is zero, the shared first_value constant
  *          -- so `values` doubles as the state flag: written() is just
- *          "values != const_val1". zero_or_value and zero_any extend this with a second
+ *          "values != first_value". zero_or_value and zero_any extend this with a second
  *          constant, shared or per-chunk respectively.
  *
  *          Three policies supply what depends on the build, so this class holds
@@ -466,8 +466,8 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     using Base::first_value;
 
     using Base::init_block;
-    using Base::is_const_val1;
-    using Base::m_ptr_const_val1;
+    using Base::is_first_value;
+    using Base::first_value_buffer_;
     using Base::values_;
     using Base::values_load;
     using Base::values_store;
@@ -499,20 +499,20 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /// @brief Point this chunk at the shared zero constant (compressed state).
     void init_values_const_val()
     {
-        values_ = Base::get_const_val1();
+        values_ = Base::first_value_ptr();
     }
 
     /// @brief Does this chunk hold a real buffer?
-    /// @return false while it is compressed to const_val1
+    /// @return false while it is compressed to first_value
     [[nodiscard]] bool written() const noexcept
     {
-        return values_ != Base::get_const_val1();
+        return values_ != Base::first_value_ptr();
     }
 
     /// @brief Materialise storage if the chunk is still compressed.
     void alloc_chunk()
     {
-        if (is_const_val1())
+        if (is_first_value())
         {
             this->create_value();
         }

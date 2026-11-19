@@ -347,12 +347,12 @@ template <typename Arr>
 /**
  * @brief Does this chunk own a buffer the bulk store may write into?
  *
- * @details NOT `!is_const_val1()`. A zero_any chunk parked on its SECOND constant is
- *          not const_val1 either, and its values pointer is a second-value slot,
+ * @details NOT `!is_first_value()`. A zero_any chunk parked on its SECOND constant is
+ *          not first_value either, and its values pointer is a second-value slot,
  *          not a buffer: stores through it are lost, and the chunk keeps
  *          reading its constant.
  *          written() is each variant's own "materialised" test -- zero: not
- *          const_val1; zero_any: neither constant. zero_or_value's index-less written()
+ *          first_value; zero_any: neither constant. zero_or_value's index-less written()
  *          is bool-only (false for every other T), so it is asked with @p idx2.
  */
 template <typename Arr, typename ChunkClass>
@@ -394,12 +394,12 @@ template <typename Arr, typename ChunkClass>
                 return false;
             }
         }
-        return ch.is_const_val2_ptr_of(vals) &&
+        return ch.is_second_value_ptr_of(vals) &&
                same_value(static_cast<T>(ch.second_value_from_ptr(vals)), static_cast<T>(value));
     }
     else if constexpr (has_second_value_v<Arr>)
     {
-        return ch.is_const_val2(idx2) && same_value(static_cast<T>(value), static_cast<T>(arr.second_value()));
+        return ch.is_second_value(idx2) && same_value(static_cast<T>(value), static_cast<T>(arr.second_value()));
     }
     else
     {
@@ -620,7 +620,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         {
             if (whole && value_is_const1)
             {
-                if (!ch.is_const_val1())
+                if (!ch.is_first_value())
                 {
                     // CHUNK_STATS: a compression reached without a scan -- count
                     // its (trivially successful) attempt with it, so the
@@ -646,7 +646,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         if constexpr (is_packed_bit_v<T>)
         {
             // Whole chunk already at that constant: nothing to write.
-            if (whole && (value_is_const1 ? ch.is_const_val1() : ch.is_const_val2()))
+            if (whole && (value_is_const1 ? ch.is_first_value() : ch.is_second_value()))
             {
                 continue;
             }
@@ -661,7 +661,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         {
             // Already at the fill value: every write below would take the
             // proxy's early-out, so none is made (the raw path's test below).
-            bool at_value = value_is_const1 ? ch.is_const_val1() : internal::at_second_constant(arr, ch, idx2, value);
+            bool at_value = value_is_const1 ? ch.is_first_value() : internal::at_second_constant(arr, ch, idx2, value);
             if constexpr (requires { ch.pending_any(); })
             {
                 at_value = at_value && !ch.pending_any();
@@ -682,17 +682,17 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // buffer and registers the compression bookkeeping. If the loop
             // walks the whole range without materialising, the chunk is
             // constant and nothing is left to do. "Materialises" is written(),
-            // not !is_const_val1(): see internal::materialised.
+            // not !is_first_value(): see internal::materialised.
             //
             // Already at the fill value, first or second constant: every one of
             // those writes would take the proxy's early-out
-            // (is_const_val1_and_v_equal_first_value; for the second constant,
+            // (is_first_value_equal_to; for the second constant,
             // zero_or_value's assign_impl, zero_any's handle_no_bool_assignment),
             // so none is made -- whole chunk or part of one. Not while an op is
             // pending: an older op would replay over the fill, the proxy's own
             // condition.
             const bool at_value =
-                value_is_const1 ? ch.is_const_val1() : internal::at_second_constant(arr, ch, idx2, value);
+                value_is_const1 ? ch.is_first_value() : internal::at_second_constant(arr, ch, idx2, value);
             if (at_value && !ch.pending_any())
             {
                 continue;
@@ -1035,11 +1035,11 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                 bool         at_value  = false;
                 if constexpr (is_packed_bit_v<T>)
                 {
-                    at_value = is_const1 ? ch.is_const_val1() : ch.is_const_val2();
+                    at_value = is_const1 ? ch.is_first_value() : ch.is_second_value();
                 }
                 else
                 {
-                    at_value = is_const1 ? ch.is_const_val1() : at_second_constant(arr, ch, idx2, fill);
+                    at_value = is_const1 ? ch.is_first_value() : at_second_constant(arr, ch, idx2, fill);
                 }
                 if constexpr (requires { ch.pending_any(); })
                 {

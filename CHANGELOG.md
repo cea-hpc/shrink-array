@@ -54,6 +54,28 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Changed
+
+- The first and second values have the names the documentation and the statistics give them:
+  the `const_val1` / `const_val2` (and `const2`) names of the chunks, proxies and registry
+  follow. `is_const_val1()` / `is_const_val2()` are `is_first_value()` / `is_second_value()`,
+  `get_const_val1()` / `get_const_val2()` are `first_value_ptr()` / `second_value_ptr()`,
+  `ArrayConstVal2Holder` is `SecondValueRegistry` (`internal/second_value_registry.h`),
+  `find_or_set_idx_const_val2()` is `find_or_register_second_value()`, and the others alike
+  (all internal). The developer settings follow: `CHUNK_SECOND_VALUE_ID_LIMIT`,
+  `CHUNK_SECOND_VALUE_RECLAIM`, and the compile-time `CHUNK_SECOND_VALUE_REGION_BYTES`,
+  `CHUNK_SECOND_VALUE_MAX_IDS`, `CHUNK_SECOND_VALUE_LOOKUP_LOG2`; their `CHUNK_CONST_VAL2_*` /
+  `CHUNK_CONST2_RECLAIM` names are still read until 1.0. The harnesses
+  `const2_registry_validation` and `const2_reclaim_validation` are
+  `second_value_registry_validation` and `second_value_reclaim_validation`, the
+  `rechunk_validation` cases `val2-*` are `second-value-*`.
+
+### Removed
+
+- `CHUNK_CST_VAL2_ID_LIMIT` and `CHUNK_CST2_RECLAIM`, the names these two settings had before
+  0.3.0, as 0.3.0 announced: `CHUNK_SECOND_VALUE_ID_LIMIT` and `CHUNK_SECOND_VALUE_RECLAIM`
+  above.
+
 ### Fixed
 
 - `zero_or_value` and `zero_any` (and `pattern::Array`): `a[i] += x` cost more than a read plus a

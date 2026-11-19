@@ -15,7 +15,7 @@
  */
 
 /**
- * @file const2_registry_validation.cpp
+ * @file second_value_registry_validation.cpp
  * @brief zero_any's second-value registry (GlobalVecHolder) is freed by the
  *        last array of EVERY generation, not only the first.
  *
@@ -46,7 +46,7 @@
  *          there is no OMPT tool, and in a serial build the writers' pass
  *          (make_block_compression) the harness runs itself.
  *
- *          Usage: const2_registry_validation [chunks]
+ *          Usage: second_value_registry_validation [chunks]
  */
 
 #include <cstdio>     // std::snprintf, std::remove, std::getline
@@ -66,13 +66,13 @@
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
-namespace validation::const2_registry_validation
+namespace validation::second_value_registry_validation
 {
 
 using namespace shrink_array;
 
 static_assert(chunk_config::use_zero_any,
-              "const2_registry_validation is zero_any's registry: link chunk_zero_any_<size>");
+              "second_value_registry_validation is zero_any's registry: link chunk_zero_any_<size>");
 
 using Arr      = zero_any::Array<double>;
 using Registry = zero_any::Chunk<double>::Holder::VecHolder;
@@ -153,7 +153,7 @@ static void expect_values(const char* where, const Arr& arr, long count, double 
     }
 }
 
-/// @brief --id-limit (child, run under CHUNK_CONST_VAL2_ID_LIMIT=16): 40 chunks,
+/// @brief --id-limit (child, run under CHUNK_SECOND_VALUE_ID_LIMIT=16): 40 chunks,
 ///        each at its own constant -- 40 distinct second values. Must stop
 ///        at the 17th registration; returning means it ran on.
 static int run_id_limit_child()
@@ -180,8 +180,8 @@ static int run_id_limit_child()
 ///        value_by_id[] out of bounds.
 static void check_id_limit(const char* self)
 {
-    const std::string log     = validation::temp_path("const2_id_limit.log");
-    const std::string cmd     = std::string("CHUNK_CONST_VAL2_ID_LIMIT=16 ") + validation::self_command(self) +
+    const std::string log     = validation::temp_path("second_value_id_limit.log");
+    const std::string cmd     = std::string("CHUNK_SECOND_VALUE_ID_LIMIT=16 ") + validation::self_command(self) +
                                 " --id-limit > \"" + log + "\" 2>&1";
     const int         status  = std::system(cmd.c_str());
     const bool        stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
@@ -217,7 +217,7 @@ int run(int argc, char** argv)
     const auto chunk_sz = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
     const long count    = nchunks * chunk_sz;
 
-    println("=== const2_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, chunk_sz,
+    println("=== second_value_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, chunk_sz,
             CHUNK_PMP_MAX_THREADS);
     expect("start", 0, -1);
 
@@ -271,8 +271,8 @@ int run(int argc, char** argv)
     // D: the identifier limit stops the run (a child process).
     check_id_limit(argv[0]);
 
-    println("=== {} ===", fails ? "CONST2_REGISTRY FAILED" : "CONST2_REGISTRY OK");
+    println("=== {} ===", fails ? "SECOND_VALUE_REGISTRY FAILED" : "SECOND_VALUE_REGISTRY OK");
     return fails ? 1 : 0;
 }
 
-} // namespace validation::const2_registry_validation
+} // namespace validation::second_value_registry_validation

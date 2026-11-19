@@ -37,7 +37,7 @@
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"             // ProxyOperators
-#include "chunk/internal/array_const_val2_holder.h"     // ArrayConstVal2Holder: second-value identifiers
+#include "chunk/internal/second_value_registry.h"     // SecondValueRegistry: second-value identifiers
 #include "chunk/internal/relaxed_element.h"             // store_value: zero_any's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
 #include "chunk/internal/crtp_support.h"                // CRTPSupport
@@ -101,13 +101,13 @@ template <typename T>
 [[nodiscard]] T element_of(const T* vals, std::size_t index) noexcept
 {
     if constexpr (requires(const T* ptr) {
-                      ArrayConstVal2Holder<T>::is_const_val2_ptr(ptr);
-                      ArrayConstVal2Holder<T>::value_of_ptr_checked(ptr);
+                      SecondValueRegistry<T>::is_second_value_ptr(ptr);
+                      SecondValueRegistry<T>::value_of_ptr_checked(ptr);
                   })
     {
-        if (ArrayConstVal2Holder<T>::is_const_val2_ptr(vals)) [[unlikely]]
+        if (SecondValueRegistry<T>::is_second_value_ptr(vals)) [[unlikely]]
         {
-            return ArrayConstVal2Holder<T>::value_of_ptr_checked(vals);
+            return SecondValueRegistry<T>::value_of_ptr_checked(vals);
         }
     }
     // elem_get, not vals[index]: for Bit, vals[index] indexes BYTES past the
@@ -433,23 +433,23 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ========================================================================
 
     /// @brief Is the chunk compressed to its single first value?
-    [[nodiscard]] bool is_const_val1() const noexcept
+    [[nodiscard]] bool is_first_value() const noexcept
     {
-        return chunk_.is_const_val1();
+        return chunk_.is_first_value();
     }
 
-    /// @brief is_const_val1() judged from an already-loaded value pointer.
+    /// @brief is_first_value() judged from an already-loaded value pointer.
     /// @param values_loc The pointer the caller loaded; saves a reload on a path
     ///        that has one in hand, and keeps the whole test on ONE snapshot.
-    [[nodiscard]] bool is_const_val1(const T* values_loc) const noexcept
+    [[nodiscard]] bool is_first_value(const T* values_loc) const noexcept
     {
-        return chunk_.is_const_val1(values_loc);
+        return chunk_.is_first_value(values_loc);
     }
 
-    /// @brief Complement of is_const_val1().
-    [[nodiscard]] bool is_not_const_val1() const noexcept
+    /// @brief Complement of is_first_value().
+    [[nodiscard]] bool is_not_first_value() const noexcept
     {
-        return !chunk_.is_const_val1();
+        return !chunk_.is_first_value();
     }
 
     /// @brief Would writing @p value leave the chunk compressed exactly as it is?
@@ -463,15 +463,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          engine, whose WAW guard retires the op before the store;
     ///          otherwise the write is silently lost. pending_any() is one
     ///          acquire load of the chunk header, constant-false in a serial build.
-    [[nodiscard]] bool is_const_val1_and_v_equal_first_value(InT<T> value) const noexcept
+    [[nodiscard]] bool is_first_value_equal_to(InT<T> value) const noexcept
     {
-        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_const_val1() && !chunk_.pending_any();
+        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_first_value() && !chunk_.pending_any();
     }
 
-    /// @brief is_const_val1_and_v_equal_first_value() from a loaded value pointer.
-    [[nodiscard]] bool is_const_val1_and_v_equal_first_value(const T* values_loc, InT<T> value) const noexcept
+    /// @brief is_first_value_equal_to() from a loaded value pointer.
+    [[nodiscard]] bool is_first_value_equal_to(const T* values_loc, InT<T> value) const noexcept
     {
-        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_const_val1(values_loc) &&
+        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_first_value(values_loc) &&
                !chunk_.pending_any();
     }
 

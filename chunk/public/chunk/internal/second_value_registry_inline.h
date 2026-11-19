@@ -24,7 +24,7 @@
 #include <mutex>   // std::mutex, std::scoped_lock
 #include <vector>  // std::vector
 
-#include "chunk/internal/array_const_val2_holder.h" // the class these bodies belong to
+#include "chunk/internal/second_value_registry.h" // the class these bodies belong to
 #include "chunk/internal/same_value.h"              // same_value
 
 namespace shrink_array
@@ -39,7 +39,7 @@ template <typename T>
 {
     if constexpr (SecondValueTraits<T>::indexed)
     {
-        return ArrayConstVal2Holder<T>::value_of_id(*slot);
+        return SecondValueRegistry<T>::value_of_id(*slot);
     }
     else
     {
@@ -54,7 +54,7 @@ void SecondValueRef<T>::set(T value) const
     {
         // Up to the record: a reclaim must not run in between (LookupGuard).
         const typename GlobalVecHolder<T>::LookupGuard in_flight;
-        *slot = ArrayConstVal2Holder<T>::id_for_value(value);
+        *slot = SecondValueRegistry<T>::id_for_value(value);
     }
     else
     {
@@ -65,12 +65,12 @@ void SecondValueRef<T>::set(T value) const
 template <typename T>
 void SecondValueRef<T>::set_from_array(const T* src) const noexcept
 {
-    // bool has no registry (ArrayConstVal2Holder<bool>): value_of_ptr would index
+    // bool has no registry (SecondValueRegistry<bool>): value_of_ptr would index
     // value_by_id with an address-sized id. Never called for bool today.
     static_assert(!std::is_same_v<T, bool>, "SecondValueRef<bool>::set_from_array: bool has no registry");
     if constexpr (SecondValueTraits<T>::indexed)
     {
-        *slot = ArrayConstVal2Holder<T>::id_of_ptr(src);
+        *slot = SecondValueRegistry<T>::id_of_ptr(src);
     }
     else
     {
@@ -137,7 +137,7 @@ GlobalVecHolder<T>::LookupGuard::LookupGuard() noexcept
         my_in_flight().fetch_add(1, std::memory_order_seq_cst);
         if (reclaims_running.load(std::memory_order_seq_cst) != 0) [[unlikely]]
         {
-            CHUNK_INVARIANT_FAILED("const_val2: second-value lookup or registration during a reclaim "
+            CHUNK_INVARIANT_FAILED("second_value: second-value lookup or registration during a reclaim "
                                    "(reclaim_second_values() needs a sequential point)");
         }
     }
@@ -157,7 +157,7 @@ void GlobalVecHolder<T>::ReclaimScope::check_no_lookup(const char* when) noexcep
     }
     if (in_flight != 0) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("const_val2: reclaim {} with {} second-value lookup(s) or registration(s) "
+        CHUNK_INVARIANT_FAILED("second_value: reclaim {} with {} second-value lookup(s) or registration(s) "
                                "in flight (reclaim_second_values() needs a sequential point)",
                                when, in_flight);
     }
@@ -278,7 +278,7 @@ std::byte* GlobalVecHolder<T>::region_alloc(std::size_t bytes)
 {
     const std::size_t off = region_used.fetch_add(bytes, std::memory_order_relaxed);
     // ONE capacity: what the value table holds (region_usable, lowered by
-    // CHUNK_CONST_VAL2_ID_LIMIT); alloc_chunk() writes value_by_id[id] for every slot
+    // CHUNK_SECOND_VALUE_ID_LIMIT); alloc_chunk() writes value_by_id[id] for every slot
     // carved here, so a slot past it would be a write past the table. Warn once at half.
     const std::size_t cap_bytes = (bytes != 0 && id_limit * bytes < region_usable) ? id_limit * bytes : region_usable;
     // The counts of the two messages, in identifiers: a bytes of 0 (no caller
@@ -286,10 +286,10 @@ std::byte* GlobalVecHolder<T>::region_alloc(std::size_t bytes)
     // the abort.
     const std::size_t per_id = bytes != 0 ? bytes : 1;
     const char*       limiting =
-        (max_ids * id_stride) < region_bytes ? "CHUNK_CONST_VAL2_MAX_IDS" : "CHUNK_CONST_VAL2_REGION_BYTES";
+        (max_ids * id_stride) < region_bytes ? "CHUNK_SECOND_VALUE_MAX_IDS" : "CHUNK_SECOND_VALUE_REGION_BYTES";
     if (id_limit < max_ids)
     {
-        limiting = "CHUNK_CONST_VAL2_ID_LIMIT";
+        limiting = "CHUNK_SECOND_VALUE_ID_LIMIT";
     }
     if (bytes != 0 && off + bytes > cap_bytes / 2) [[unlikely]]
     {
@@ -305,8 +305,8 @@ std::byte* GlobalVecHolder<T>::region_alloc(std::size_t bytes)
     }
     if (off + bytes > cap_bytes) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("[const_val2] second-value identifiers exhausted: {} of {}, bound by {} "
-                               "(CHUNK_CONST_VAL2_MAX_IDS={}, CHUNK_CONST_VAL2_REGION_BYTES={} MiB). Raise it, or "
+        CHUNK_INVARIANT_FAILED("[second_value] second-value identifiers exhausted: {} of {}, bound by {} "
+                               "(CHUNK_SECOND_VALUE_MAX_IDS={}, CHUNK_SECOND_VALUE_REGION_BYTES={} MiB). Raise it, or "
                                "reduce the number of DISTINCT second values the workload registers.",
                                off / per_id, cap_bytes / per_id, limiting, max_ids, region_bytes >> 20U);
     }
@@ -417,7 +417,7 @@ void GlobalVecHolder<T>::install_head()
 }
 
 template <typename T>
-void GlobalVecHolder<T>::clear_if_last(int& n_val2)
+void GlobalVecHolder<T>::clear_if_last(int& n_second_values)
 {
     if (const int remaining = ref_count.fetch_sub(1, std::memory_order_acq_rel) - 1; remaining > 0)
     {
@@ -437,7 +437,7 @@ void GlobalVecHolder<T>::clear_if_last(int& n_val2)
         {
             if (seg->slots[i] != nullptr)
             {
-                ++n_val2;
+                ++n_second_values;
             }
         }
         auto owned = std::unique_ptr<Segment<T>>(seg);
@@ -446,7 +446,7 @@ void GlobalVecHolder<T>::clear_if_last(int& n_val2)
 
     if (n_segs > 1)
     {
-        std::cout << "[const_val2] " << n_val2 << " distinct second values across " << n_segs << " segments (capacity "
+        std::cout << "[second_value] " << n_second_values << " distinct second values across " << n_segs << " segments (capacity "
                   << n_segs * Segment<T>::slots_per_segment
                   << "), index_degraded=" << index_degraded.load(std::memory_order_relaxed) << "\n";
     }
@@ -501,17 +501,17 @@ void GlobalVecHolder<T>::region_init()
     void*     raw  = mmap(nullptr, region_usable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (raw == MAP_FAILED) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("[const_val2] cannot reserve the second-value region ({} MiB): {}", region_usable >> 20U,
+        CHUNK_INVARIANT_FAILED("[second_value] cannot reserve the second-value region ({} MiB): {}", region_usable >> 20U,
                                std::strerror(errno));
     }
     // Every slot is carved at a multiple of region_stride (id_stride),
     // which is what turns a slot pointer into a small identifier and back
-    // (ArrayConstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
+    // (SecondValueRegistry::id_of_ptr / value_of_id). Nothing is ever stored
     // in the region, so a slot only has to give each identifier a distinct
     // address: one cache line does, and no page is ever backed.
     region_end = static_cast<std::byte*>(raw) + region_usable;
     const auto lim =
-        env_number<std::size_t>(env_name_or_former("CHUNK_CONST_VAL2_ID_LIMIT", "CHUNK_CST_VAL2_ID_LIMIT"), max_ids);
+        env_number<std::size_t>(env_name_or_former("CHUNK_SECOND_VALUE_ID_LIMIT", "CHUNK_CONST_VAL2_ID_LIMIT"), max_ids);
     id_limit = (lim >= 1 && lim < max_ids) ? lim : max_ids; // lowers only
 
     // The value table: one T per identifier this run can hand out, plus [0].
@@ -521,7 +521,7 @@ void GlobalVecHolder<T>::region_init()
         mmap(nullptr, value_table_bytes(), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (vals == MAP_FAILED) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("[const_val2] cannot reserve the second-value table ({} MiB): {}",
+        CHUNK_INVARIANT_FAILED("[second_value] cannot reserve the second-value table ({} MiB): {}",
                                value_table_bytes() >> 20U, std::strerror(errno));
     }
     auto* const table = static_cast<T*>(vals);
@@ -620,11 +620,11 @@ void GlobalVecHolder<T>::index_clear() noexcept
 }
 
 // ---------------------------------------------------------------------------
-// shrink_array::ArrayConstVal2Holder<T>
+// shrink_array::SecondValueRegistry<T>
 // ---------------------------------------------------------------------------
 
 template <typename T>
-[[nodiscard]] T* ArrayConstVal2Holder<T>::find_or_set_idx_const_val2(T second_v, SecondValueRef<T> ptr_second_value)
+[[nodiscard]] T* SecondValueRegistry<T>::find_or_register_second_value(T second_v, SecondValueRef<T> ptr_second_value)
 {
     // Up to the record in the second-value table, which the reclaim's mark
     // scans: a reclaim must not run in between (LookupGuard).
@@ -635,17 +635,17 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] T* ArrayConstVal2Holder<T>::find_or_set_idx_const_val2_release(T                 second_v,
+[[nodiscard]] T* SecondValueRegistry<T>::find_or_register_second_value_release(T                 second_v,
                                                                              SecondValueRef<T> ptr_second_value)
 {
-    const typename VecHolder::LookupGuard in_flight; // as find_or_set_idx_const_val2()
+    const typename VecHolder::LookupGuard in_flight; // as find_or_register_second_value()
     T*                                    buf = find_or_register(second_v);
     ptr_second_value.set_from_array_release(buf);
     return buf;
 }
 
 template <typename T>
-[[nodiscard]] T* ArrayConstVal2Holder<T>::find_const_val2_ptr(InT<T> second_v)
+[[nodiscard]] T* SecondValueRegistry<T>::find_second_value_ptr(InT<T> second_v)
 {
     using Gvh = GlobalVecHolder<T>;
     const typename Gvh::LookupGuard in_flight; // holds an index generation / the chain
@@ -672,9 +672,9 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] T ArrayConstVal2Holder<T>::value_of_ptr_checked(const T* ptr) noexcept
+[[nodiscard]] T SecondValueRegistry<T>::value_of_ptr_checked(const T* ptr) noexcept
 {
-    if (!is_const_val2_ptr(ptr))
+    if (!is_second_value_ptr(ptr))
     {
         return T{};
     }
@@ -687,7 +687,7 @@ template <typename T>
 }
 
 template <typename T>
-T* ArrayConstVal2Holder<T>::alloc_chunk(T val)
+T* SecondValueRegistry<T>::alloc_chunk(T val)
 {
     // A reclaimed identifier first; the region only when none is free.
     T* buf = VecHolder::take_free_slot();
@@ -704,7 +704,7 @@ T* ArrayConstVal2Holder<T>::alloc_chunk(T val)
 }
 
 template <typename T>
-[[nodiscard]] T* ArrayConstVal2Holder<T>::find_or_register(InT<T> second_v)
+[[nodiscard]] T* SecondValueRegistry<T>::find_or_register(InT<T> second_v)
 {
     const typename VecHolder::LookupGuard in_flight; // check builds; nests in the callers'
     // ── Hot path, lock-free ───────────────────────────────────────────

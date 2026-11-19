@@ -34,7 +34,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
 #include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
-#include "chunk/internal/array_const_val2_holder.h" // for GlobalVecHolder (const2 GC)
+#include "chunk/internal/second_value_registry.h" // for GlobalVecHolder (const2 GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share
 #include "chunk/internal/zero_any_proxy.h"             // zero_any::Proxy<T> and its tables
@@ -52,7 +52,7 @@ namespace zero_any
 {
 
 /// @brief reclaim_second_values(): identifier @p id is still referenced.
-inline void mark_const2_id(std::vector<std::uint8_t>& referenced, std::uint32_t id) noexcept
+inline void mark_second_value_id(std::vector<std::uint8_t>& referenced, std::uint32_t id) noexcept
 {
     if (id != 0 && id < referenced.size())
     {
@@ -71,7 +71,7 @@ inline void mark_const2_id(std::vector<std::uint8_t>& referenced, std::uint32_t 
  *              (init_values_const_val() finds the slot from it by value).
  *          The members with the same element type share one registry
  *          (GlobalVecHolder<T>): each registers this function for itself
- *          (GlobalVecHolder::register_marker(), from acquire_const2_registry()), and
+ *          (GlobalVecHolder::register_marker(), from acquire_second_value_registry()), and
  *          a reclaim on any of them runs all the marks.
  * @tparam T      Element type (not bool: bool has no registry).
  * @tparam ProxyT The member's proxy: its registry of arrays and second-value table.
@@ -98,7 +98,7 @@ void mark_second_values(std::vector<std::uint8_t>& referenced)
                 const T* vals = arr->chunk_ref(static_cast<std::size_t>(j)).values_load();
                 if (Gvh::region_contains(vals))
                 {
-                    mark_const2_id(referenced, Gvh::slot_id(vals));
+                    mark_second_value_id(referenced, Gvh::slot_id(vals));
                 }
             }
         });
@@ -114,13 +114,13 @@ void mark_second_values(std::vector<std::uint8_t>& referenced)
         {
             if constexpr (SecondValueTraits<T>::indexed)
             {
-                mark_const2_id(referenced, slot); // the identifier itself; 0 = none
+                mark_second_value_id(referenced, slot); // the identifier itself; 0 = none
             }
             else if (!same_value(static_cast<T>(slot), T{}))
             {
                 if (const T* hit = Gvh::index_lookup(slot))
                 {
-                    mark_const2_id(referenced, Gvh::slot_id(hit));
+                    mark_second_value_id(referenced, Gvh::slot_id(hit));
                 }
             }
         }
@@ -246,7 +246,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) (a shrinking resize()). Same
     ///        release as clear_core(): freed serially; under OpenMP parked in this geometry's
-    ///        reuse list, chunk set to const_val1. Sequential point; no candidate list may hold them.
+    ///        reuse list, chunk set to first_value. Sequential point; no candidate list may hold them.
     void release_chunk_range(int first, int last);
 
   public:
@@ -328,7 +328,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      *        reuses their identifiers instead of carving new ones.
      *
      * @details The registry (GlobalVecHolder) forgets nothing on its own: drifting constants
-     *          register new values until the identifiers run out (CHUNK_CONST_VAL2_MAX_IDS),
+     *          register new values until the identifiers run out (CHUNK_SECOND_VALUE_MAX_IDS),
      *          which stops the run. This marks what is referenced, over every live array of
      *          every member of the family sharing the registry, whatever its index type
      *          (mark_second_values(), one per member, GlobalVecHolder::mark_all()), and
@@ -431,7 +431,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     ///
     /// Everything clear() does EXCEPT the end-of-life I/O: drain, terminal compression,
     /// buffer release, metadata reset. rechunk_to() must release storage through this same
-    /// (ledger-correct) path. In non-OMP builds it does NOT tear down the shared const_val2
+    /// (ledger-correct) path. In non-OMP builds it does NOT tear down the shared second_value
     /// holder, so it does not affect other arrays.
     void clear_core();
 
@@ -451,7 +451,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      *          Registers this member's mark with the registry on the way, for
      *          reclaim_second_values().
      */
-    void acquire_const2_registry();
+    void acquire_second_value_registry();
 
     /// @brief The identity step of swap(): array_id and the registry entry (the
     ///        per-chunk metadata rows follow the chunks), the const2 registry
@@ -460,7 +460,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     {
         using std::swap;
         swap(this->array_id_, other.array_id_);
-        swap(holds_const2_registry_, other.holds_const2_registry_);
+        swap(holds_second_value_registry_, other.holds_second_value_registry_);
         ProxyType::array_registry->swap_keys(this->registry_key(), other.registry_key());
     }
 
@@ -479,8 +479,8 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     static void gc_collect_live(std::unordered_set<const void*>& live);
 
     /// @brief This array holds one reference on the chunk type's const2 registry
-    ///        (ArrayConstVal2Holder). See acquire_const2_registry().
-    bool holds_const2_registry_ = false;
+    ///        (SecondValueRegistry). See acquire_second_value_registry().
+    bool holds_second_value_registry_ = false;
 };
 
 /**

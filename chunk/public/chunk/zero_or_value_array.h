@@ -86,7 +86,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     friend SecondValueBase;       ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<Array>; ///< For swap_identity().
 
-    // RechunkHooks::rechunk_reown_after_swap copies the private idx_const_val2_.
+    // RechunkHooks::rechunk_reown_after_swap copies the private second_value_idx_.
     template <typename, bool>
     friend class shrink_array::zero_or_value::RechunkHooks;
 
@@ -221,13 +221,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /**
      * @brief Set the array-wide second constant.
-     * @details Registers @p sec_value in the shared const_val2 registry, reusing an
+     * @details Registers @p sec_value in the shared second_value registry, reusing an
      *          identical value's index. A reused block is re-filled to THIS
      *          array's geometry first: a larger array would otherwise read stale
      *          zeros past the registering array's size.
      * @param sec_value value chunks may now compress to
      * @param message   print the "useless for bool" warning (bool only)
-     * @warning const_val2 blocks never move and are never released: a live chunk
+     * @warning second_value blocks never move and are never released: a live chunk
      *          of another array may hold the address as its `values`. One block
      *          per DISTINCT value ever declared, plus a candidate list per thread.
      */
@@ -292,7 +292,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
     ///        a shrinking resize() drops. Same release as clear_core(): freed
     ///        in place serially; under OpenMP parked in this array's geometry's
-    ///        reuse list and the chunk neutralised to const_val1. Sequential
+    ///        reuse list and the chunk neutralised to first_value. Sequential
     ///        point; the candidate lists must hold none of them.
     void release_chunk_range(int first, int last);
 
@@ -450,7 +450,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /// Index of the second value in the shared value table;
     /// chunk_config::no_second_value_index until set_second_value().
-    int idx_const_val2_ = chunk_config::no_second_value_index;
+    int second_value_idx_ = chunk_config::no_second_value_index;
 };
 
 } // namespace zero_or_value

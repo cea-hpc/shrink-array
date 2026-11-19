@@ -41,7 +41,7 @@
 #include "chunk/internal/chunk_traits.h"            // ChunkTraits<pattern::Chunk<T>>, HasMotifState
 #include "chunk/internal/motif_region.h"            // pattern::MotifRegion
 #include "chunk/internal/relaxed_element.h"         // load_element_acquire (the offset)
-#include "chunk/internal/array_const_val2_holder.h" // SecondValueTraits (the slot type), SecondValueRef
+#include "chunk/internal/second_value_registry.h" // SecondValueTraits (the slot type), SecondValueRef
 #include "chunk/internal/const_slot.h"              // ConstSlot::motif
 #include "chunk/internal/chunk_stats.h"             // inc_chunk_compress, add_chunk_bytes_freed (CHUNK_STATS)
 #include "chunk/internal/invariant_check.h"         // CHUNK_INVARIANT_FAILED

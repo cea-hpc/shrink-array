@@ -118,8 +118,8 @@ The course of the pass; the steps up to the scan are those of `zero_any`
 ```mermaid
 flowchart TD
     A["zero_any's pass up to the scan:<br/>flush check, steal_mark, start"] --> E["fill_list_to_compress at the entry's size:<br/>scan_constants against 0 and element 0"]
-    E -->|"all = 0"| F["type 0: slot reset_release,<br/>CAS values -> const_val1"]
-    E -->|"all = element 0"| G["type 1: find_or_set_idx_const_val2_release,<br/>CAS values -> the registry array"]
+    E -->|"all = 0"| F["type 0: slot reset_release,<br/>CAS values -> first_value_buffer_"]
+    E -->|"all = element 0"| G["type 1: find_or_register_second_value_release,<br/>CAS values -> the registry array"]
     E -->|"neither"| M["classify_motif: read_block,<br/>subtract element 0, hash, find_or_admit"]
     M -->|"registered motif"| MC["motif_candidates_, claim kept"]
     M -->|"not admitted"| N["steal_unmark: stays materialised"]
@@ -134,7 +134,7 @@ flowchart TD
 
 `find_or_admit` returns a motif only from its second sighting, by another chunk (§3); the motif
 CAS is made on a claimed chunk, and its failure is an invariant failure. The two constants use
-the release forms of the slot writes (`reset_release`, `find_or_set_idx_const_val2_release`), for
+the release forms of the slot writes (`reset_release`, `find_or_register_second_value_release`), for
 the readers of §6.
 
 **With OMPT** (clang, Intel: `CHUNK_HAVE_OMPT`) the pass between regions is not
@@ -184,13 +184,13 @@ differs.
 
 ```mermaid
 flowchart TD
-    A["pattern::Proxy: zero_any::ProxyImpl::assign_impl"] --> B{"0 on a const_val1 chunk,<br/>no deferred operation pending?"}
+    A["pattern::Proxy: zero_any::ProxyImpl::assign_impl"] --> B{"0 on a first_value_buffer_ chunk,<br/>no deferred operation pending?"}
     B -->|yes| B1["nothing to do"]
     B -->|no| C["engine of 7.2<br/>(write_with_optional_lock_with_set_ptr)"]
     C --> D{"re-check:<br/>compressor?"}
     D -->|yes| D1["end_write + DEFERRED write"]
     D -->|no| E["body handle_no_bool_assignment:<br/>load values, arm the slot"]
-    E --> F{"registry constant = value?<br/>(is_const_val2_ptr_of: never a motif)"}
+    E --> F{"registry constant = value?<br/>(is_second_value_ptr_of: never a motif)"}
     F -->|yes| F1["nothing to do"]
     F -->|no| G{"first or last element<br/>(is_completion_write),<br/>or a zero_any criterion?"}
     G -->|yes| G1["add_to_compression_list"]
@@ -214,7 +214,7 @@ pass compresses each candidate at its own size.
 
 - **Rechunk.** `rechunk_to()` rebuilds the array from the old chunks' values: a motif chunk is
   read as its motif plus its offset, never as `zero_any`'s "same second constant" shortcut
-  (`is_const_val2()` holds for a motif chunk since, for the write engine, it is compressed). The
+  (`is_second_value()` holds for a motif chunk since, for the write engine, it is compressed). The
   rebuilt chunks, written through the proxies, are queued by the completion rule and compressed
   to motifs of the new size by the next pass.
 - **Advisor.** `ChunkSizeAdvisor` counts the motif chunks apart (`ChunkSizeEstimate::motif`),

@@ -36,7 +36,7 @@
  *   model                         source (chunk/public/chunk/)
  *   ---------------------------   ----------------------------------------------------------
  *   values                        internal/chunk_base.h  ChunkBase::values_ (values_load(): acquire)
- *   slot                          the chunk's second-value slot (internal/tab_cst_val2_holder.h
+ *   slot                          the chunk's second-value slot (internal/second_value_registry.h
  *                                 SecondValueRef<T>::slot): the offset of a motif chunk, the
  *                                 second value of a constant one
  *   motif_a, motif_b              internal/motif_region.h  MotifRegion<T> entries (never freed here)
@@ -50,7 +50,7 @@
  *   pass(), TARGET_MOTIF(_SAME)   internal/pattern_chunk_inline.h  block_clear_motif()
  *   pass(), TARGET_CST1           internal/second_value_chunk_base_inline.h block_clear_common():
  *                                 ptr_second_value.reset(), then the CAS
- *   pass(), TARGET_CST2           internal/zero_any_chunk_inline.h  find_or_set_ind_cst_val2()
+ *   pass(), TARGET_CST2           internal/zero_any_chunk_inline.h  find_or_register_second_value()
  *                                 (set_from_array() on the slot), then block_clear()
  *
  * PROPERTIES (asserted):
@@ -154,7 +154,7 @@ static _Atomic(atomic_int*) freed_buffer;
 #endif
 
 static bool is_motif(atomic_int* p) { return p == motif_a || p == motif_b; } /* MotifRegion::contains() */
-static bool is_cst(atomic_int* p) { return p == cst1 || p == cst2; }       /* is_cst_val2_ptr_of() and cst1 */
+static bool is_cst(atomic_int* p) { return p == cst1 || p == cst2; }       /* is_second_value_ptr_of() and cst1 */
 
 /* ───────────────────────── read sections (read_reclaim.h, as reader_reclaim.c) ───────────────────────── */
 

@@ -855,19 +855,19 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(const U& operand, O
 /**
  * @brief Tests a proxy's second-constant state, false for proxies that have none.
  *
- * Lets the shared invariant checks below name is_const_val2() unconditionally:
+ * Lets the shared invariant checks below name is_second_value() unconditionally:
  * only zero_or_value / zero_any carry a second constant value, and zero
  * proxy simply answers false.
  *
  * @param proxy Proxy to test.
- * @return True if @p proxy exposes is_const_val2() and it holds.
+ * @return True if @p proxy exposes is_second_value() and it holds.
  */
 template <typename P>
-constexpr bool check_is_const_val2([[maybe_unused]] const P& proxy)
+constexpr bool check_is_second_value([[maybe_unused]] const P& proxy)
 {
-    if constexpr (requires { proxy.is_const_val2(); })
+    if constexpr (requires { proxy.is_second_value(); })
     {
-        return proxy.is_const_val2();
+        return proxy.is_second_value();
     }
     else
     {
@@ -921,16 +921,16 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                 // ─── Pre-store check: const_val should not be visible here under Dekker ───
                 if constexpr (build_config::any_check)
                 {
-                    if (derived().is_const_val1())
+                    if (derived().is_first_value())
                     {
-                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_const_val1 BEFORE "
+                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_first_value BEFORE "
                                                "store_value (Dekker breach?)",
                                                &chunk_, elem_offset_);
                     }
 
-                    if (check_is_const_val2(derived()))
+                    if (check_is_second_value(derived()))
                     {
-                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_const_val2 BEFORE "
+                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_second_value BEFORE "
                                                "store_value (Dekker breach?)",
                                                &chunk_, elem_offset_);
                     }
@@ -977,17 +977,17 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                             //     wrapper called create_value upstream). ───
                             if constexpr (build_config::any_check)
                             {
-                                if (proxy.is_const_val1())
+                                if (proxy.is_first_value())
                                 {
                                     CHUNK_INVARIANT_FAILED(
-                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_const_val1 "
+                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_first_value "
                                         "before read+store (decompression skipped?)",
                                         &ctx->chunk, ctx->elem_offset);
                                 }
-                                if (check_is_const_val2(proxy))
+                                if (check_is_second_value(proxy))
                                 {
                                     CHUNK_INVARIANT_FAILED(
-                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_const_val2 "
+                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_second_value "
                                         "before read+store (decompression skipped?)",
                                         &ctx->chunk, ctx->elem_offset);
                                 }
@@ -1115,19 +1115,19 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
                                         static_cast<const void*>(values), static_cast<const void*>(current_chunk_ptr),
                                         &ctx->chunk, ctx->elem_offset);
                                 }
-                                if (proxy.is_const_val1())
+                                if (proxy.is_first_value())
                                 {
                                     invariant_failed(
                                         std::source_location::current(),
-                                        "Lambda async ARITH: chunk={} elem_offset={} is_const_val1 just before store!",
+                                        "Lambda async ARITH: chunk={} elem_offset={} is_first_value just before store!",
                                         &ctx->chunk, ctx->elem_offset);
                                 }
-                                if constexpr (requires { proxy.is_const_val2(); })
+                                if constexpr (requires { proxy.is_second_value(); })
                                 {
-                                    if (proxy.is_const_val2())
+                                    if (proxy.is_second_value())
                                     {
                                         invariant_failed(std::source_location::current(),
-                                                         "Lambda async ARITH: chunk={} elem_offset={} is_const_val2 "
+                                                         "Lambda async ARITH: chunk={} elem_offset={} is_second_value "
                                                          "just before store!",
                                                          &ctx->chunk, ctx->elem_offset);
                                     }
@@ -1144,14 +1144,14 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
 
                                 // Race detector: values pointing to const_val here means a
                                 // re-compression since create_value.
-                                T* const const1 = chunk_ref.get_const_val1();
+                                T* const const1 = chunk_ref.first_value_ptr();
 
                                 bool is_const2 = false;
                                 if constexpr (requires {
-                                                  chunk_ref.array_const_val2_holder::is_const_val2_ptr(values);
+                                                  chunk_ref.second_value_registry::is_second_value_ptr(values);
                                               })
                                 {
-                                    is_const2 = chunk_ref.array_const_val2_holder::is_const_val2_ptr(values);
+                                    is_const2 = chunk_ref.second_value_registry::is_second_value_ptr(values);
                                 }
 
                                 if (values == const1 || is_const2)

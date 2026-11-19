@@ -37,7 +37,7 @@
 #include "chunk/internal/crtp_support.h"                // CRTPSupport
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/array_const_val2_holder.h"     // SecondValueRef
+#include "chunk/internal/second_value_registry.h"     // SecondValueRef
 #include "chunk/internal/chunk_tuples.h"                // ZeroAnyCompOf
 #include "chunk/internal/proxy_base.h"                  // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"     // SecondValueProxyBase
@@ -636,9 +636,9 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     // Small helpers about chunk const-value modes
 
     /// @brief Is this proxy's chunk compressed to its second value?
-    [[nodiscard]] bool is_const_val2() const noexcept
+    [[nodiscard]] bool is_second_value() const noexcept
     {
-        return chunk_.is_const_val2();
+        return chunk_.is_second_value();
     }
 
     // The candidate-list accessors live on the zero_any::ProxyFastCompPolicy specialisations.
@@ -748,8 +748,8 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     /**
      * @brief Ensures the chunk has allocated storage for modification
      *
-     * @details Materialises a chunk in constant mode (const_val1 or const_val2). Arms
-     * the cached metadata itself (set_info_on_chunk()), after sampling is_const_val2().
+     * @details Materialises a chunk in constant mode (first_value or second_value). Arms
+     * the cached metadata itself (set_info_on_chunk()), after sampling is_second_value().
      *
      * @post Chunk has allocated storage for modifications
      */

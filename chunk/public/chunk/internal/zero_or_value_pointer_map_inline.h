@@ -136,7 +136,7 @@ template <typename T>
 {
     std::vector<T> keys;
 
-    for (const auto& [key, v] : map_idx_const_val2_)
+    for (const auto& [key, v] : second_value_idx_map_)
     {
         keys.push_back(key);
     }
@@ -149,7 +149,7 @@ template <typename T>
 {
     if constexpr (is_not_bool)
     {
-        if (const auto it = map_idx_const_val2_.find(key); it != map_idx_const_val2_.end())
+        if (const auto it = second_value_idx_map_.find(key); it != second_value_idx_map_.end())
         {
             return it->second;
         }

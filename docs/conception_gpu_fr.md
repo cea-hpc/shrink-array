@@ -321,7 +321,7 @@ qui le justifiait n'existe plus) : il est conservé pour l'interopérabilité et
 
 Le descripteur porte la constante : c'est la forme naturelle de `zero_any`, et la variante à
 prototyper en premier. Ce qui disparaît : le registre des secondes valeurs
-(`array_const_val2_holder.h`), ses segments, son index haché, `reclaim_second_values()`, les lignes
+(`second_value_registry.h`), ses segments, son index haché, `reclaim_second_values()`, les lignes
 `array_type_const_val` et `array_second_value`, `CHUNK_SECOND_VALUE_INDEXED`. Le coût par chunk
 redevient uniforme : le descripteur.
 
@@ -405,7 +405,7 @@ Elle vient **après** la géométrie fixe dans le plan (section 13).
 - **Format commun** : le descripteur device `{buf, constant}` est aussi un format CPU valide, à
   deux différences près : la version CPU pointe sur un tampon constant partagé là où le
   device met `nullptr`, et porte les portes OpenMP dans l'objet chunk. Un **convertisseur**
-  dans les deux sens est simple : par chunk, `nullptr` ↔ `const_val1` / tampon du registre, et
+  dans les deux sens est simple : par chunk, `nullptr` ↔ `first_value_buffer_` / tampon du registre, et
   les tampons matérialisés sont copiés tels quels (même S, même disposition). Il tient en un
   kernel plus une boucle d'hôte, et fait le transfert hôte ↔ device **sans décompresser** :
   on ne transfère que les tampons matérialisés et la table des descripteurs.
