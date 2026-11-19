@@ -741,7 +741,7 @@ endforeach()
 # The examples link the bare names chunk_zero / chunk_zero_or_value / chunk_zero_any; forward
 # them to the default static size. NOTE: a raw (unknown) name given to
 # target_link_libraries is silently treated by CMake as a system library
-# (-lchunk_v1), so no usage requirement (-I, PUBLIC defines) propagates and
+# (-lchunk_zero), so no usage requirement (-I, PUBLIC defines) propagates and
 # the failure only shows up at compile time — hence these explicit wrappers.
 # INTERFACE wrappers (not ALIASes) so usage requirements propagate reliably
 # across directory scopes.

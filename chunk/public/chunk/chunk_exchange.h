@@ -159,7 +159,7 @@ template <ExchangeableArray Arr>
             return first;
         }
     }
-    else if constexpr (internal::is_v2_v<Arr>)
+    else if constexpr (internal::is_zero_or_value_array_v<Arr>)
     {
         if (chunk.is_first_value(vals))
         {
@@ -278,7 +278,7 @@ template <ExchangeableArray Arr>
         chunk.init_values_const_val(ptc, psv);
         return true;
     }
-    else if constexpr (internal::is_v2_v<Arr>)
+    else if constexpr (internal::is_zero_or_value_array_v<Arr>)
     {
         // clear_int_st()'s state (zero_or_value_chunk_inline.h): the values
         // pointer at the second constant, its counter reset; no buffer to free.
@@ -316,7 +316,7 @@ template <ExchangeableArray Arr>
     ArrayState<T> state;
     state.size       = static_cast<std::size_t>(arr.size());
     state.chunk_size = arr.chunk_size();
-    if constexpr (internal::is_v2_v<Arr> && !std::is_same_v<T, bool>)
+    if constexpr (internal::is_zero_or_value_array_v<Arr> && !std::is_same_v<T, bool>)
     {
         state.has_second_value = arr.get_idx_second_value() >= 0;
         state.second_value     = state.has_second_value ? static_cast<T>(arr.second_value()) : T{};
@@ -361,7 +361,7 @@ template <ExchangeableArray Arr>
     {
         return false;
     }
-    if constexpr (internal::is_v2_v<Arr> && !std::is_same_v<T, bool>)
+    if constexpr (internal::is_zero_or_value_array_v<Arr> && !std::is_same_v<T, bool>)
     {
         if (state.has_second_value)
         {
