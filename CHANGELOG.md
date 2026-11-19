@@ -96,6 +96,16 @@ the tag's checksum to the recipe.
   chunk-size prediction allocates a summary and formats a log line; a `std::bad_alloc` there
   would have called `std::terminate()`. The prediction, a log line only, is skipped on an
   exception (Coverity 661905, 661906).
+- Compound operations with an operand that is not clean for the element (`int` `*= 1.5`,
+  `int` `%= 4294967299L`; concept_is_clean_assignment.h): the rule -- the operand converted to `T`
+  first, with an `HPC WARNING` -- held for `+=` / `-=` of `zero_or_value` and `zero_any` only.
+  `zero`'s `+=` / `-=` computed in the common type on the direct path and converted on the
+  deferred one (`-1 += 0.5`: 0 or -1); `*=` / `/=` / `%=` of every variant took the operand as it
+  came, without warning, and `zero_or_value` gave 3 for `2 *= 1.5` in a serial build, 2 in an OpenMP
+  one. Every compound operator of every variant now has the two overloads `+=` had: a clean operand
+  computes as a plain `T` does, any other is converted to `T` at the operator, with the warning, so
+  every path below gets a `T`. `docs/api.md` §4 states the rule; `mixed_operand_compound_validation`
+  checks it, direct and deferred, in every variant.
 - `zero_or_value`: a copy-assignment `a = b`, `b` declaring another second value than `a`,
   wrote `b`'s elements into the constant block of `a`'s old second value -- a block every array
   declaring that value shares: their compressed chunks read `b`'s elements afterwards.
