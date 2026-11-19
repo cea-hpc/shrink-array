@@ -109,8 +109,8 @@ M4=motif_offset.c
 echo "== handshake 4: motif readers <-> rewrites of the offset slot ($M4) =="
 run ok    "source, another motif"                            --check-liveness -- $M4
 run ok    "source, the same motif (ABA)"                     --check-liveness -- -DTARGET_SAME_MOTIF $M4
-run ok    "source, first constant"                           --check-liveness -- -DTARGET_CONST1 $M4
-run ok    "source, second constant"                          --check-liveness -- -DTARGET_CONST2 $M4
+run ok    "source, first constant"                           --check-liveness -- -DTARGET_FIRST_VALUE $M4
+run ok    "source, second constant"                          --check-liveness -- -DTARGET_SECOND_VALUE $M4
 run ok    "source, 3 reads"                                  --check-liveness -- -DNREADS=3 $M4
 run ok    "source, 2 readers x 2 reads"                      --check-liveness -- -DNREADERS=2 -DNREADS=2 $M4
 run ok    "source, 3 readers"                                --check-liveness -- -DNREADERS=3 $M4
@@ -121,11 +121,11 @@ run error "MUT_CAS_BEFORE_SLOT (algo_pattern.md section 6: the slot first)" -- -
 run error "MUT_NO_GRACE (calibration)"                       -- -DMUT_NO_GRACE $M4
 echo "-- the behaviours the model changed in the source (F5) --"
 run error "MUT_NO_RECHECK, another motif (F5, before)"       -- -DMUT_NO_RECHECK $M4
-run error "MUT_NO_RECHECK, first constant (F5, before)"      -- -DMUT_NO_RECHECK -DTARGET_CONST1 $M4
-run error "MUT_NO_RECHECK, second constant (F5, before)"     -- -DMUT_NO_RECHECK -DTARGET_CONST2 $M4
+run error "MUT_NO_RECHECK, first constant (F5, before)"      -- -DMUT_NO_RECHECK -DTARGET_FIRST_VALUE $M4
+run error "MUT_NO_RECHECK, second constant (F5, before)"     -- -DMUT_NO_RECHECK -DTARGET_SECOND_VALUE $M4
 run ok    "MUT_NO_RECHECK, the same motif: harmless"         -- -DMUT_NO_RECHECK -DTARGET_SAME_MOTIF $M4
-run error "MUT_SLOT_STORE_PLAIN, first constant (F5, before: reset())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CONST1 $M4
-run error "MUT_SLOT_STORE_PLAIN, second constant (F5, before: set_from_array())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CONST2 $M4
+run error "MUT_SLOT_STORE_PLAIN, first constant (F5, before: reset())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_FIRST_VALUE $M4
+run error "MUT_SLOT_STORE_PLAIN, second constant (F5, before: set_from_array())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_SECOND_VALUE $M4
 
 M5=queue_handback.c
 
