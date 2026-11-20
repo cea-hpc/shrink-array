@@ -295,7 +295,13 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_co
                 {
                     static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
+                    // Every value with a candidate list is registered (set_second_value
+                    // does both); tested all the same, as compress_sweep_rank does.
                     const auto* inf_ptr = Derived::array_registry->find_array_info(second_val);
+                    if (inf_ptr == nullptr) [[unlikely]]
+                    {
+                        continue;
+                    }
                     Chunk<T>::make_block_compression(thr_rank, *inf_ptr, self());
 
                     derived().set_info_on_chunk();

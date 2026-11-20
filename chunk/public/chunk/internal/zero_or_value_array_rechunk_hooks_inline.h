@@ -120,11 +120,11 @@ bool zero_or_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& 
 template <typename Derived>
 void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<value_type> state)
 {
-    // Re-own the registration of `state`: array_info_map_[state] points at
-    // &tmp.array_info, which dangles once the stack tmp dies, and the next
-    // compression of `state` would dereference it. Copy tmp's (value, idx) and
-    // re-point the map at this array's member. Only when the fresh array
-    // registered a value (state != value_type{}).
+    // Take tmp's registration of `state`: copy its (value, idx) into this
+    // array's mirror (tmp ran set_second_value, this array's mirror predates
+    // it). array_info_map_ holds its own record of the value, so re-registering
+    // it is only a refresh. Only when the fresh array registered a value
+    // (state != value_type{}).
     if constexpr (chunk_config::use_fast_block_compression)
     {
         if constexpr (Derived::is_not_bool)

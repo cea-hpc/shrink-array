@@ -114,8 +114,8 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // Printed AFTER the array_*.clear() calls on purpose: `vec` holds one entry
     // per live array, so a count taken mid-run cannot tell five live arrays
     // from five leaked entries. Here every array is gone, and anything left is
-    // an entry that outlived the array that put it there -- erase_array_info_by_ptr()
-    // acts on array_info_map_, and nothing erases from `vec`.
+    // an entry that outlived the array that put it there. (array_info_map_, one
+    // record per second value kept for the registry's life, is not counted.)
     //
     // A handful: the scan is short and the cost is the CALL RATE, which caching
     // the per-array-invariant result would fix. Hundreds: the list grew.

@@ -61,8 +61,11 @@ struct ValueToInfTupleMapHelper
 {
     using ArrayInfo = SecondValueInfo<T>;
 
-    // Keyed by the second value, ordered by ValueLess (value_less.h).
-    using type = std::map<T, ArrayInfo*, ValueLess<T>>;
+    // Keyed by the second value, ordered by ValueLess (value_less.h). The map
+    // OWNS the record of each value: a std::map node does not move, so the
+    // pointers handed out (find_array_info, all_array_infos) stay valid, and
+    // no array's lifetime decides whether a value is drained.
+    using type = std::map<T, ArrayInfo, ValueLess<T>>;
 };
 
 /**
@@ -85,46 +88,40 @@ class ZeroOrValueArrayInfoPolicy
     using ArrayInfo = SecondValueInfo<T>;
 
     /**
-     * @brief All registered array_info pointers, in map order.
-     * @return Vector of every second value's currently-registered pointer.
+     * @brief The record of every registered second value, in map order.
+     * @return One pointer per value, into the map: valid while the registry lives.
      */
-    [[nodiscard]] std::vector<ArrayInfo*> all_array_infos() const;
+    [[nodiscard]] std::vector<const ArrayInfo*> all_array_infos() const;
 
     /**
-     * @brief Look up the array_info record pointer registered for a second value.
+     * @brief Look up the record registered for a second value.
      * @param key Second value to look up.
-     * @return The registered pointer, or nullptr if @p key is not registered.
+     * @return A pointer into the map, or nullptr if @p key is not registered.
      */
-    [[nodiscard]] ArrayInfo* find_array_info(InT<T> key) const;
-
-    /**
-     * @brief Drop every entry still pointing at @p self_ptr.
-     *
-     * @details Called from zero_or_value::Array::clear_core so a destroyed array's
-     *          array_info MEMBER cannot dangle here, where
-     *          run_compress_pass() would dereference it via
-     *          all_array_infos(). Only entries this array currently OWNS are
-     *          removed: one re-registered by a later array points elsewhere and
-     *          stays. O(n), teardown-only.
-     *
-     * @param self_ptr Address of the departing array's array_info member.
-     */
-    void erase_array_info_by_ptr(const ArrayInfo* self_ptr);
+    [[nodiscard]] const ArrayInfo* find_array_info(InT<T> key) const;
 
   protected:
     using MapType0 = ValueToInfTupleMapHelper<T>::type;
 
     /**
-     * @brief Register the array_info record pointer for a second value.
-     * @param key Second value to register.
-     * @param idx array_info record pointer to associate with @p key.
+     * @brief Register second value @p key with the (value, index) of @p info.
+     * @details A copy, not the array's member: the record belongs to the value,
+     *          and every array declaring it shares it. It was a pointer to the
+     *          member of the LAST array that declared the value, erased with
+     *          that array or left on its new value when it took another (copy,
+     *          move-assign, swap): the other arrays declaring the value were no
+     *          longer drained. A value keeps its index for the registry's life
+     *          (second_value_idx_map_ never erases), so re-registering it only
+     *          rewrites the same record.
+     * @param key  Second value to register.
+     * @param info (second value, index, array_id) of the declaring array.
      */
-    void insert(InT<T> key, ArrayInfo* idx)
+    void insert(InT<T> key, const ArrayInfo* info)
     {
-        array_info_map_[key] = idx;
+        array_info_map_.insert_or_assign(key, *info);
     }
 
-    /// Map from a second value to its registered array_info record pointer.
+    /// Map from a second value to its record.
     MapType0 array_info_map_;
 };
 
@@ -141,21 +138,19 @@ class ZeroOrValueArrayInfoPolicy<T, false>
     using ArrayInfo = SecondValueInfo<T>;
 
     /// @brief No registry: always empty.
-    [[nodiscard]] static std::vector<ArrayInfo*> all_array_infos()
+    [[nodiscard]] static std::vector<const ArrayInfo*> all_array_infos()
     {
         return {};
     }
     /// @brief No registry: never found.
-    [[nodiscard]] static ArrayInfo* find_array_info(InT<T> /*key*/) noexcept
+    [[nodiscard]] static const ArrayInfo* find_array_info(InT<T> /*key*/) noexcept
     {
         return nullptr;
     }
-    /// @brief No registry: nothing to erase.
-    static void erase_array_info_by_ptr(const ArrayInfo* /*self_ptr*/) {}
 
   protected:
     /// @brief No registry: nothing recorded.
-    static void insert(InT<T> /*key*/, ArrayInfo* /*idx*/) {}
+    static void insert(InT<T> /*key*/, const ArrayInfo* /*info*/) {}
 };
 
 namespace zero_or_value
