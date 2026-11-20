@@ -768,6 +768,17 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     void ensure_writable_storage();
 
     /**
+     * @brief Counter builds: after an in-place update of this element, move
+     *        the chunk's two constant counters and fold the chunk if one
+     *        became full.
+     * @param was_second_value the element held the second value before the update
+     * @param was_first_value  the element held the first constant before it
+     * @note Both flags are true together for an array that declared no second
+     *       value (its two constants are T{}): each counter moves on its own.
+     */
+    void count_constant_transitions([[maybe_unused]] bool was_second_value, [[maybe_unused]] bool was_first_value);
+
+    /**
      * @brief Run an arbitrary write operation on this element, materialising
      *        the chunk first if it is currently compressed, then marking
      *        for compression based on the old/new values.
@@ -859,7 +870,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
         requires IsCleanAssignment<T, U>
     T operator=(const U& value) noexcept
     {
-        return assign_impl<U>(value);
+        return assign_impl<BaseT<U>>(assigned_value(value)); // a proxy's value, read now
     }
 
     /**

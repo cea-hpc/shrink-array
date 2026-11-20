@@ -304,9 +304,10 @@ dans une région depuis un seul thread pendant que le reste de l'équipe laisse 
 paix : sous `omp single` ou `omp masked`, ou derrière un verrou du programme que chaque autre
 thread attend. Deux threads d'une région n'exécutent jamais de points séquentiels en même temps,
 et aucun thread n'écrit ni ne lit un tableau pendant ce temps. Un appel explicite à
-`make_block_compression()` fait exception : dans une région, il est refusé (arrêt dans un build
-de contrôle, erreur dans le journal et pas de passe ailleurs) -- les passes des écrivains y
-compressent.
+`make_block_compression()` et `shrink_to_fit()` font exception : dans une région, ils sont
+refusés, sous `omp single` aussi (arrêt dans un build de contrôle, message d'erreur et pas de
+passe ailleurs) -- les passes des écrivains y compressent, et `shrink_to_fit()` vient après la
+région.
 
 **Les tableaux de travail dans une région.** Un thread d'une région peut construire ses propres
 tableaux (`zero_any::Array<double> work(n);`), les écrire, les lire et les laisser détruire,

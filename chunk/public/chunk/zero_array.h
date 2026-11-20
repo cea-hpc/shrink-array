@@ -236,22 +236,26 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     ///        compressed; a no-op otherwise.
     void alloc_chunk(IntType index) noexcept
     {
+        this->pin_alloc_geometry();
         chunk_list_[this->chunk_index_of(index)].alloc_chunk();
     }
 
     /// @brief alloc_chunk(), taking the buffer from rank @p thr_rank's pool.
     void alloc_chunk(IntType index, int thr_rank) noexcept
     {
+        this->pin_alloc_geometry();
         chunk_list_[this->chunk_index_of(index)].alloc_chunk(thr_rank);
     }
 
     /// @brief Resize to @p newsz elements; new elements read the first
     ///        constant. A sequential point: the candidates are compressed
     ///        and the deferred ops drained first.
-    /// @note Inside a parallel region, only by the thread that owns the array
-    ///       (a work array of its own): the drain then covers this array's
-    ///       candidates alone (drain_own_candidates()), not the shared
-    ///       arrays' the thread has also written.
+    /// @note Inside a parallel region: by the thread that owns the array (a
+    ///       work array of its own), or on a shared array from one thread
+    ///       while the team waits (`omp single`). The drain covers this
+    ///       array's candidates alone (drain_own_candidates()) -- in the
+    ///       calling thread's list, or in every rank's for a shared array --
+    ///       not the other arrays' the threads have also written.
     /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
     ///       freed serially, parked in the geometry's reuse list under OpenMP);
     ///       chunk_list_ keeps its capacity.

@@ -31,30 +31,14 @@ namespace shrink_array
 // ---------------------------------------------------------------------------
 
 template <typename T, bool Enabled>
-[[nodiscard]] ZeroOrValueArrayInfoPolicy<T, Enabled>::ArrayInfo*
+[[nodiscard]] const typename ZeroOrValueArrayInfoPolicy<T, Enabled>::ArrayInfo*
 ZeroOrValueArrayInfoPolicy<T, Enabled>::find_array_info(InT<T> key) const
 {
     if (const auto it = array_info_map_.find(key); it != array_info_map_.end())
     {
-        return it->second;
+        return &it->second;
     }
     return nullptr;
-}
-
-template <typename T, bool Enabled>
-void ZeroOrValueArrayInfoPolicy<T, Enabled>::erase_array_info_by_ptr(const ArrayInfo* self_ptr)
-{
-    for (auto it = array_info_map_.begin(); it != array_info_map_.end();)
-    {
-        if (it->second == self_ptr)
-        {
-            it = array_info_map_.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

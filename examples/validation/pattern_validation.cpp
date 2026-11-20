@@ -953,24 +953,34 @@ int run(int argc, char** argv)
     }
 
     against_zero_any<int>("int", nch);
-    against_zero_any<long>("long", nch);
+    // long: a motif chunk keeps its offset in the second-value slot, which
+    // CHUNK_SECOND_VALUE_INDEXED turns into a 4-byte identifier for a type
+    // wider than 4 bytes -- pattern::Chunk refuses such a type (pattern_chunk.h).
+    if constexpr (!SecondValueTraits<long>::indexed)
+    {
+        against_zero_any<long>("long", nch);
+        motif_state<long>("long", nch);
+        motif_compression<long>("long", nch);
+        advisor_agrees<long>("long", nch);
+        advisor_motif_forecast<long>("long", nch < 2048 ? 2048 : nch);
+    }
+    else
+    {
+        println("--- long skipped: CHUNK_SECOND_VALUE_INDEXED (pattern::Array holds types of at most 4 bytes there)");
+    }
     against_zero_any<unsigned>("unsigned", nch);
     against_zero_any<short>("short", nch);
     shared_registry(nch / 4 > 0 ? nch / 4 : 1);
     motif_state<int>("int", nch);
-    motif_state<long>("long", nch);
     motif_state<unsigned>("unsigned", nch);
     motif_state<short>("short", nch);
     fill_over_motifs<int>("int", nch);
     fill_over_motifs<short>("short", nch);
     motif_compression<int>("int", nch);
-    motif_compression<long>("long", nch);
     motif_compression<unsigned>("unsigned", nch);
     motif_compression<short>("short", nch);
     advisor_agrees<int>("int", nch);
-    advisor_agrees<long>("long", nch);
     advisor_motif_forecast<int>("int", nch < 2048 ? 2048 : nch);
-    advisor_motif_forecast<long>("long", nch < 2048 ? 2048 : nch);
 
     release_chunk_pools();
     Runtime::shutdown();

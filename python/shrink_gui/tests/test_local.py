@@ -125,3 +125,68 @@ def test_times_of_a_run_older_than_start_time(site):
     assert run["status"] == "interrompu"
     started, ended = run["times"]
     assert ended - started == 4 * 3600 - 7
+
+
+def test_local_launcher_default_caps_memory_where_systemd_run_works(monkeypatch):
+    # The default launcher of "cette machine": the memory cap when
+    # systemd-run --user works, nothing where it does not.
+    import shutil
+    import subprocess
+
+    from shrink_gui import config
+    monkeypatch.setattr(config, "_local_launcher", None)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    assert config.local_launcher_default() == ""
+    monkeypatch.setattr(config, "_local_launcher", None)
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/systemd-run")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0))
+    assert config.local_launcher_default() == config.LOCAL_MEMORY_CAP
+    assert "MemoryMax=" in config.LOCAL_MEMORY_CAP and "MemorySwapMax=0" in config.LOCAL_MEMORY_CAP
+
+
+def _foreign_process():
+    import subprocess
+    return subprocess.Popen(["sleep", "60"], start_new_session=True)
+
+
+def test_stop_leaves_an_ended_run_and_its_old_pid_alone(site):
+    # "Arrêter" on a run that ended: its PID is by now another process's (here
+    # a sleep of ours, a group leader as launch.sh was).
+    import time
+    p = _foreign_process()
+    try:
+        d = site.runs / "old"
+        d.mkdir(parents=True)
+        (d / "meta.json").write_text(json.dumps({"mode": "local"}))
+        (d / "pid").write_text(str(p.pid))
+        (d / "host").write_text(os.uname()[1])
+        (d / "exit_code").write_text("0\n")
+        assert "déjà terminé" in site.helper("stop", "~/shrink_runs", "old")["error"]
+        time.sleep(0.3)
+        assert p.poll() is None
+        assert _run(site, "old")["status"] == "fini"
+    finally:
+        p.kill()
+
+
+def test_a_reused_pid_is_not_the_run(site):
+    # The machine went down mid-run (no exit_code); the PID lives again, as
+    # another process: the run is "interrompu", not "en cours", "Arrêter"
+    # signals nobody and "Supprimer" is not refused for ever.
+    import time
+    _launch(site, "l5", _spec("sleep 0.2"))
+    assert site.wait(lambda: _run(site, "l5")["status"] == "fini", 20)
+    d = site.runs / "l5"
+    boot, start = (d / "pid_start").read_text().split()     # written at launch
+    assert len(boot) == 36 and start.isdigit()
+    p = _foreign_process()
+    try:
+        (d / "exit_code").unlink()
+        (d / "pid").write_text(str(p.pid))
+        assert _run(site, "l5")["status"] == "interrompu"
+        assert "n'existe plus" in site.helper("stop", "~/shrink_runs", "l5")["error"]
+        time.sleep(0.3)
+        assert p.poll() is None
+        assert site.helper("delete", "~/shrink_runs", "l5", "")["ok"]
+    finally:
+        p.kill()

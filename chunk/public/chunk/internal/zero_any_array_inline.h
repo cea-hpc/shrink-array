@@ -45,6 +45,7 @@
 #include "chunk/internal/type_name.h"                   // type_name<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h"                // read_reclaim::PassScope (drain_own_candidates)
+#include "chunk/internal/array_users.h"                 // ArrayUsers::only (drain_own_candidates)
 #include "chunk/internal/own_candidates.h"              // with_own_candidates_only (drain_own_candidates)
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
@@ -676,13 +677,24 @@ void zero_any::ArrayImpl<Derived>::drain_own_candidates()
     // handshake either: nobody else writes THIS array. The thread's list also
     // holds chunks of arrays other threads are writing: they sit the pass out.
     // The buffers released wait for one reader grace period (read_reclaim.h).
-    const int rank = CHUNK_PMP_THREAD_RANK;
-    internal::with_own_candidates_only(Manager::get_zero_any_candidates(rank), array_id_,
-                                       [rank]
-                                       {
-                                           const read_reclaim::PassScope pass_scope;
-                                           ChunkType::make_block_compression(rank, nullptr);
-                                       });
+    const int own = CHUNK_PMP_THREAD_RANK;
+    // A work array of the calling thread: its own list. A SHARED array (other
+    // ranks queued chunks of it: ArrayUsers) is resized at a sequential point
+    // -- under `omp single`, the team waiting -- and every rank's list holds
+    // &chunk_list_[j] pointers and set flags that the resize invalidates:
+    // every rank's list then, this array's candidates only as well.
+    const bool shared = !internal::ArrayUsers<ChunkType>::only(array_id_, own);
+    const int  first  = shared ? 0 : own;
+    const int  last   = shared ? CHUNK_PMP_RANK_BOUND : own + 1;
+    for (int rank = first; rank < last; ++rank)
+    {
+        internal::with_own_candidates_only(Manager::get_zero_any_candidates(rank), array_id_,
+                                           [rank]
+                                           {
+                                               const read_reclaim::PassScope pass_scope;
+                                               ChunkType::make_block_compression(rank, nullptr);
+                                           });
+    }
 }
 
 template <typename Derived>

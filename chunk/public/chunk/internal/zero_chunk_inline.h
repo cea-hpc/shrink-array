@@ -273,7 +273,13 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
         return;
     }
 
-    const int max_thr = CHUNK_PMP_MAX_THREADS;
+    // The ranks that may hold work, NOT omp_get_max_threads(): that one is the
+    // size of the NEXT region. With OMP_NUM_THREADS=1 it is 1 inside a team
+    // opened with num_threads(4), whose threads share the candidates -- the
+    // pass then ran unguarded and folded chunks under their writers (lost
+    // writes, and non-zero buffers parked as "already zero"). The bound never
+    // falls below one past the highest rank seen (chunk_rank_bound()).
+    const int max_thr = CHUNK_PMP_RANK_BOUND;
     // Other threads may write the candidates: a team of more than one, or --
     // std backend -- an application phase, whose threads no team counts (a
     // team of one there still has the application's writers around it). Taken
@@ -565,12 +571,12 @@ zero::Chunk<T>& zero::Chunk<T>::operator=(const Chunk<T>& other)
 
     if constexpr (build_config::threaded)
     {
-        T* loaded_value = other.values.load();
+        T* loaded_value = other.values_.load();
         values_.store(loaded_value);
     }
     else
     {
-        values_ = other.values;
+        values_ = other.values_;
     }
 
     return *this;

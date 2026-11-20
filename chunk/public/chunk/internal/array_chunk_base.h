@@ -777,6 +777,24 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(this Derived& self, IndexType index) noexcept;
 
     /**
+     * @brief alloc_chunk() allocates in THIS array's geometry and allocator
+     *        set, as every proxy materialisation does
+     *        (ensure_writable_storage()).
+     * @details The buffer is sized and routed by the calling thread's ambient
+     *          chunk size, which the last array it served left, or the
+     *          process-wide one on a thread that served none: a smaller
+     *          buffer is overrun by the stores that follow. Dynamic builds.
+     */
+    void pin_alloc_geometry() const noexcept
+    {
+        if constexpr (build_config::chunk_dynamic)
+        {
+            shrink_array::set_thread_chunk_size(this->chunk_size());
+            shrink_array::set_thread_alloc_key(this->alloc_key());
+        }
+    }
+
+    /**
      * @brief Unchecked read access (hot path).
      *
      * @details Force-inlined: GCC otherwise leaves it out-of-line, where it costs

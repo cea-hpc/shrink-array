@@ -228,8 +228,17 @@ class RunActions:
         run = runs[0] if runs else None
         if not run:
             return
-        if run["status"] in self.ACTIVE or run["status"].startswith("en attente"):
+        st = run["status"]
+        # Not known from here: launched from another login node, or no squeue.
+        # The helper refuses such a run unless told to ("force"), and refuses
+        # an active one whatever this window believes.
+        unsure = st.startswith("en cours ?") or st.startswith("inconnu (")
+        if not unsure and (st in self.ACTIVE or st.startswith("en attente") or st.startswith("en cours")
+                           or st == "suspendu"):
             self.error("arrêtez d'abord ce run (il est encore actif)")
+            return
+        if unsure and ask(self, "Supprimer", f"Le run {run['id']} tourne peut-être encore ({st}).\n"
+                          "Le supprimer quand même ?") != QMessageBox.Yes:
             return
         own = PROGRAMS.get(program_of(run["meta"]), {}).get("own_outputs")
         local = os.path.join(os.path.expanduser(self.local_dir.text().strip()), run["id"])
@@ -257,8 +266,8 @@ class RunActions:
 
         # outputs that are not the run's own (none announced, a shared
         # directory a newer run rewrote) are kept; the run goes all the same
-        opts = base64.b64encode(json.dumps({"own": own, "keep_others": True} if with_out else {})
-                                .encode()).decode()
+        opts = dict({"own": own, "keep_others": True} if with_out else {}, **({"force": True} if unsure else {}))
+        opts = base64.b64encode(json.dumps(opts).encode()).decode()
         self.remote.helper("delete", [self.runs_dir.text().strip(), run["id"], opts], done)
 
     def fetch(self):

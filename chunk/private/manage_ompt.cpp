@@ -358,7 +358,8 @@ void on_parallel_end(ompt_data_t* parallel_data, ompt_data_t*, int, const void*)
 {
     // Before the suspension check: every top-level region counted at its
     // begin is uncounted at its end (phase_guard::teams).
-    if (parallel_data != nullptr && parallel_data->value == outer_region_tag)
+    const bool top_level = parallel_data != nullptr && parallel_data->value == outer_region_tag;
+    if (top_level)
     {
         parallel_data->value = 0;
         shrink_array::phase_guard::teams::outer_team_end();
@@ -371,10 +372,15 @@ void on_parallel_end(ompt_data_t* parallel_data, ompt_data_t*, int, const void*)
     // still be writing, and the phase end drains every rank's deferred queue
     // with no lock (finalize_parallel_phase, serial) -- a solver or BLAS call
     // opening its own region inside a phase lost writes that way
-    // (nested_region_validation C). Only with an enclosing ACTIVE region,
-    // omp_in_parallel(): a region of one thread (OMP_NUM_THREADS=1, inactive)
-    // is reported at its own level, and must still end the phase.
-    if (omp_in_parallel())
+    // (nested_region_validation C). Nested is "not tagged top-level by
+    // on_parallel_begin", not omp_in_parallel(): inside a region of one thread
+    // (OMP_NUM_THREADS=1, inactive) omp_in_parallel() is false, so a nested
+    // region -- the teardown's census of an array destroyed under `omp single`
+    // -- passed for a phase end, and its compression pass emptied the other
+    // arrays' candidate lists mid-region (zero_or_value_shared_state_validation,
+    // bool-construct). The one-thread region itself is tagged, and still ends
+    // the phase. Without tool data, the former test.
+    if (parallel_data != nullptr ? !top_level : omp_in_parallel())
     {
         return;
     }

@@ -296,9 +296,10 @@ pass over lists that every array of the element type shares. Call it outside any
 region, or inside one from a single thread while the rest of the team leaves the arrays alone:
 under `omp single` or `omp masked`, or behind a lock of the program's that every other thread
 waits on. Two threads of a region never run sequential points at the same time, and no thread
-writes or reads an array meanwhile. An explicit `make_block_compression()` is the exception:
-inside a region it is refused (check builds stop, others log an error and skip the pass) --
-there the writers' own passes compress.
+writes or reads an array meanwhile. An explicit `make_block_compression()` and
+`shrink_to_fit()` are the exceptions: inside a region they are refused, under `omp single` too
+(check builds stop, the others print an error and skip the pass) -- there the writers' own
+passes compress, and `shrink_to_fit()` comes after the region.
 
 **Work arrays inside a region.** A thread of a region may build arrays of its own
 (`zero_any::Array<double> work(n);`), write and read them, and let them be destroyed, while

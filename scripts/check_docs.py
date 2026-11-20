@@ -162,6 +162,7 @@ ALLOWED = {
     # removed: the names before 0.3.0 (CHANGELOG.md, Unreleased, Removed)
     "CHUNK_CST_VAL2_ID_LIMIT", "CHUNK_CST2_RECLAIM",
     "is_power_of_two",  # pow2.h's, never called: removed (lint lot 4)
+    "zero_or_value_dyn",  # a bench configuration the CHANGELOG cites; its last literal was in python/multi_launch_stress_gdb.py, removed
     # the developer settings fixed after the Milan measurements, and CHUNK_THP's functions
     "CHUNK_RECHUNK_KEEP_RECYCLED_MB", "alloc_config::thp_advise", "thp_never", "advise_thp_region",
     # the rechunk decider's former environment variables (now RechunkPolicy fields and

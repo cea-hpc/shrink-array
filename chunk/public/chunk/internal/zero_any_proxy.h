@@ -511,7 +511,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
         requires IsCleanAssignment<T, U>
     T operator=(this Derived& self, const U& operand) noexcept
     {
-        return self.template assign_impl<U>(operand);
+        return self.template assign_impl<BaseT<U>>(assigned_value(operand)); // a proxy's value, read now
     }
 
     /** @brief Trap path for risky assignments (e.g., float = 1.01). */

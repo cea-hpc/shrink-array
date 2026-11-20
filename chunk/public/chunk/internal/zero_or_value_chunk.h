@@ -1029,7 +1029,8 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      *        real data, neither constant).
      * \return True if values differs from both the first and second constant.
      */
-    [[nodiscard]] bool written() const;
+    [[nodiscard]] bool written() const
+        requires is_bool_like_v<T>;
 
     /*!
      * \brief Whether this chunk owns a real heap buffer that must be
@@ -1085,6 +1086,15 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \param array_info (second_value, ...) tuple describing the target state.
      */
     void alloc_chunk(const ArrayInfo& array_info);
+
+    /// @brief alloc_chunk(): is the chunk compressed to its array's second
+    ///        value (bool: to `true`) rather than to the first constant?
+    [[nodiscard]] bool alloc_from_second_value(const ArrayInfo& array_info) const noexcept;
+
+    /// @brief alloc_chunk(), counter builds: the chunk just materialised
+    ///        holds a full count of the constant it was filled with, as
+    ///        Proxy::ensure_writable_storage() records it.
+    void alloc_set_counter([[maybe_unused]] bool from_second) noexcept;
 
     /*!
      * \brief Per-thread variant of alloc_chunk().

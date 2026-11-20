@@ -1,7 +1,11 @@
 # Copyright 2024-2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
+include(CMakeFindDependencyMacro)
+# Threads::Threads: in the exported target's link interface with the std
+# backend (CHUNK_THREADS=std); found always, as chunk-config.cmake does, so a
+# project that finds fast_allocators alone has it.
+find_dependency(Threads)
 if(@ALLOCATORS_OMP@)
-  include(CMakeFindDependencyMacro)
   find_dependency(OpenMP)
 endif()
 

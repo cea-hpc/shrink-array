@@ -1440,14 +1440,17 @@ void zero_any::ChunkImpl<T, Derived>::alloc_chunk(this Derived& self, SecondValu
 {
     if (self.is_const_val())
     {
+        // From the constant the chunk holds: filled with the first one, a
+        // chunk compressed to a second value read T{} from then on.
+        const bool from_second = self.is_second_value();
         // bool has its own materialiser (the second value is the flag).
         if constexpr (is_not_bool)
         {
-            self.create_value(false, ptr_second_value);
+            self.create_value(from_second, ptr_second_value);
         }
         else
         {
-            self.create_value_bool(false);
+            self.create_value_bool(from_second);
         }
     }
 }
@@ -1464,26 +1467,27 @@ void zero_any::ChunkImpl<T, Derived>::alloc_chunk(this Derived&        self,
             inc_chunk_write<ChunkType>();
         }
 
+        const bool from_second = self.is_second_value(); // see alloc_chunk(ptr_second_value)
         if constexpr (build_config::threaded)
         {
             if constexpr (is_not_bool)
             {
-                self.create_value(false, ptr_second_value, thr_rank);
+                self.create_value(from_second, ptr_second_value, thr_rank);
             }
             else
             {
-                self.create_value_bool(false, thr_rank);
+                self.create_value_bool(from_second, thr_rank);
             }
         }
         else
         {
             if constexpr (is_not_bool)
             {
-                self.create_value(false, ptr_second_value);
+                self.create_value(from_second, ptr_second_value);
             }
             else
             {
-                self.create_value_bool(false);
+                self.create_value_bool(from_second);
             }
         }
     }

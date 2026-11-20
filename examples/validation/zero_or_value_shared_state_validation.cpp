@@ -53,7 +53,8 @@
 // EXIT STATUS: 0 when every check holds, 1 otherwise.
 
 #include <cstddef> // std::size_t
-#include <utility> // std::as_const
+#include <memory>  // std::make_unique (owner_run)
+#include <utility> // std::as_const, std::move
 
 #include "chunk/zero_or_value_array.h" // zero_or_value::Array
 #include "chunk/runtime.h"             // Runtime::init
@@ -289,6 +290,150 @@ int run_bool_construct()
     return fails;
 }
 
+// ── 3. the array a second value is registered under goes away ───────────────
+//
+// array_info_map_[v] points at the array_info member of the LAST array that
+// declared v, and the passes drain only the values of that map. `c` and `a`
+// both declare v1, `a` last; then `a` goes (destroyed, cleared, copy- or
+// move-assigned from an array of v2). `c`, rewritten to v1 in a region, must
+// still be compressed by the region's end as in the control run.
+
+enum class Gone
+{
+    control, ///< `a` lives on
+    destroyed,
+    cleared,
+    copy_assigned,
+    move_assigned,
+    swapped_then_destroyed, ///< a.swap(b), then b (now holding v1) destroyed
+};
+
+const char* gone_name(Gone g)
+{
+    switch (g)
+    {
+        case Gone::control:
+            return "control";
+        case Gone::destroyed:
+            return "destroyed";
+        case Gone::cleared:
+            return "cleared";
+        case Gone::copy_assigned:
+            return "copy-assigned";
+        case Gone::move_assigned:
+            return "move-assigned";
+        case Gone::swapped_then_destroyed:
+            return "swapped, then destroyed";
+    }
+    return "?";
+}
+
+struct OwnerRun
+{
+    bool registered = false; ///< array_info_map_[v1] present and holding v1 before the region
+    long compressed = 0;     ///< chunks of `c` compressed after the region
+    long bad        = 0;     ///< elements of `c` not v1
+};
+
+OwnerRun owner_run(Gone gone)
+{
+    using Arr           = zero_or_value::Array<double>;
+    using Index         = Arr::IndexType;
+    constexpr double v1 = 3.0;
+    constexpr double v2 = 5.0;
+
+    OwnerRun   out;
+    Arr        c;
+    const long chunk_sz = static_cast<long>(c.chunk_size());
+    const long count    = n_chunks * chunk_sz;
+    c.resize(static_cast<Index>(count));
+    c.set_second_value(v1);
+
+    auto a = std::make_unique<Arr>();
+    a->resize(static_cast<Index>(count));
+    a->set_second_value(v1);
+    {
+        Arr b;
+        b.resize(static_cast<Index>(count));
+        b.set_second_value(v2);
+        switch (gone)
+        {
+            case Gone::control:
+                break;
+            case Gone::destroyed:
+                a.reset();
+                break;
+            case Gone::cleared:
+                a->clear();
+                break;
+            case Gone::copy_assigned:
+                *a = b;
+                break;
+            case Gone::move_assigned:
+                *a = std::move(b);
+                break;
+            case Gone::swapped_then_destroyed:
+                a->swap(b);
+                break; // b dies at the brace
+        }
+    }
+
+    if constexpr (chunk_config::use_fast_block_compression)
+    {
+        const auto* info = zero_or_value::Proxy<double>::array_registry->find_array_info(v1);
+        out.registered   = info != nullptr && info->second_value == v1;
+    }
+    else
+    {
+        out.registered = true;
+    }
+
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for schedule(static)
+        for (long i = 0; i < count; ++i)
+        {
+            c[static_cast<Index>(i)] = v1;
+        }
+    }
+    end_phase();
+
+    const Arr& cc  = c;
+    out.compressed = compressed(cc, chunk_sz);
+    for (long i = 0; i < count; ++i)
+    {
+        out.bad += (cc[static_cast<Index>(i)] != v1) ? 1 : 0;
+    }
+    return out;
+}
+
+int run_owner_gone()
+{
+    int            fails   = 0;
+    const OwnerRun control = owner_run(Gone::control);
+    println("[shared-state/owner-gone] control: v1 registered {}, {}/{} chunks of c compressed", control.registered,
+            control.compressed, n_chunks);
+    for (Gone g :
+         {Gone::destroyed, Gone::cleared, Gone::copy_assigned, Gone::move_assigned, Gone::swapped_then_destroyed})
+    {
+        const OwnerRun r = owner_run(g);
+        println("[shared-state/owner-gone] a {}: v1 registered {}, {}/{} chunks of c compressed, {} bad element(s)",
+                gone_name(g), r.registered, r.compressed, n_chunks, r.bad);
+        if (r.bad != 0 || !r.registered || r.compressed < control.compressed)
+        {
+            println("[shared-state/owner-gone] FAIL ({}): `c` declares v1 too and lost {}", gone_name(g),
+                    r.bad != 0 ? "its values" : "the drain of its v1 candidates");
+            ++fails;
+        }
+    }
+    if (fails == 0)
+    {
+        println("[shared-state/owner-gone] OK");
+    }
+    return fails;
+}
+
 } // namespace
 
 int run(int /*argc*/, char** /*argv*/)
@@ -298,6 +443,7 @@ int run(int /*argc*/, char** /*argv*/)
     int fails = 0;
     fails += run_copy_assign();
     fails += run_bool_construct();
+    fails += run_owner_gone();
     release_chunk_pools();
     Runtime::shutdown();
     println("\n[zero_or_value] {}", fails ? "=== SHARED STATE FAILED ===" : "=== SHARED STATE OK ===");

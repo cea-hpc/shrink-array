@@ -23,6 +23,12 @@
  *   - `*=`, `/=`, `%=` read back what a std::vector holds, results landing on
  *     zero included (`4 % 2`, `x * 0`): the chunks that become all zero fold
  *     as on any write. Then `shrink_to_fit()`, read again.
+ *   - `+=`, `-=`, `++`, `--`, `|=` on a zero element, then plain writes in
+ *     the same chunk that bring every OTHER element back to zero: the chunk
+ *     keeps its buffer and the element its value (a serial zero_or_value
+ *     without a declared second value counted the element as still zero,
+ *     and folded the chunk). And back: the element returns to zero through
+ *     the operator, the chunk folds at shrink_to_fit().
  *   - A floating `x /= 0.0` is IEEE (inf), never refused.
  *   - zero_or_value: `set_second_value(T{})` on a fresh array declares nothing (T{}
  *     is already its first constant) and the array reads right.
@@ -138,6 +144,65 @@ int integer_ops()
     return report("int *= /= %= vs std::vector", bad);
 }
 
+/// One chunk per operator: a zero element leaves zero through it, another
+/// element of the chunk goes away from zero and back by plain writes -- the
+/// transition that folds a chunk whose every element is counted zero.
+int leave_zero_by_operator()
+{
+    constexpr int n_ops = 5;
+    Arr<int>      arr(0);
+    const int     chunk_size = static_cast<int>(arr.chunk_size());
+    const int     count      = n_ops * chunk_size;
+    arr.resize(count);
+    std::vector ref(static_cast<std::size_t>(count), 0);
+    const auto  apply = [&](int op, int index, bool back)
+    {
+        int& want = ref[static_cast<std::size_t>(index)];
+        switch (op)
+        {
+            case 0:
+                back ? (arr[index] -= 5, want -= 5) : (arr[index] += 5, want += 5);
+                break;
+            case 1:
+                back ? (arr[index] += 3, want += 3) : (arr[index] -= 3, want -= 3);
+                break;
+            case 2:
+                back ? (--arr[index], --want) : (++arr[index], ++want);
+                break;
+            case 3:
+                back ? (++arr[index], ++want) : (--arr[index], --want);
+                break;
+            default:
+                back ? (arr[index] &= 0, want &= 0) : (arr[index] |= 6, want |= 6);
+                break;
+        }
+    };
+    for (int op = 0; op < n_ops; ++op)
+    {
+        const int first = op * chunk_size;
+        apply(op, first, false);
+        arr[first + 1] = 7;
+        arr[first + 1] = 0; // every other element is zero again
+    }
+    long bad = mismatches(arr, ref);
+    bad += arr.written_chunk_count() != n_ops;
+    arr.shrink_to_fit();
+    bad += mismatches(arr, ref);
+    bad += arr.written_chunk_count() != n_ops;
+    const int rc = report("+= -= ++ -- |= leave zero", bad);
+
+    // And back to zero through the operator: the chunks fold.
+    for (int op = 0; op < n_ops; ++op)
+    {
+        apply(op, op * chunk_size, true);
+    }
+    bad = mismatches(arr, ref);
+    arr.shrink_to_fit();
+    bad += mismatches(arr, ref);
+    bad += arr.written_chunk_count() != 0;
+    return rc + report("-= += -- ++ &= return to zero", bad);
+}
+
 /// A floating division by zero is IEEE: +inf, -inf, NaN -- never refused.
 int float_div_by_zero()
 {
@@ -235,7 +300,7 @@ int run(int argc, char** argv)
     Runtime::init(true);
     println("=== compound_ops_validation [variant = {}] ===", variant_name());
 
-    int fails = integer_ops() + float_div_by_zero() + second_value_zero();
+    int fails = integer_ops() + leave_zero_by_operator() + float_div_by_zero() + second_value_zero();
     if constexpr (build_config::any_check)
     {
         fails += check_stops(argv[0], 0) + check_stops(argv[0], 1);

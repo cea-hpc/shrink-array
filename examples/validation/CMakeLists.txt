@@ -102,6 +102,12 @@
 #                           resize's release) and zero_any's operator== equal a
 #                           std::vector's, with the phase bracketed; inside a
 #                           region they stay on the calling thread.
+#   alloc_chunk_validation  alloc_chunk() then the raw reference, operator()(i):
+#                           a preallocated chunk is materialised and holds
+#                           what it held (T{}, the second value it was
+#                           compressed to, its elements), raw stores stay in
+#                           their chunk; at dyn, its buffer has the array's
+#                           chunk size.
 #   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
@@ -291,8 +297,9 @@ set(_rt_harnesses       compress_roundtrip_validation pool_accounting_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         fill_range_constant_validation copy_range_constant_validation
                         constant_switch_validation shrink_to_fit_validation chunk_exchange_validation
-                        signed_zero_validation no_init_release_validation nan_check_validation)
-set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation)
+                        signed_zero_validation no_init_release_validation nan_check_validation alloc_chunk_validation)
+set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation
+                        alloc_chunk_validation)
 
 # Compile definitions of a variant at a geometry.
 function(validation_variant_defs tgt vmacro geom)
@@ -434,6 +441,14 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group zero_or_value_shared_state_validation)
     endif()
+    # bystander_validation: copy/move-assign, swap, clear and shrink_to_fit of
+    # one array, then writes to it, leave two bystander arrays of the type (one
+    # compressed onto the shared constant block, one materialised) as they were
+    # (the harness says why). Every variant, default static size, at 1 and 8
+    # threads.
+    if (NOT _geom STREQUAL "dyn")
+      list(APPEND _group bystander_validation)
+    endif()
     # deferred_path_validation: every write path through the deferred queue,
     # forced by the test hook (test_hooks.h, switched on by the harness), at
     # 1 and 8 threads. Every variant and geometry: its replay path reads the
@@ -474,6 +489,12 @@ foreach(_geom IN LISTS _rt_geometries)
     # at every registered runtime chunk size): dyn only, at 8 threads.
     if (_geom STREQUAL "dyn")
       list(APPEND _group rechunk_validation dyn_geometry_validation)
+    endif()
+    # advisor_edge_validation: the decider's coarsening ban without a cap, the
+    # advisor asked to read no chunk, zero::Chunk's copy-assignment. Dyn only
+    # (the advisor and the decider serve the runtime geometry).
+    if (_geom STREQUAL "dyn")
+      list(APPEND _group advisor_edge_validation)
     endif()
     # Another static size: the round-trip harnesses alone.
     if (NOT _geom STREQUAL "dyn" AND NOT _geom STREQUAL CHUNK_DEFAULT_SIZE)

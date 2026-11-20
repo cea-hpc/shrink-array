@@ -825,9 +825,28 @@ void reads(Run& run)
     ++run.cases;
 }
 
+template <typename T>
+long run_type_cases(long count, long chunk_sz, const char* mode, long& cases);
+
 /// @brief Every operator on T, in one mode.
 template <typename T>
 long run_type(long count, long chunk_sz, const char* mode, long& cases)
+{
+    if constexpr (pattern_build && SecondValueTraits<T>::indexed)
+    {
+        // pattern::Chunk refuses a type wider than 4 bytes under
+        // CHUNK_SECOND_VALUE_INDEXED: a motif's offset needs a T-wide slot.
+        return 0;
+    }
+    else
+    {
+        return run_type_cases<T>(count, chunk_sz, mode, cases);
+    }
+}
+
+/// @brief run_type()'s body: every operator on T, in one mode.
+template <typename T>
+long run_type_cases(long count, long chunk_sz, const char* mode, long& cases)
 {
     const std::string type = type_name<T>();
     if (!only_type.empty() && type != only_type)

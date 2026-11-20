@@ -192,16 +192,12 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @details clear() first: it still needs get_array_id(registry_key()) and a
      *          valid array_info pointer.
      *
-     * @warning Neither erase is optional:
-     *          - array_registry->erase(registry_key()): otherwise a later array
-     *            at this address inherits our array_id and second value
-     *            (PointerMap's first-match lookup); rechunk_to()'s @c tmp
-     *            makes address reuse routine.
-     *          - erase_array_info_by_ptr(&array_info): array_info_map_ entries
-     *            pointing at our array_info MEMBER would be dereferenced by the
-     *            next array's terminal sweep (use after free). Fast-block,
-     *            non-bool only; rechunk_to() re-points its value onto the
-     *            survivor first, so only entries we still own go.
+     * @warning array_registry->erase(registry_key()) is not optional:
+     *          otherwise a later array at this address inherits our array_id
+     *          and second value (PointerMap's first-match lookup); rechunk_to()'s
+     *          @c tmp makes address reuse routine. array_info_map_ is left
+     *          alone: its records belong to the second values, which other
+     *          arrays may declare.
      */
     ~Array();
 
@@ -278,10 +274,12 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @details Drains the compression candidates and deferred ops first: both
      *          hold `&chunk_list_[j]` pointers a reallocation would dangle.
      * @param newsz new element count
-     * @note A sequential point. Inside a parallel region, only by the thread
-     *       that owns the array (a work array of its own): the drain then
-     *       covers this array's candidates alone (drain_own_candidates()),
-     *       not the shared arrays' the thread has also written.
+     * @note A sequential point. Inside a parallel region: by the thread that
+     *       owns the array (a work array of its own), or on a shared array
+     *       from one thread while the team waits (`omp single`). The drain
+     *       covers this array's candidates alone (drain_own_candidates()) --
+     *       in the calling thread's list, or in every rank's for a shared
+     *       array -- not the other arrays' the threads have also written.
      * @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list_ keeps its capacity.
@@ -426,9 +424,9 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief The identity step of swap(): the registry tuple (second value,
      *        its index, array_id), which is what zero_or_value reads its identity
      *        from, then the members that mirror it.
-     * @details array_id is not swapped (zero_or_value never reads it). array_info_map_
-     *          points each second value at an array's array_info MEMBER, which
-     *          now holds the other tuple: both values are re-pointed.
+     * @details array_id is not swapped (zero_or_value never reads it). Both values
+     *          are re-registered in array_info_map_ (a no-op for a value already
+     *          there: a value keeps its index).
      */
     void swap_identity(Array& other);
 
@@ -439,8 +437,6 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     ///          create(), set_second_value(), the identity swaps. Write proxies
     ///          are armed with its address, keeping the registry scan off the
     ///          write path.
-    /// @warning array_info_map_ holds a POINTER to this member, so the destructor
-    ///          must erase that entry -- see its documentation.
     ArrayInfo array_info_;
 
     /**

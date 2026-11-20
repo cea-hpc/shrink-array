@@ -50,6 +50,13 @@
 //      fix: writes lost ("deferred ops still queued"), a crash, or wrong values.
 //   D. C with the nested regions opened by parallel_phase(2, ...), as a
 //      component that knows nothing of the enclosing phase would.
+//   E. the team of 4 shares every chunk (schedule(static, 1)): each thread
+//      writes its elements, reads them back and zeroes them, round after
+//      round, so that the compression passes the writes trigger run against
+//      the other threads' sessions on the same chunks. With OMP_NUM_THREADS=1
+//      the next region would have one thread -- omp_get_max_threads() is 1 --
+//      while this team has four: a pass that took that for "nobody else
+//      writes" ran unguarded, and folded chunks under their writers.
 //   B. re-runs itself with `--nested-active`: max-active-levels 2 and a
 //      2-thread inner team writing the arrays, which must stop with the
 //      "nested ACTIVE" invariant failure.
@@ -261,6 +268,44 @@ static long run_nested(Array<int>& arr, std::vector<int>& ref, int rounds, Inner
     return 0;
 }
 
+/// E: every chunk written by the four threads at once; the elements that did
+/// not read back what their thread had just written, plus those not zero at
+/// the end.
+template <typename A = Array<int>>
+static long run_shared_chunks(int rounds)
+{
+    long bad = 0;
+    if constexpr (build_config::use_openmp)
+    {
+        const long count = 1L << 18;
+        A          arr(count);
+        for (int round = 0; round < rounds; ++round)
+        {
+#pragma omp parallel num_threads(4) reduction(+ : bad)
+            {
+                begin_phase();
+#pragma omp for schedule(static, 1)
+                for (long index = 0; index < count; ++index)
+                {
+                    arr[index] = round + 1;
+                    if (static_cast<int>(arr[index]) != round + 1)
+                    {
+                        ++bad;
+                    }
+                    arr[index] = 0; // the chunk's last zero queues it for a pass
+                }
+            }
+            end_phase();
+        }
+        const A& carr = arr;
+        for (long index = 0; index < count; ++index)
+        {
+            bad += static_cast<int>(carr[index]) != 0;
+        }
+    }
+    return bad;
+}
+
 static int run_body(int argc, char** argv)
 {
     const bool nested_active = argc > 1 && std::string(argv[1]) == "--nested-active";
@@ -314,6 +359,9 @@ static int run_body(int argc, char** argv)
 
     if constexpr (build_config::use_openmp)
     {
+        const long shared_bad = run_shared_chunks(40);
+        println("[E shared chunks] the team of 4 on every chunk: {} wrong", shared_bad);
+        fails += shared_bad;
         fails += check_nested_active(argv[0]);
     }
 

@@ -257,10 +257,12 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     /**
      * @brief Resize the array, preserving the elements that still fit.
      * @param newsz new element count
-     * @note A sequential point. Inside a parallel region, only by the thread
-     *       that owns the array (a work array of its own): the drain then
-     *       covers this array's candidates alone (drain_own_candidates()),
-     *       not the shared arrays' the thread has also written.
+     * @note A sequential point. Inside a parallel region: by the thread that
+     *       owns the array (a work array of its own), or on a shared array
+     *       from one thread while the team waits (`omp single`). The drain
+     *       covers this array's candidates alone (drain_own_candidates()) --
+     *       in the calling thread's list, or in every rank's for a shared
+     *       array -- not the other arrays' the threads have also written.
      * @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list_ keeps its capacity.
@@ -422,10 +424,12 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     ///        outside a region: every thread's list.
     static void drain_candidates();
 
-    /// @brief resize_common()'s drain inside a region (an array resized by its
-    ///        owning thread): the pass on this array's candidates only, in the
-    ///        calling thread's list, under a read_reclaim::PassScope. The other
-    ///        arrays' candidates stay queued, untouched (internal/own_candidates.h).
+    /// @brief resize_common()'s drain inside a region: the pass on this array's
+    ///        candidates only, under a read_reclaim::PassScope -- in the calling
+    ///        thread's list (an array resized by its owning thread), or in every
+    ///        rank's when other ranks queued chunks of it (a shared array, the
+    ///        team waiting). The other arrays' candidates stay queued, untouched
+    ///        (internal/own_candidates.h).
     void drain_own_candidates();
 
     /**
