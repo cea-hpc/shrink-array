@@ -95,7 +95,7 @@
         #include <sched.h>   // sched_getaffinity, cpu_set_t (BENCH_TBB_PIN)
     #endif
 
-    #include "chunk/phases.h"     // finalize_parallel_phase (the end of a region)
+    #include "chunk/phases.h"      // finalize_parallel_phase (the end of a region)
     #include "chunk/tbb_adaptor.h" // shrink_array::tbb::phase_body (the begin of each task), use_tbb_for_library_teams
 #endif
 
@@ -850,12 +850,14 @@ inline void start_parallel_phase_if_asked(oneapi::tbb::task_arena& a)
  *          stays in that core's caches and on its NUMA node (first touch). The
  *          pin is set when a thread joins the arena (on_scheduler_entry, the
  *          main thread included) and undone when it leaves (on_scheduler_exit:
- *          back to the process's CPUs). Kept past the exit, the main thread ran
- *          the serial code between regions on one CPU -- and every thread it
- *          started inherited that CPU -- and a worker gone to another arena
- *          shared its old CPU with the thread now in its slot: serial time x15
- *          on 14 threads. Linux only; elsewhere the variable is ignored, and
- *          said so.
+ *          back to the process's CPUs), so that neither the main thread's
+ *          serial code nor a worker gone to another arena stays tied to a slot's
+ *          CPU. Only for a machine the run has to itself: a pinned thread cannot
+ *          flee a core another process uses, and since every thread spins at
+ *          the joins, the whole team waits for it -- with a 3-job build beside
+ *          it (nice 19), 14 threads ran 15-30x slower than unpinned; idle, as
+ *          fast or a little faster. Linux only; elsewhere the variable is
+ *          ignored, and said so.
  *          One line on stderr says whether it is on.
  */
 class ArenaPin final : public oneapi::tbb::task_scheduler_observer
