@@ -602,7 +602,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         requires IsCleanAssignment<T, U>
     T operator=(const U& operand) noexcept
     {
-        return assign_impl<U>(operand);
+        return assign_impl<BaseT<U>>(assigned_value(operand)); // a proxy's value, read now
     }
 
     /** @brief Trap path: risky conversion (e.g. float = double). */

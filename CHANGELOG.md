@@ -88,6 +88,20 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `zero_or_value`, serial builds, an array without a declared second value: `+=`, `-=`, `++`,
+  `--` and the bitwise operators on a zero element moved one of the chunk's two constant
+  counters only, so the element still counted as zero; the next plain write that zeroed the
+  rest of the chunk folded it, and the element read 0. Each counter now moves on its own
+  (`Proxy::count_constant_transitions()`), as in a plain assignment.
+- `zero`, OpenMP: a compression pass triggered from the write path took no writer handshake
+  when `omp_get_max_threads()` was 1 -- the size of the next region, also inside a team opened
+  with `num_threads(4)` under `OMP_NUM_THREADS=1`: chunks were folded under their writers
+  (200 to 300 writes lost per run of the new case of nested_region_validation). The pass
+  looks at the ranks that may hold work (`chunk_rank_bound()`).
+- `a[i] = b[j]` between arrays of two element types (a `double` array from an `int` one): a
+  deferred write kept a copy of `b`'s proxy and read `b[j]` when it was replayed, at the end
+  of the phase -- the value by then, or freed storage after a resize of `b`. The value is
+  read when the statement runs, as between two arrays of one type (the three variants).
 - `alloc_chunk()` (the three variants), found by the new alloc_chunk_validation:
   - on a chunk compressed to a second value (`zero_or_value`, `zero_any`, bool's `true`) it
     installed a buffer filled with the first constant: the chunk read `T{}` from then on, in
