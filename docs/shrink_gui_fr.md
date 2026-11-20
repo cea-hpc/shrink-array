@@ -2,7 +2,7 @@
 
 > English version: [shrink_gui.md](shrink_gui.md).
 
-> Novembre 2026, `shrink_gui` 0.18 (prototype). Une fenêtre sur le portable pour soumettre
+> Novembre 2026, `shrink_gui` 0.19 (prototype). Une fenêtre sur le portable pour soumettre
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
@@ -221,10 +221,10 @@ barre d'état dit lesquelles et pourquoi. Il en va de même pour un run seul. Le
 
 | bouton | effet |
 |---|---|
-| Arrêter | `ccc_mdel` du job, ou arrêt de `ccc_mprun` en mode détaché |
+| Arrêter | `ccc_mdel` du job, ou arrêt de `ccc_mprun` en mode détaché ; refusé pour un run terminé (son PID ou son numéro de job ne sont plus les siens) |
 | Récupérer les résultats | copie dans « Résultats (local) » le dossier du run et les fichiers de résumé du programme (CSV, log, erreurs ; jamais les `output_*`) |
 | Reprendre ses options | remet dans le formulaire le programme, la partition et les options du run |
-| Supprimer | supprime le dossier du run (run terminé seulement) ; au choix, aussi les sorties propres à ce run (dans un dossier de sortie partagé, `bench_results/<arch>` : les fichiers qu'il a écrits, jamais ceux des runs plus anciens ni `oracle/`) et la copie locale |
+| Supprimer | supprime le dossier du run (run terminé seulement : le calculateur le revérifie, et un run dont l'état ne peut pas être connu d'ici -- lancé depuis un autre nœud de login, pas de `squeue` -- demande une seconde confirmation) ; au choix, aussi les sorties propres à ce run (dans un dossier de sortie partagé, `bench_results/<arch>` : les fichiers qu'il a écrits entre sa soumission et sa fin, jamais ceux des runs plus anciens ou plus récents ni `oracle/` ; un dossier qui lui est propre ne part en entier que si aucun autre run n'écrit dedans ou dessous) et la copie locale |
 
 ### Cette machine
 

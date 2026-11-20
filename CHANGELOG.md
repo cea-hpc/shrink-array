@@ -80,7 +80,7 @@ the tag's checksum to the recipe.
 
 ### Removed
 
-- `python/multi_launch_stress_gdb.py`: referenced nowhere (no script, document or `shrink_gui`
+- python/multi_launch_stress_gdb.py: referenced nowhere (no script, document or `shrink_gui`
   program).
 - `CHUNK_CST_VAL2_ID_LIMIT` and `CHUNK_CST2_RECLAIM`, the names these two settings had before
   0.3.0, as 0.3.0 announced: `CHUNK_SECOND_VALUE_ID_LIMIT` and `CHUNK_SECOND_VALUE_RECLAIM`
@@ -88,6 +88,22 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `shrink_gui` 0.19, "Supprimer" and "Arrêter" (the cluster-side helper now checks what the
+  window assumed):
+  - a run's own output directory was removed with the outputs of later runs written below it
+    (a run given the default base as its output directory): refused when another run announces
+    a directory in it, or when it holds files written after the run ended;
+  - in a shared output directory, the files written after the run ended are no longer taken
+    for its own (a later run deleted without its outputs, or launched by hand, lost them);
+  - a run still active, or whose state cannot be known from here (started from another login
+    node, no squeue), could be deleted: the helper refuses the first and wants a second
+    confirmation for the other;
+  - "Arrêter" on a local or detached run that had ended sent SIGTERM to whatever process group
+    had its PID by then: refused once the run has an exit code, and the PID is tied to the run
+    by its start time and the boot id, so that a PID reused after a restart of WSL is neither
+    shown "en cours" nor signalled;
+  - "Arrêter" marked a batch run "arrêté" before trying to cancel it, also when the cancel
+    failed or the run had already ended with its exit code: marked once cancelled only.
 - `shrink_gui`, "Supprimer" with the run's own output directory: the directory the log announces
   is removed whole only when every file in it was written after the run was submitted, it holds
   no git repository and is no mount point; the former guard (absolute, not `/` nor the home,

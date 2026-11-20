@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> November 2026, `shrink_gui` 0.18 (prototype). A window on the laptop to submit
+> November 2026, `shrink_gui` 0.19 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
@@ -209,10 +209,10 @@ tabs follow the current row.
 
 | button | effect |
 |---|---|
-| Stop | `ccc_mdel` of the job, or stops `ccc_mprun` in detached mode |
+| Stop | `ccc_mdel` of the job, or stops `ccc_mprun` in detached mode; refused for a run that has ended (its PID or job id is no longer its own) |
 | Fetch results | copies to "Results (local)" the run directory and the program's summary files (CSV, log, errors; never the `output_*`) |
 | Reuse its options | puts the run's program, partition and options back in the form |
-| Delete | deletes the run directory (finished runs only); optionally also the outputs that are this run's own (in a shared output directory, `bench_results/<arch>`: the files it wrote, never those of older runs, nor `oracle/`), and the local copy |
+| Delete | deletes the run directory (finished runs only: the cluster side checks it again, and a run whose state cannot be known from here -- started from another login node, no `squeue` -- asks for a second confirmation); optionally also the outputs that are this run's own (in a shared output directory, `bench_results/<arch>`: the files it wrote between its submission and its end, never those of older or later runs, nor `oracle/`; a directory of its own goes whole only when no other run writes in it or below it), and the local copy |
 
 ### This machine
 

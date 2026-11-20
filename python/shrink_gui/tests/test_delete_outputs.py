@@ -166,3 +166,86 @@ def test_delete_many_keeps_outputs_that_are_not_the_runs_own(site):
     opts = base64.b64encode(json.dumps({"own": BENCH, "keep_others": True}).encode()).decode()
     r = site.helper("delete", "~/shrink_runs", "s4", opts)
     assert r["ok"] and "pas de dossier de sortie" in r["kept"] and not (site.runs / "s4").exists()
+
+
+def test_own_output_dir_holding_another_runs_dir_is_refused(site):
+    # a1 was given a base directory as its own; a2, later, writes below it
+    # (thread_speedup.py --out <the default base>): a1's "whole directory" is
+    # not a1's alone, however recent its files.
+    od = site.home / "work" / "thread_speedup"
+    (od / "sub").mkdir(parents=True)
+    _fake_run(site, "a1", f"📁 Outputs, CSV and log in {od}", "2026-10-08 09:00:00")
+    (od / "timings_summary.csv").write_text("x")
+    _fake_run(site, "a2", f"📁 Outputs, CSV and log in {od / 'sub'}", "2026-10-08 10:00:00")
+    (od / "sub" / "timings_summary.csv").write_text("y")
+    r = _delete(site, "a1", MULTI)
+    assert "a2 utilise aussi" in r["error"]
+    assert (od / "sub" / "timings_summary.csv").exists() and (site.runs / "a1").exists()
+    # the other way round, a2's own directory goes: a1 announces its parent, not it
+    r = _delete(site, "a2", MULTI)
+    assert r["ok"] and not (od / "sub").exists() and (od / "timings_summary.csv").exists()
+
+
+def test_own_output_dir_with_files_written_after_the_run_is_refused(site):
+    # ... and a run the GUI does not know (launched by hand) wrote there since.
+    import os
+    od = site.home / "work" / "base"
+    od.mkdir(parents=True)
+    d = _fake_run(site, "e1", f"📁 Outputs, CSV and log in {od}", "2026-10-08 09:00:00")
+    (od / "timings_summary.csv").write_text("x")
+    (od / "later").mkdir()
+    (od / "later" / "result.csv").write_text("someone else's")
+    end = os.path.getmtime(d / "exit_code") - 3600
+    for p in (d / "meta.json", d / "exit_code", od / "timings_summary.csv"):
+        os.utime(p, (end, end))                      # the run ended an hour ago
+    r = _delete(site, "e1", MULTI)
+    assert "écrits après la fin de e1" in r["error"] and "later/result.csv" in r["error"]
+    assert (od / "later" / "result.csv").exists() and (site.runs / "e1").exists()
+
+
+def test_shared_bench_dir_keeps_what_was_written_after_the_run(site):
+    # b2, newer, was deleted WITHOUT its outputs: no run directory says they
+    # are b2's any more. Deleting b1 with its outputs must not take them.
+    import os
+    od = _bench_dir(site)
+    b1 = _fake_run(site, "b1", f"📁 Run outputs → {od}  (arch: aarch64)", "2026-10-08 10:00:00", "bench_and_test.py")
+    now = os.path.getmtime(b1 / "exit_code")
+    for p in od.rglob("*"):
+        os.utime(p, (now - 9000, now - 9000))        # the older runs' files
+    os.utime(b1 / "meta.json", (now - 7200, now - 7200))     # b1 submitted two hours ago
+    (od / "run_logs" / "b1.log").write_text("b1's")
+    for p in (od / "run_logs" / "b1.log", b1 / "exit_code"):
+        os.utime(p, (now - 3600, now - 3600))        # b1 ended an hour ago
+    _fake_run(site, "b2", f"📁 Run outputs → {od}  (arch: aarch64)", "2026-10-08 11:00:00", "bench_and_test.py")
+    (od / "run_logs" / "b2.log").write_text("b2's")
+    (od / "bench_summary.csv").write_text("b2's")
+    assert _delete(site, "b2")["ok"]                 # the run only
+    r = _delete(site, "b1", BENCH)
+    assert r["ok"] and r["removed"] == [str(od / "run_logs" / "b1.log")]
+    assert (od / "run_logs" / "b2.log").read_text() == "b2's" and (od / "bench_summary.csv").read_text() == "b2's"
+
+
+def test_a_run_that_may_still_run_is_not_deleted(site):
+    # The helper checks by itself, whatever the window thought of the status.
+    import os
+    import subprocess
+    p = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    try:
+        for rid, host in (("here", os.uname()[1]), ("elsewhere", "another-login-node")):
+            d = site.runs / rid
+            d.mkdir(parents=True)
+            (d / "meta.json").write_text(json.dumps({"mode": "local", "created": "2026-10-08 09:00:00"}))
+            (d / "pid").write_text(str(p.pid))
+            (d / "host").write_text(host)
+        force = base64.b64encode(json.dumps({"force": True}).encode()).decode()
+        assert "encore actif" in _delete(site, "here")["error"]
+        assert "encore actif" in site.helper("delete", "~/shrink_runs", "here", force)["error"]
+        assert "tourne peut-être encore" in _delete(site, "elsewhere")["error"]
+        blob = base64.b64encode(json.dumps([{"id": "here"}, {"id": "elsewhere"}]).encode()).decode()
+        res = site.helper("delete_many", "~/shrink_runs", blob)["results"]
+        assert "error" in res["here"] and "error" in res["elsewhere"]
+        assert (site.runs / "here").exists() and (site.runs / "elsewhere").exists()
+        assert site.helper("delete", "~/shrink_runs", "elsewhere", force)["ok"]      # asked twice: goes
+        assert p.poll() is None
+    finally:
+        p.kill()
