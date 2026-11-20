@@ -86,6 +86,20 @@ def main():
     a = ap.parse_args()
 
     threads = [int(t) for t in a.threads.split(",") if t.strip()]
+    # The CPUs this process may run on (the job's cgroup, taskset), not the
+    # node's: a job given one CPU ran 72 and 288 threads on it -- every case
+    # at the 1-thread time per element, the rows meaningless. Said before and
+    # in the table.
+    try:
+        cpus = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        cpus = os.cpu_count() or 1
+    over = [t for t in threads if t > cpus]
+    if over:
+        sys.stderr.write("WARNING: %d CPU(s) available to this process (affinity), fewer than the thread "
+                         "count(s) %s: those runs share the CPUs, their times per element are not the "
+                         "threads' (ask the job for the cores: e.g. -c %d)\n"
+                         % (cpus, ",".join(map(str, over)), max(threads)))
     variants = [check_variant_label(v.strip(), "--variants") for v in a.variants.split(",") if v.strip()]
     binaries = {}
     for v in variants:
@@ -129,10 +143,11 @@ def main():
                 vm, am = statistics.median(vec), statistics.median(arr)
                 # Spread of the array's repetitions: (max - min) / median.
                 spread = (max(arr) - min(arr)) / am if am > 0 else 0.0
-                print("%-8s %7d %-14s %10.3f %10.3f %7.2f %6.0f%%" % (v, t, c, vm, am, am / vm if vm else 0.0,
-                                                                     100 * spread))
+                print("%-8s %7d %-14s %10.3f %10.3f %7.2f %6.0f%%%s"
+                      % (v, t, c, vm, am, am / vm if vm else 0.0, 100 * spread,
+                         "  OVERSUBSCRIBED (%d CPUs)" % cpus if t > cpus else ""))
     print("(medians over %d round(s) x %d repetition(s); ns per element = wall clock / n; "
-          "ratio = array / vector)" % (a.rounds, a.reps))
+          "ratio = array / vector; %d CPU(s) available)" % (a.rounds, a.reps, cpus))
     return 0
 
 
