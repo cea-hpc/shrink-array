@@ -88,6 +88,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `resize()` (and what goes through it: `reserve()`, `assign()`, a growing `push_back()`) of a
+  shared array inside a region, from one thread while the team waits (`omp single`), as
+  `docs/getting_started.md` section 5 allows: it purged the calling thread's candidate list
+  only, the other ranks kept pointers into the chunk list it reallocates and flags in the row
+  it replaces (an invariant failure in the check builds, a use after free in the others). An
+  array other ranks have queued chunks of has its candidates drained on every rank; a work
+  array of the calling thread, on its own rank as before (the three variants).
 - `zero_or_value`, serial builds, an array without a declared second value: `+=`, `-=`, `++`,
   `--` and the bitwise operators on a zero element moved one of the chunk's two constant
   counters only, so the element still counted as zero; the next plain write that zeroed the

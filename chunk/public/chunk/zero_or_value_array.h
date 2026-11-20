@@ -278,10 +278,12 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @details Drains the compression candidates and deferred ops first: both
      *          hold `&chunk_list_[j]` pointers a reallocation would dangle.
      * @param newsz new element count
-     * @note A sequential point. Inside a parallel region, only by the thread
-     *       that owns the array (a work array of its own): the drain then
-     *       covers this array's candidates alone (drain_own_candidates()),
-     *       not the shared arrays' the thread has also written.
+     * @note A sequential point. Inside a parallel region: by the thread that
+     *       owns the array (a work array of its own), or on a shared array
+     *       from one thread while the team waits (`omp single`). The drain
+     *       covers this array's candidates alone (drain_own_candidates()) --
+     *       in the calling thread's list, or in every rank's for a shared
+     *       array -- not the other arrays' the threads have also written.
      * @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list_ keeps its capacity.
