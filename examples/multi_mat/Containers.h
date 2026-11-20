@@ -117,10 +117,14 @@ class MultiArray : public std::vector<MatArrayBase<T>*>
 
     // Owns raw pointers: a copy would delete them twice, and the default
     // move assignment would leak the target's. Neither is needed.
-    MultiArray(const MultiArray&)            = delete;
-    MultiArray& operator=(const MultiArray&) = delete;
-    MultiArray(MultiArray&&)                 = delete;
-    MultiArray& operator=(MultiArray&&)      = delete;
+    MultiArray(const MultiArray&) =
+        delete ("owns raw pointers: a copy would delete them twice, a move assignment would leak the target's");
+    MultiArray& operator=(const MultiArray&) =
+        delete ("owns raw pointers: a copy would delete them twice, a move assignment would leak the target's");
+    MultiArray(MultiArray&&) =
+        delete ("owns raw pointers: a copy would delete them twice, a move assignment would leak the target's");
+    MultiArray& operator=(MultiArray&&) =
+        delete ("owns raw pointers: a copy would delete them twice, a move assignment would leak the target's");
 
     /// @brief One array of @p mesh_size elements per material, of the kind
     ///        the dispatch gives the material. Frees those of a previous

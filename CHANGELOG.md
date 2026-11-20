@@ -60,6 +60,10 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- cpp26: the deleted copy / move members added under `chunk/` since 0.2.1 (the re-chunk refill,
+  the registries' write lock, the stable table, two scope guards) give their reason again
+  (`= delete("...")`), and so do the examples' (`multi_mat`, `shrink_bench`). `fast_allocators`
+  is built as C++23 and its headers stay usable from C++23: its deletes keep the plain form.
 - `shrink_gui` 0.18, "cette machine": the launcher defaults to
   `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` where `systemd-run --user`
   works, so that a run out of memory is killed alone instead of bringing WSL down (a launcher

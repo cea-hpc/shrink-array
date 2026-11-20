@@ -522,10 +522,14 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl([[maybe_unused]] th
         struct OwnReplayExclGuard
         {
             explicit OwnReplayExclGuard(int r) noexcept : rank(r) {}
-            OwnReplayExclGuard(const OwnReplayExclGuard&)            = delete;
-            OwnReplayExclGuard& operator=(const OwnReplayExclGuard&) = delete;
-            OwnReplayExclGuard(OwnReplayExclGuard&&)                 = delete;
-            OwnReplayExclGuard& operator=(OwnReplayExclGuard&&)      = delete;
+            OwnReplayExclGuard(const OwnReplayExclGuard&) =
+                delete ("holds the rank's enqueue lock: released once, by the scope that took it");
+            OwnReplayExclGuard& operator=(const OwnReplayExclGuard&) =
+                delete ("holds the rank's enqueue lock: released once, by the scope that took it");
+            OwnReplayExclGuard(OwnReplayExclGuard&&) =
+                delete ("holds the rank's enqueue lock: released once, by the scope that took it");
+            OwnReplayExclGuard& operator=(OwnReplayExclGuard&&) =
+                delete ("holds the rank's enqueue lock: released once, by the scope that took it");
             ~OwnReplayExclGuard()
             {
                 if (rank >= 0)

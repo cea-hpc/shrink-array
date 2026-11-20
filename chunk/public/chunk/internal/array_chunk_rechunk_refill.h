@@ -170,11 +170,14 @@ class RechunkSupport<Derived, true>::Refill
      */
     Refill(Derived& src, Derived& tmp, int old_size, int new_size, unsigned int old_key);
 
-    Refill(const Refill&)            = delete;
-    Refill& operator=(const Refill&) = delete;
-    Refill(Refill&&)                 = delete;
-    Refill& operator=(Refill&&)      = delete;
-    ~Refill()                        = default;
+    Refill(const Refill&) =
+        delete ("a re-chunk in progress: holds the source and the fresh array by reference, run once");
+    Refill& operator=(const Refill&) =
+        delete ("a re-chunk in progress: holds the source and the fresh array by reference, run once");
+    Refill(Refill&&) = delete ("a re-chunk in progress: holds the source and the fresh array by reference, run once");
+    Refill& operator=(Refill&&) =
+        delete ("a re-chunk in progress: holds the source and the fresh array by reference, run once");
+    ~Refill() = default;
 
     /// @brief Rebuild every new chunk, slice by slice; then the memory census.
     void run();

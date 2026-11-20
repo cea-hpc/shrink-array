@@ -93,10 +93,14 @@ class RegistryWriteLock
         registry_generation().fetch_add(1, std::memory_order_release);
     }
 
-    RegistryWriteLock(const RegistryWriteLock&)            = delete;
-    RegistryWriteLock& operator=(const RegistryWriteLock&) = delete;
-    RegistryWriteLock(RegistryWriteLock&&)                 = delete;
-    RegistryWriteLock& operator=(RegistryWriteLock&&)      = delete;
+    RegistryWriteLock(const RegistryWriteLock&) = delete (
+        "holds the registries' lock and bumps their generation on release: released once, by the scope that took it");
+    RegistryWriteLock& operator=(const RegistryWriteLock&) = delete (
+        "holds the registries' lock and bumps their generation on release: released once, by the scope that took it");
+    RegistryWriteLock(RegistryWriteLock&&) = delete (
+        "holds the registries' lock and bumps their generation on release: released once, by the scope that took it");
+    RegistryWriteLock& operator=(RegistryWriteLock&&) = delete (
+        "holds the registries' lock and bumps their generation on release: released once, by the scope that took it");
 
   private:
     std::unique_lock<std::shared_mutex> lock_;

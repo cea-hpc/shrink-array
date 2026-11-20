@@ -57,10 +57,14 @@ class StableTable
     constexpr StableTable() noexcept = default;
     ~StableTable()                   = default; // lives in an Immortal: never destroyed
 
-    StableTable(const StableTable&)            = delete;
-    StableTable& operator=(const StableTable&) = delete;
-    StableTable(StableTable&&)                 = delete;
-    StableTable& operator=(StableTable&&)      = delete;
+    StableTable(const StableTable&) =
+        delete ("address-stable rows: readers keep pointers into them, which a copy or a move would leave dangling");
+    StableTable& operator=(const StableTable&) =
+        delete ("address-stable rows: readers keep pointers into them, which a copy or a move would leave dangling");
+    StableTable(StableTable&&) =
+        delete ("address-stable rows: readers keep pointers into them, which a copy or a move would leave dangling");
+    StableTable& operator=(StableTable&&) =
+        delete ("address-stable rows: readers keep pointers into them, which a copy or a move would leave dangling");
 
     /// @brief Row @p index. Safe against a concurrent resize().
     [[nodiscard]] Row& operator[](std::size_t index) noexcept;

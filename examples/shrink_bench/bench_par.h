@@ -934,8 +934,9 @@ class ArenaPin final : public oneapi::tbb::task_scheduler_observer
     {
         observe(true);
     }
-    ArenaPin(const ArenaPin&)            = delete;
-    ArenaPin& operator=(const ArenaPin&) = delete;
+    ArenaPin(const ArenaPin&) = delete ("an observer registered on the arena by address: neither copied nor moved");
+    ArenaPin&
+    operator=(const ArenaPin&) = delete ("an observer registered on the arena by address: neither copied nor moved");
     ~ArenaPin() override
     {
         observe(false);
@@ -1057,8 +1058,10 @@ class ArenaWatch final : public oneapi::tbb::task_scheduler_observer
     {
         observe(true);
     }
-    ArenaWatch(const ArenaWatch&)            = delete;
-    ArenaWatch& operator=(const ArenaWatch&) = delete;
+    ArenaWatch(const ArenaWatch&) =
+        delete ("an observer registered on the bench's arena by address: neither copied nor moved");
+    ArenaWatch& operator=(const ArenaWatch&) =
+        delete ("an observer registered on the bench's arena by address: neither copied nor moved");
     ~ArenaWatch() override
     {
         observe(false);
@@ -1729,10 +1732,12 @@ class Partial
 {
   public:
     explicit Partial(T& shared) noexcept : shared_(shared) {}
-    Partial(const Partial&)            = delete;
-    Partial& operator=(const Partial&) = delete;
-    Partial(Partial&&)                 = delete;
-    Partial& operator=(Partial&&)      = delete;
+    Partial(const Partial&) = delete ("a thread's partial: added into the shared variable once, when it is destroyed");
+    Partial& operator=(const Partial&) =
+        delete ("a thread's partial: added into the shared variable once, when it is destroyed");
+    Partial(Partial&&) = delete ("a thread's partial: added into the shared variable once, when it is destroyed");
+    Partial&
+    operator=(Partial&&) = delete ("a thread's partial: added into the shared variable once, when it is destroyed");
     ~Partial()
     {
         atomic_add(shared_, value);

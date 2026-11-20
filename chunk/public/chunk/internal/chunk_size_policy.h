@@ -85,10 +85,14 @@ struct BirthAtActiveSize
     {
         t_birth_at_active_size = false;
     }
-    BirthAtActiveSize(const BirthAtActiveSize&)            = delete;
-    BirthAtActiveSize& operator=(const BirthAtActiveSize&) = delete;
-    BirthAtActiveSize(BirthAtActiveSize&&)                 = delete;
-    BirthAtActiveSize& operator=(BirthAtActiveSize&&)      = delete;
+    BirthAtActiveSize(const BirthAtActiveSize&) =
+        delete ("a scope guard: sets the thread's birth-at-active-size flag, reset once on exit");
+    BirthAtActiveSize& operator=(const BirthAtActiveSize&) =
+        delete ("a scope guard: sets the thread's birth-at-active-size flag, reset once on exit");
+    BirthAtActiveSize(BirthAtActiveSize&&) =
+        delete ("a scope guard: sets the thread's birth-at-active-size flag, reset once on exit");
+    BirthAtActiveSize& operator=(BirthAtActiveSize&&) =
+        delete ("a scope guard: sets the thread's birth-at-active-size flag, reset once on exit");
 };
 
 /**
