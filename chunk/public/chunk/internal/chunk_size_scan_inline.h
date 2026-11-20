@@ -371,7 +371,9 @@ void ChunkSizeScan<Arr>::merge_parts()
     sampling_ = any_sampled_ && mat0_ > 0;
     if (sampling_)
     {
-        stride_ = mat0_ > opt_.max_mat_scans ? (mat0_ + opt_.max_mat_scans - 1) / opt_.max_mat_scans : 1;
+        // At least one chunk read: max_mat_scans = 0 (or less) divided by zero here.
+        const int64_t max_scans = std::max<int64_t>(opt_.max_mat_scans, 1);
+        stride_                 = mat0_ > max_scans ? (mat0_ + max_scans - 1) / max_scans : 1;
     }
 }
 

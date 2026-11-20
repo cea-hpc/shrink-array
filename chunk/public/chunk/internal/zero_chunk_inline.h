@@ -565,12 +565,12 @@ zero::Chunk<T>& zero::Chunk<T>::operator=(const Chunk<T>& other)
 
     if constexpr (build_config::threaded)
     {
-        T* loaded_value = other.values.load();
+        T* loaded_value = other.values_.load();
         values_.store(loaded_value);
     }
     else
     {
-        values_ = other.values;
+        values_ = other.values_;
     }
 
     return *this;

@@ -51,7 +51,7 @@ alone ([getting started, §5](getting_started.md)); it invalidates the array's p
 | append | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** only when it needs a new chunk |
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
-| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_or_value::Array`, `zero_any::Array`) |
+| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_or_value::Array`). `zero_any::Array`'s compresses nothing: it reports the chunks that are constant and still materialised (`CHUNK_LOG=compress=info`); `shrink_to_fit()` is the pass there |
 | free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `zero_any::Array<T>` uses any more, so that their identifiers are reused; returns how many (`zero_any::Array`); a sequential point over **every** array of the type, see below |
 | statistics | `stats()`, `written_chunk_count()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones) |

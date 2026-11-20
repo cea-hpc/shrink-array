@@ -12,8 +12,14 @@ What the tracked sources name:
 1. a quoted `#include "x"` of chunk/, fast_allocators/ and examples/ (looked up
    next to the including file, then under chunk/public, fast_allocators/public
    and third_party);
-2. a relative import of the Python packages under python/ (`from . import a`,
-   `from .a import b`, `from ..a import b`);
+2. an import of the Python tree under python/: relative (`from . import a`,
+   `from .a import b`, `from ..a import b`), or absolute when its first name
+   is a module or package of ours -- next to the importing file (a script's
+   directory is on its path: `import numa_launch`, a test's `from conftest
+   import x`) or under python/ (`from shrink_gui.config import x`, `import
+   bench_runner.pool`). The standard library and the installed packages are
+   not ours and are left alone; a name imported FROM a module is looked at
+   only when a file of that name sits there untracked (it may be an attribute);
 3. a source path written in a CMakeLists.txt (relative to it, or after
    ${PROJECT_SOURCE_DIR} / ${CMAKE_SOURCE_DIR} / ${CMAKE_CURRENT_SOURCE_DIR}),
    the validation harnesses, built as `<name>.cpp` from the names
@@ -48,6 +54,8 @@ import sys
 
 INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')
 PY_REL_FROM = re.compile(r"^\s*from\s+(\.+)([\w.]*)\s+import\s+(.+?)\s*(?:#.*)?$")
+PY_ABS_FROM = re.compile(r"^\s*from\s+([A-Za-z_]\w*(?:\.\w+)*)\s+import\s+(.+?)\s*(?:#.*)?$")
+PY_IMPORT = re.compile(r"^\s*import\s+([A-Za-z_][\w.]*(?:\s+as\s+\w+)?(?:\s*,\s*[A-Za-z_][\w.]*(?:\s+as\s+\w+)?)*)\s*(?:#.*)?$")
 CMAKE_PATH = re.compile(r'(?:\$\{(?:PROJECT_SOURCE_DIR|CMAKE_SOURCE_DIR|CMAKE_CURRENT_SOURCE_DIR)\}/)?'
                         r'[A-Za-z0-9_./-]+\.(?:h|hpp|cpp|c|py|cmake|in)\b')
 MD_LINK = re.compile(r"\]\(([^)#\s:]+)(?:#[^)]*)?\)")
@@ -144,12 +152,46 @@ def main():
                 # a project header, or a sibling: it must exist somewhere
                 verdict(f"{f}:{n}", f'#include "{inc}"', cands)
 
-    # 2. relative Python imports
+    # 2. Python imports: relative, and absolute ones of our own modules
+    known = tracked | untracked
+
+    def ours(base, first):
+        """Is @p first a module or package of ours in directory @p base?"""
+        prefix = f"{base}/{first}"
+        return f"{prefix}.py" in known or any(k.startswith(prefix + "/") for k in known)
+
+    def absolute_import(where, here, module, names):
+        """`import module` / `from module import names`: checked when the
+        module's first name is ours, next to the importing file or under
+        python/."""
+        parts = module.split(".")
+        for base in dict.fromkeys((str(here), "python")):
+            if not ours(base, parts[0]):
+                continue
+            p = pathlib.PurePosixPath(base).joinpath(*parts)
+            verdict(where, f"import of {module}", [f"{p}.py", f"{p}/__init__.py"])
+            for name in names:
+                for c in (f"{p}/{name}.py", f"{p}/{name}/__init__.py"):
+                    if c in untracked:
+                        problems.append(f"{where}: from {module} import {name} -> {c} exists but is not tracked "
+                                        "(git add it)")
+            return
+
     for f in sorted(tracked):
         if not f.startswith("python/") or not f.endswith(".py"):
             continue
         pkg = pathlib.PurePosixPath(f).parent
         for n, line in enumerate((root / f).read_text(encoding="utf-8", errors="replace").split("\n"), 1):
+            m_abs = PY_ABS_FROM.match(line)
+            if m_abs:
+                names = [x.strip().split(" as ")[0].strip() for x in m_abs.group(2).strip("()").split(",")]
+                absolute_import(f"{f}:{n}", pkg, m_abs.group(1), [x for x in names if x and x != "*"])
+                continue
+            m_imp = PY_IMPORT.match(line)
+            if m_imp:
+                for mod in m_imp.group(1).split(","):
+                    absolute_import(f"{f}:{n}", pkg, mod.strip().split(" as ")[0].strip(), [])
+                continue
             m = PY_REL_FROM.match(line)
             if not m:
                 continue

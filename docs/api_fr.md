@@ -52,7 +52,7 @@ il invalide les proxys du tableau.
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
-| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_or_value::Array`, `zero_any::Array`) |
+| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_or_value::Array`). Celui de `zero_any::Array` ne compresse rien : il signale les chunks constants encore matérialisés (`CHUNK_LOG=compress=info`) ; la passe y est `shrink_to_fit()` |
 | libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `zero_any::Array<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`zero_any::Array`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas |
 | statistiques | `stats()`, `written_chunk_count()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) |

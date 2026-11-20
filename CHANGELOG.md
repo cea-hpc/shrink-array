@@ -88,6 +88,27 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Smaller findings of the rescan of 2026-11-20:
+  - `RechunkDecider`: with `max_coarsen_factor` at 1 or 0 ("no cap", `--rechunk_max_coarsen`),
+    an array banned from coarsening went on being coarsened;
+  - `ChunkSizeAdvisor::analyze()` with `Options::max_mat_scans` at 0 divided by it when it
+    sampled the materialised chunks (read from the code, not reproduced: at least one chunk
+    is read now);
+  - `zero::Chunk`'s copy-assignment named a member that does not exist (nothing instantiated it);
+  - a shared library's soname carried the major version alone while two 0.x minor versions are
+    declared incompatible: `lib<name>.so.0.<minor>` at 0.x;
+  - `find_package(shrink_array)` through `shrink_array_DIR` alone did not find the
+    fast_allocators installed with it, and could take another installation's;
+  - a former option name (`-DOMP=OFF`, `-DSANITIZER=...`) given to a tree already configured
+    printed its deprecation and was ignored;
+  - fast_allocators built alone with the std backend stopped on a static_assert
+    (`ALLOCATORS_THREADED` followed `ALLOCATORS_OMP` only);
+  - the Spack recipe accepted `threads=std` and `+tbb` at 0.1.3 and `+stats` up to 0.1.1,
+    versions that ignore those options (serial libraries installed for `threads=std`);
+  - scripts/check_tracked.py followed relative Python imports only: an untracked module of
+    `shrink_gui`, whose imports are absolute, passed the check;
+  - docs: `zero_any::Array::compress()` reports and compresses nothing, and `shrink_to_fit()` is
+    refused inside a region (`docs/api.md`, `docs/getting_started.md` said otherwise).
 - `resize()` (and what goes through it: `reserve()`, `assign()`, a growing `push_back()`) of a
   shared array inside a region, from one thread while the team waits (`omp single`), as
   `docs/getting_started.md` section 5 allows: it purged the calling thread's candidate list

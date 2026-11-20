@@ -460,6 +460,12 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_geom STREQUAL "dyn")
       list(APPEND _group rechunk_validation dyn_geometry_validation)
     endif()
+    # advisor_edge_validation: the decider's coarsening ban without a cap, the
+    # advisor asked to read no chunk, zero::Chunk's copy-assignment. Dyn only
+    # (the advisor and the decider serve the runtime geometry).
+    if (_geom STREQUAL "dyn")
+      list(APPEND _group advisor_edge_validation)
+    endif()
     # Another static size: the round-trip harnesses alone.
     if (NOT _geom STREQUAL "dyn" AND NOT _geom STREQUAL CHUNK_DEFAULT_SIZE)
       set(_group ${_rt_group})

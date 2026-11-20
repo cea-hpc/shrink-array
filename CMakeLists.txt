@@ -53,10 +53,15 @@ if(SHRINK_ARRAY_IS_TOP_LEVEL)
             # has it from its own option() / set(CACHE). A -D without a type
             # leaves it UNINITIALIZED, and the option() / set(CACHE) of the
             # new name further down gives it its type then.
+            # FORCE: the former entry is removed below at every configure,
+            # so it is in the cache only when THIS run was given it. Without
+            # it, `cmake -DOMP=OFF` on a configured tree printed the message
+            # above and kept the new name's cached value.
             get_property(_chunk_type CACHE ${_chunk_former} PROPERTY TYPE)
-            if(NOT DEFINED CACHE{${_chunk_name}})
-                set(${_chunk_name} "$CACHE{${_chunk_former}}" CACHE ${_chunk_type} "(given as ${_chunk_former})")
+            if(_chunk_type STREQUAL "UNINITIALIZED" AND DEFINED CACHE{${_chunk_name}})
+                get_property(_chunk_type CACHE ${_chunk_name} PROPERTY TYPE)
             endif()
+            set(${_chunk_name} "$CACHE{${_chunk_former}}" CACHE ${_chunk_type} "(given as ${_chunk_former})" FORCE)
             unset(${_chunk_former} CACHE)
         endif()
     endforeach()
