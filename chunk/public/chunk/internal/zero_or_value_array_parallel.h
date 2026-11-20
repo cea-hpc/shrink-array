@@ -92,7 +92,9 @@ class FastBlockSupport<Derived, true>
 
     /**
      * @brief The drain inside a region: the pass on this array's candidates
-     *        only, in the calling thread's list for its second value.
+     *        only, in the calling thread's list for its second value -- in
+     *        every rank's when other ranks queued chunks of it (a shared
+     *        array, the team waiting).
      * @details The other arrays' candidates stay queued, untouched
      *          (internal/own_candidates.h): the pass takes no writer handshake,
      *          and another thread may be writing them. The buffers released are

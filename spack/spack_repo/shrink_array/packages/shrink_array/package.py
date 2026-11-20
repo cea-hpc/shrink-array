@@ -123,7 +123,12 @@ class ShrinkArray(CMakePackage):
     conflicts("%gcc@:13", when="@cpp23", msg="the cpp23 branch needs GCC 14 or later (C++23)")
     conflicts("%clang@:17", msg="shrink-array needs Clang 18 or later")
     conflicts("%nvhpc", when="@cpp23", msg="nvc++ has no C++23")
-    conflicts("threads=std", when="@:0.1.2", msg="the std backend comes after 0.1.2")
+    # CHUNK_THREADS and CHUNK_WITH_TBB come with 0.2.0, CHUNK_STATS with 0.1.2:
+    # an earlier version ignores the option and would install something else
+    # than the spec says (serial libraries for threads=std, no statistics).
+    conflicts("threads=std", when="@:0.1.3", msg="the std backend comes with 0.2.0")
+    conflicts("+tbb", when="@:0.1.3", msg="the TBB examples come with 0.2.0")
+    conflicts("+stats", when="@:0.1.1", msg="the statistics option comes with 0.1.2")
     conflicts("+tbb", when="~examples", msg="+tbb builds TBB examples only: add +examples")
     conflicts("+tbb", when="threads=openmp", msg="the TBB examples need threads=std")
     conflicts("+tbb", when="threads=serial", msg="the TBB examples need threads=std")

@@ -638,20 +638,29 @@ void zero_or_value::Array<T, IntType>::clear_core()
         return;
     }
 
-    // See zero_any::Array::clear(): skip in aggressive mode; in the GNU build this
-    // sweep scans without compressing (compress()'s clear paths are compiled
-    // out), so it would be costly wasted work.
+    // See zero_any::Array::clear(): skip in aggressive mode.
+    // The pass compresses (apply = true), as finalize_parallel_phase() and
+    // compress_int() do. This array's own entries are gone already (the removal
+    // by array_id above); what is left belongs to the OTHER arrays, of every
+    // type. With apply = false the pass scanned each of them, dropped the
+    // verdict and emptied the lists: a temporary destroyed between two phases
+    // (or after a region, before its phase end) un-queued every other array's
+    // candidates, and those chunks stayed materialised.
     if constexpr (chunk_config::not_use_compression_with_ompt)
     {
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
             const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
 
-            // Not for a work array torn down in a region: that pass walks every
-            // rank's list, of every type.
-            if (!own_rank && type_registry.has_candidates())
+            // At a sequential point only: the pass walks every rank's list, of
+            // every type, and opens its own region. Not for a work array torn
+            // down in a region (own_rank), nor for any teardown inside one
+            // (an inactive region of one thread included), where the other
+            // ranks may still be writing.
+            const bool in_region = CHUNK_PMP_IN_PARALLEL_REGION || CHUNK_PMP_LEVEL > 0;
+            if (!own_rank && !in_region && type_registry.has_candidates())
             {
-                type_registry.run_compress_pass(false);
+                type_registry.run_compress_pass(true);
             }
         }
     }
@@ -1267,11 +1276,8 @@ zero_or_value::Array<T, IntType>::~Array()
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     clear();
     Proxy<T>::array_registry->erase(this->registry_key());
-
-    if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
-    {
-        Proxy<T>::array_registry->erase_array_info_by_ptr(&array_info_);
-    }
+    // No erase from array_info_map_: its records belong to the second values
+    // (copies, not this array's member), and another array may declare ours.
     // rechunk=debug, tmp teardown only (armed by rechunk_to): free chunk_list_'s
     // buffer here rather than with the member, so that the split can time it
     // (as zero_any::ArrayImpl::destroy_storage()).

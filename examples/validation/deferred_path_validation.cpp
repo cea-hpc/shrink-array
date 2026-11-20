@@ -797,6 +797,75 @@ static int run_resize(const char* label, long count)
     return fails ? 1 : 0;
 }
 
+// ── a deferred `a[i] = b[i]` across element types assigns b[i]'s value THEN ──
+
+/**
+ * @brief `dst[i] = src[i]` between arrays of two element types, every such
+ *        write deferred, then `src[i] = 0` before the phase ends: dst holds
+ *        what src held when the statement ran.
+ * @details `a[i] = b[j]` reads b[j], then writes a[i] (docs/api.md, section
+ *          4). Between two proxies of one type the value is read at once;
+ *          between two types the assignment took the source PROXY as its
+ *          operand, and a deferred write kept a copy of that proxy: the
+ *          replay read src[i] at the end of the phase -- its value by then,
+ *          or freed storage if src had been resized.
+ * @return 0 if every element of dst has src's value at the time, 1 otherwise.
+ */
+template <typename D, typename S>
+static int run_cross_type_assign(const char* label, long count)
+{
+    if constexpr (!build_config::use_openmp || !test_hooks::force_defer_compiled)
+    {
+        return 0;
+    }
+    Array<D> dst(count);
+    Array<S> src(count);
+
+    const unsigned int every      = test_hooks::force_defer_every;
+    test_hooks::force_defer_every = 0U; // src is written directly
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < count; ++i)
+        {
+            src[i] = static_cast<S>((i % 7) + 1);
+        }
+#pragma omp single
+        test_hooks::force_defer_every = 1U; // every dst[i] = src[i] takes the deferred exit
+#pragma omp for
+        for (long i = 0; i < count; ++i)
+        {
+            dst[i] = src[i];
+        }
+#pragma omp single
+        test_hooks::force_defer_every = 0U;
+#pragma omp for
+        for (long i = 0; i < count; ++i)
+        {
+            src[i] = S{}; // before the replays, which run at the end of the phase
+        }
+    }
+    end_phase();
+    test_hooks::force_defer_every = every;
+
+    long wrong = 0;
+    for (long i = 0; i < count; ++i)
+    {
+        wrong += (static_cast<D>(std::as_const(dst)[i]) != static_cast<D>((i % 7) + 1)) ? 1 : 0;
+        wrong += (static_cast<S>(std::as_const(src)[i]) != S{}) ? 1 : 0;
+    }
+    dst.clear();
+    src.clear();
+    if (wrong != 0)
+    {
+        println("[{}/cross-type-assign] FAIL: {} wrong values of {}", label, wrong, count);
+        return 1;
+    }
+    println("[{}/cross-type-assign] OK", label);
+    return 0;
+}
+
 // ── a replayed write that makes a chunk uniform queues it ───────────────────
 
 /**
@@ -938,6 +1007,9 @@ int run(int argc, char** argv)
     fails += run_resize<int>("int", count);
     fails += run_resize<double>("double", count);
     fails += run_resize<bool>("bool", count);
+
+    fails += run_cross_type_assign<double, int>("double = int", count);
+    fails += run_cross_type_assign<long, int>("long = int", count);
 
     fails += run_replay_marks<int>("int", count);
     fails += run_replay_marks<double>("double", count);

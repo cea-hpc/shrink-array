@@ -52,7 +52,7 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
 {
     const unsigned max_factor = pol_.max_coarsen_factor;
 
-    if (rep.best < 0 || rep.cur < 0 || max_factor <= 1)
+    if (rep.best < 0 || rep.cur < 0)
     {
         return rep.best;
     }
@@ -62,9 +62,16 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
     {
         return rep.best;
     }
+    // Before the "no cap" exit below: max_coarsen_factor <= 1 switches the
+    // cap off, not the ban -- with it, an array banned from coarsening went
+    // on being coarsened.
     if (banned) // this array already paid for one bad coarsening
     {
         return rep.cur;
+    }
+    if (max_factor <= 1) // no cap
+    {
+        return rep.best;
     }
     const unsigned cap_sz = cur_size * max_factor;
     if (best_sz <= cap_sz)

@@ -281,7 +281,13 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_co
                 {
                     static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
+                    // Every value with a candidate list is registered (set_second_value
+                    // does both); tested all the same, as compress_sweep_rank does.
                     const auto* inf_ptr = Derived::array_registry->find_array_info(second_val);
+                    if (inf_ptr == nullptr) [[unlikely]]
+                    {
+                        continue;
+                    }
                     Chunk<T>::make_block_compression(thr_rank, *inf_ptr, std::addressof(self));
 
                     self.set_info_on_chunk();
@@ -658,6 +664,53 @@ void zero_or_value::Proxy<T>::ensure_writable_storage()
 }
 
 template <typename T>
+void zero_or_value::Proxy<T>::count_constant_transitions([[maybe_unused]] bool was_second_value,
+                                                         [[maybe_unused]] bool was_first_value)
+{
+    if constexpr (chunk_config::use_compression_with_counter)
+    {
+        // The value actually stored, NOT is_second_value(idx): that one tests
+        // the storage pointer, false right after create_value().
+        const bool now_second = same_value(this->raw_elem(), second_value_);
+        const bool now_first  = same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value));
+
+        // Each counter on its own, never `else if`: an array that declared no
+        // second value has T{} for both constants, and perform_core_assignment()
+        // then moves both counters for such an element. Updating one alone
+        // left the other counting an element that had left zero as still
+        // zero: the next plain write that zeroed the rest of the chunk found
+        // it "full" and folded it, the element with it.
+        if (was_second_value && !now_second)
+        {
+            chunk_.dec_n_val_eq_second_value();
+        }
+        if (was_first_value && !now_first)
+        {
+            chunk_.dec_n_val_eq_first_value();
+        }
+        if (!was_second_value && now_second)
+        {
+            chunk_.inc_n_val_eq_second_value();
+        }
+        if (!was_first_value && now_first)
+        {
+            chunk_.inc_n_val_eq_first_value();
+            // The first constant first, as perform_core_assignment() does:
+            // with both constants T{}, the chunk folds to the first one.
+            if (chunk_.is_full_first_value(this->chunk_size()))
+            {
+                this->manage_full_first_value();
+                return;
+            }
+        }
+        if (!was_second_value && now_second && chunk_.is_full_second_value(this->chunk_size()))
+        {
+            this->manage_full_second_value();
+        }
+    }
+}
+
+template <typename T>
 template <typename Lambda>
 void zero_or_value::Proxy<T>::execute_simple_operation(Lambda operation)
 {
@@ -684,34 +737,7 @@ void zero_or_value::Proxy<T>::execute_simple_operation(Lambda operation)
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        // Transitions OUT: position no longer holds the constant it held before.
-        if (was_second_value && !same_value(this->raw_elem(), second_value_))
-        {
-            chunk_.dec_n_val_eq_second_value();
-        }
-        else if (was_first_value && !same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value)))
-        {
-            chunk_.dec_n_val_eq_first_value();
-        }
-
-        // Transitions IN: position now holds a constant it did not hold before.
-        // Guarded by !was_* to avoid double counting.
-        if (!was_second_value && same_value(this->raw_elem(), second_value_))
-        {
-            chunk_.inc_n_val_eq_second_value();
-            if (chunk_.is_full_second_value(this->chunk_size()))
-            {
-                this->manage_full_second_value();
-            }
-        }
-        else if (!was_first_value && same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value)))
-        {
-            chunk_.inc_n_val_eq_first_value();
-            if (chunk_.is_full_first_value(this->chunk_size()))
-            {
-                this->manage_full_first_value();
-            }
-        }
+        count_constant_transitions(was_second_value, was_first_value);
     }
 }
 
@@ -963,36 +989,7 @@ void zero_or_value::Proxy<T>::execute_inplace_operation(Lambda operation)
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        // Transitions OUT: the position no longer holds the constant it held before.
-        if (was_second_value && !same_value(this->raw_elem(), second_value_))
-        {
-            chunk_.dec_n_val_eq_second_value();
-        }
-        else if (was_first_value && !same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value)))
-        {
-            chunk_.dec_n_val_eq_first_value();
-        }
-
-        // Transitions IN: the position now holds a constant it did not hold before.
-        // Test the actual stored value, NOT is_second_value(idx) (which checks the
-        // storage pointer and is false right after create_value decompressed the
-        // chunk, so it would miss the increment and desync the counter).
-        if (!was_second_value && same_value(this->raw_elem(), second_value_))
-        {
-            chunk_.inc_n_val_eq_second_value();
-            if (chunk_.is_full_second_value(this->chunk_size()))
-            {
-                this->manage_full_second_value();
-            }
-        }
-        else if (!was_first_value && same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value)))
-        {
-            chunk_.inc_n_val_eq_first_value();
-            if (chunk_.is_full_first_value(this->chunk_size()))
-            {
-                this->manage_full_first_value();
-            }
-        }
+        count_constant_transitions(was_second_value, was_first_value);
     }
 
     if constexpr (chunk_config::use_compression_without_counter)

@@ -1446,16 +1446,9 @@ void zero_or_value::Chunk<T>::init_values_const_val_bool(int const_index)
 
 template <typename T>
 [[nodiscard]] bool zero_or_value::Chunk<T>::written() const
+    requires is_bool_like_v<T>
 {
-    if constexpr (is_bool)
-    {
-        return values_ != Base::first_value_ptr() && is_not_second_value();
-    }
-    else
-    {
-        static_assert(false, "Logic Error: written() called on a non-boolean chunk. For non-bool "
-                             "types, use written(int idx) instead.");
-    }
+    return values_ != Base::first_value_ptr() && is_not_second_value();
 }
 
 template <typename T>
@@ -1546,19 +1539,53 @@ template <typename T>
 }
 
 template <typename T>
+bool zero_or_value::Chunk<T>::alloc_from_second_value(const ArrayInfo& array_info) const noexcept
+{
+    if constexpr (is_not_bool)
+    {
+        return !Base::is_first_value() && is_second_value(array_info.idx);
+    }
+    else
+    {
+        return !Base::is_first_value() && is_second_value();
+    }
+}
+
+template <typename T>
+void zero_or_value::Chunk<T>::alloc_set_counter([[maybe_unused]] bool from_second) noexcept
+{
+    if constexpr (chunk_config::use_compression_with_counter)
+    {
+        const auto full = static_cast<CounterValueT>(thread_chunk_size());
+        if (from_second)
+        {
+            this->set_n_val_eq_second_value(full);
+        }
+        else
+        {
+            this->set_n_val_eq_first_value(full);
+        }
+    }
+}
+
+template <typename T>
 void zero_or_value::Chunk<T>::alloc_chunk(const ArrayInfo& array_info)
 {
     if (is_const_val(array_info.idx))
     {
+        // From the constant the chunk holds: filled with the first one, a
+        // chunk compressed to the second value read T{} from then on.
+        const bool from_second = alloc_from_second_value(array_info);
         // bool has its own materialiser.
         if constexpr (is_not_bool)
         {
-            create_value(false, array_info);
+            create_value(from_second, array_info);
         }
         else
         {
-            create_value_bool(false);
+            create_value_bool(from_second);
         }
+        alloc_set_counter(from_second);
     }
 }
 
@@ -1572,27 +1599,29 @@ void zero_or_value::Chunk<T>::alloc_chunk(const ArrayInfo& array_info, [[maybe_u
             inc_chunk_write<ChunkType>();
         }
 
+        const bool from_second = alloc_from_second_value(array_info);
         if constexpr (build_config::threaded)
         {
             if constexpr (is_not_bool)
             {
-                create_value(false, array_info, thr_rank);
+                create_value(from_second, array_info, thr_rank);
             }
             else
             {
-                create_value_bool(false, thr_rank);
+                create_value_bool(from_second, thr_rank);
             }
         }
         else
         {
             if constexpr (is_not_bool)
             {
-                create_value(false, array_info);
+                create_value(from_second, array_info);
             }
             else
             {
-                create_value_bool(false);
+                create_value_bool(from_second);
             }
+            alloc_set_counter(from_second);
         }
     }
 }

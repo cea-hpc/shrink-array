@@ -49,7 +49,10 @@ endforeach()
 # access_cost_pattern_<size>: pattern::Array against zero_any::Array and a
 # std::vector, on varied data and on a mesh connectivity (docs/algo_pattern.md).
 # A member of the zero_any family: linked with the zero_any library.
-if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+# Not with CHUNK_SECOND_VALUE_INDEXED: it measures pattern::Array<long>, and
+# pattern::Chunk refuses a type wider than 4 bytes there (a motif's offset
+# needs a T-wide second-value slot, pattern_chunk.h).
+if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE} AND NOT CHUNK_SECOND_VALUE_INDEXED)
   set(_tgt access_cost_pattern_${CHUNK_DEFAULT_SIZE})
   add_executable(${_tgt} access_cost_pattern.cpp)
   target_link_libraries(${_tgt} PRIVATE chunk_zero_any_${CHUNK_DEFAULT_SIZE})

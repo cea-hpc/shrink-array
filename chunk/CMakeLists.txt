@@ -698,9 +698,18 @@ function(chunk_add_variant target_name variant_define size is_dyn)
           $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party>
           $<INSTALL_INTERFACE:include>)
 
+  # The soname says what find_package() says (_chunk_compatibility below): at
+  # 0.x a MINOR release may break, so 0.3 and 0.4 must not share
+  # lib<name>.so.0 -- a program linked against one, with its header-only
+  # engine inlined, would load the other without a word from the loader.
+  if (CHUNK_MAJOR_VERSION EQUAL 0)
+    set(_chunk_soversion ${CHUNK_MAJOR_VERSION}.${CHUNK_MINOR_VERSION})
+  else()
+    set(_chunk_soversion ${CHUNK_MAJOR_VERSION})
+  endif()
   set_target_properties(${target_name} PROPERTIES
           VERSION ${CHUNK_VERSION}
-          SOVERSION ${CHUNK_MAJOR_VERSION}
+          SOVERSION ${_chunk_soversion}
   )
 endfunction()
 

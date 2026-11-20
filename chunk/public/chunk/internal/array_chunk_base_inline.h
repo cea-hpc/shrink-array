@@ -640,6 +640,17 @@ ArrayChunkBase<Derived>::operator()(this Derived& self, IndexType index) noexcep
 
     self.sync_chunk(chunk_t, chunk_index, elem_offset);
 
+    // The chunk's own check (ChunkBase::operator()) cannot tell for
+    // zero_or_value: its chunk needs the array's second-value index to know
+    // whether it is materialised.
+    if constexpr (build_config::any_check && has_chunk_written_v<Derived>)
+    {
+        if (!self.is_written_at(chunk_index)) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("operator()(i), the raw reference, on a chunk that is not materialised");
+        }
+    }
+
     return chunk_t(elem_offset);
 }
 

@@ -51,11 +51,12 @@ alone ([getting started, §5](getting_started.md)); it invalidates the array's p
 | read | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | return a `T` |
 | write | `operator[](i)`, `at(i)` | return a write proxy (§4) |
 | raw reference | `operator()(i)` (non-const) | a `T&` into the buffer: **only on a materialised chunk**, bypasses the library |
+| preallocate | `alloc_chunk(i)`, `alloc_chunk(i, rank)` | materialises the chunk holding element `i` if it is compressed, keeping what it reads (`T{}`, or the second value it was compressed to); the loop that follows can then store through `operator()(i)`. Callable from a parallel region, each thread on chunks of its own (`rank`: the calling thread's, its buffer pool) |
 | grow, shrink **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` also folds every chunk that became constant; a negative `n` (here and in the constructor) throws `std::length_error`, as `std::vector` |
 | append | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** only when it needs a new chunk |
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
-| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_or_value::Array`, `zero_any::Array`) |
+| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_or_value::Array`). `zero_any::Array`'s compresses nothing: it reports the chunks that are constant and still materialised (`CHUNK_LOG=compress=info`); `shrink_to_fit()` is the pass there |
 | free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `zero_any::Array<T>` uses any more, so that their identifiers are reused; returns how many, 0 when refused (`zero_any::Array`); a sequential point over **every** array of the type, see below. `try_reclaim_second_values()` returns a `std::expected<std::size_t, ReclaimRefusal>`: how many, or why it was refused (`parallel_region`, `rechunk_in_progress`, `degraded_index`) |
 | statistics | `stats()`, `written_chunk_count()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones); a refused size is a warning of the log. `try_rechunk_to(n)`, `try_set_chunk_size(n)` and the free `try_set_active_chunk_size(n)` return a `std::expected<void, ChunkSizeError>` instead: nothing, or why (`not_pow2_or_x64`, `exceeds_buffer`, `fixed_geometry` in a static build), with no message |

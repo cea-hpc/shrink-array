@@ -54,16 +54,19 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
     // ── Identical methods → factorised here ───────────────────────────────
 
     /**
-     * @brief Allocates storage for a specific chunk if it's currently constant.
-     * Uses the metadata provided by the derived class.
+     * @brief Materialises the chunk holding element @p index if it is
+     *        compressed, keeping what it reads: the first constant, or the
+     *        second value it was compressed to. A no-op otherwise.
+     * @details For the loops that then store through operator()(i), the raw
+     *          reference. Uses the metadata provided by the derived class.
      */
     void alloc_chunk(this Derived& self, IndexType index)
     {
         const int chunk_index = self.chunk_index_of(index);
+        self.pin_alloc_geometry();
 
-        // Deliberately NO dirty-marking: the dirty bit is for the DEFERRED path only, which
-        // marks at enqueue (see DeferredReadGate, chunk_base.h). Marking here would enable the
-        // read gate for preallocated chunks. Exercised by shrink_bench --test_prealloc.
+        // Deliberately NO dirty-marking: the dirty bit is for the DEFERRED path only, which marks at enqueue
+        // (DeferredReadGate, chunk_base.h); here it would enable the read gate for preallocated chunks.
         self.chunk_list_[chunk_index].alloc_chunk(self.get_metadata(index));
     }
 
@@ -74,6 +77,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
     {
         const int chunk_index = self.chunk_index_of(index);
         // See alloc_chunk(index) above: deliberately no dirty-marking.
+        self.pin_alloc_geometry();
         self.chunk_list_[chunk_index].alloc_chunk(self.get_metadata(index), thr_rank);
     }
 

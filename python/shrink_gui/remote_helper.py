@@ -60,6 +60,49 @@ def alive(pid):
     except OSError:
         return False
 
+def proc_start(pid):
+    """What tells process @p pid from a later one given the same number:
+    "<boot id> <its start time, in clock ticks since boot>" (Linux /proc), or
+    None."""
+    try:
+        with open("/proc/%d/stat" % pid) as f:
+            start = f.read().rsplit(")", 1)[1].split()[19]
+        with open("/proc/sys/kernel/random/boot_id") as f:
+            return "%s %s" % (f.read().strip(), start)
+    except (IOError, OSError, IndexError, ValueError):
+        return None
+
+def run_alive(d, pid):
+    """Process @p pid lives AND is still the one run dir @p d started
+    (pid_start, written at launch): after a reboot (WSL going down) or once
+    the numbers wrapped, the recorded PID can be anyone's. A run launched
+    before pid_start existed is judged on the number alone, as before."""
+    if not alive(pid):
+        return False
+    want = (read(os.path.join(d, "pid_start")) or "").strip()
+    return not want or proc_start(pid) == want
+
+def run_activity(d, cache):
+    """"active" when run dir @p d still runs or waits (its job is in the
+    queue, its process lives on this host), "maybe" when that cannot be told
+    from here (launched from another login node, no squeue), else None.
+    @p cache: a dict, keeps squeue's answer over several runs."""
+    if (read(os.path.join(d, "exit_code")) or "").strip():
+        return None
+    jobid = (read(os.path.join(d, "jobid")) or "").strip()
+    if jobid:
+        if "q" not in cache:
+            cache["q"] = queue_states()
+        if cache["q"] is None:
+            return "maybe"
+        return "active" if jobid in cache["q"] else None
+    pid = (read(os.path.join(d, "pid")) or "").strip()
+    if not pid.isdigit():
+        return None
+    if (read(os.path.join(d, "host")) or "").strip() != socket.gethostname():
+        return "maybe"
+    return "active" if run_alive(d, int(pid)) else None
+
 def cmd_out(argv):
     try:
         return subprocess.check_output(argv, stderr=subprocess.STDOUT, universal_newlines=True)
@@ -141,7 +184,7 @@ def status(d, q):
     host = (read(os.path.join(d, "host")) or "").strip()
     if host != socket.gethostname():
         return "en cours ? (lancé depuis %s)" % host, None
-    if alive(int(pid)):
+    if run_alive(d, int(pid)):
         if os.path.exists(os.path.join(d, "waiting")):
             return pending_detail(d, "en attente"), None
         return "en cours", None
@@ -584,6 +627,9 @@ def act_launch(a):
                              start_new_session=True)
         write(os.path.join(d, "pid"), str(p.pid))
         write(os.path.join(d, "host"), socket.gethostname())
+        start = proc_start(p.pid)       # run_alive(): the number alone is not the run
+        if start:
+            write(os.path.join(d, "pid_start"), start)
         # launch.sh itself prints the detached command ("[gui] ccc_mprun ...")
         # as its first line of out.log.
         print(json.dumps({"run_dir": d, "pid": p.pid,
@@ -866,9 +912,14 @@ def act_tail(a):
 
 def act_stop(a):
     d = rdir(a[0], a[1])
+    # A run that ended has nothing left to stop: its job id is no longer its
+    # own to cancel, its PID may be another process's by now, and "stopped"
+    # would turn its "fini" and exit code into "arrêté".
+    if (read(os.path.join(d, "exit_code")) or "").strip():
+        print(json.dumps({"error": "%s est déjà terminé : rien à arrêter" % a[1]}))
+        return
     jobid = (read(os.path.join(d, "jobid")) or "").strip()
     if jobid:
-        write(os.path.join(d, "stopped"), "")
         cancel = site_arg(a, 2).get("cancel") or ["scancel"]
         out = None
         for c in cancel:
@@ -878,6 +929,7 @@ def act_stop(a):
         if out is None:
             print(json.dumps({"error": "%s : le job %s n'a pas pu être annulé" % (" / ".join(cancel), jobid)}))
         else:
+            write(os.path.join(d, "stopped"), "")     # cancelled: not before, a job left running is not "arrêté"
             print(json.dumps({"ok": True}))
         return
     host = (read(os.path.join(d, "host")) or "").strip()
@@ -885,7 +937,11 @@ def act_stop(a):
         print(json.dumps({"error": "lancé depuis %s, ce master arrive sur %s" % (host, socket.gethostname())}))
         return
     try:
-        os.killpg(int(read(os.path.join(d, "pid"))), signal.SIGTERM)
+        pid = int(read(os.path.join(d, "pid")))
+        if not run_alive(d, pid):
+            print(json.dumps({"error": "le processus %d de %s n'existe plus : rien à arrêter" % (pid, a[1])}))
+            return
+        os.killpg(pid, signal.SIGTERM)
         print(json.dumps({"ok": True}))
     except (OSError, ValueError, TypeError) as e:
         print(json.dumps({"error": str(e)}))
@@ -1311,16 +1367,37 @@ def _same_dir(a, b):
     except (TypeError, ValueError):
         return False
 
-def runs_sharing(base, rid, od):
+def _inside(a, b):
+    """Directory @p a is @p b or lies under it."""
+    try:
+        a, b = os.path.realpath(a), os.path.realpath(b)
+    except (TypeError, ValueError):
+        return False
+    return a == b or a.startswith(b.rstrip(os.sep) + os.sep)
+
+def announced_dirs(d, meta):
+    """The output directories run dir @p d announces: its log's, and those
+    of its node directories (one batch job of N nodes)."""
+    out = [out_dir(d, meta)]
+    if is_job_layout(meta):
+        out += [out_dir(dk, mk) for dk, mk in pool_members(d, meta)]
+    return [os.path.expanduser(x) for x in out if x]
+
+def runs_sharing(base, rid, od, under=False):
     """(id, dir, meta) of every other run of @p base whose log announces the
-    output directory @p od."""
+    output directory @p od -- with @p under, or a directory below it (the
+    whole of @p od is about to go: thread_speedup.py --out <its default
+    base>, whose later runs write in <base>/speedup_<...>)."""
     for other in sorted(os.listdir(base)):
         od2 = os.path.join(base, other)
         m2 = read(os.path.join(od2, "meta.json"))
         if other == rid or m2 is None:
             continue
-        m2 = json.loads(m2)
-        if _same_dir(out_dir(od2, m2) or "", od):
+        try:
+            m2 = json.loads(m2)
+        except ValueError:
+            continue
+        if any((_inside if under else _same_dir)(x, od) for x in announced_dirs(od2, m2)):
             yield other, od2, m2
 
 def newer_writer(base, rid, meta, od):
@@ -1342,7 +1419,9 @@ def outputs_to_delete(base, rid, d, meta, own):
     @p own says ("dir": the output directory its log announces; a list: those
     entries of that directory). Refused when another run announces the same
     directory -- any other one for "dir", for a list one still active or
-    newer (the files are then its own, rewritten after ours)."""
+    newer (the files are then its own, rewritten after ours) -- and, for
+    "dir", when the directory holds a file older than the run, a git
+    repository, or is a mount point."""
     od = out_dir(d, meta)
     if not od:
         return None, "pas de dossier de sortie annoncé dans le log de %s" % rid
@@ -1355,17 +1434,38 @@ def outputs_to_delete(base, rid, d, meta, own):
     if not os.path.isdir(od):
         return [], None                        # already gone: nothing to do
     if own == "dir":
-        for other, _, _ in runs_sharing(base, rid, od):
+        for other, _, _ in runs_sharing(base, rid, od, under=True):
             return None, "%s utilise aussi %s : rien supprimé" % (other, od)
     else:
         other = newer_writer(base, rid, meta, od)
         if other:
             return None, "%s, plus récent ou actif, écrit aussi dans %s : rien supprimé" % (other, od)
     if own == "dir":
+        # The whole directory goes: it must be this run's alone, made by it --
+        # every file written since the run was submitted, no repository, no
+        # mount point. A log that announced an older directory (a mistyped
+        # option, ~/Documents) would otherwise have it removed whole.
+        t0, t1 = submitted_at(d), ended_at(d)
+        if t0 is None:
+            return None, "date de soumission de %s illisible : rien supprimé" % rid
+        if os.path.ismount(od):
+            return None, "%s est un point de montage : rien supprimé" % od
+        for top, dirs, files in os.walk(od):
+            if ".git" in dirs or ".git" in files:
+                return None, "%s contient un dépôt git : rien supprimé" % top
+            for f in files:
+                if not written_since(os.path.join(top, f), t0):
+                    return None, "%s contient des fichiers antérieurs à %s (%s) : rien supprimé" % (
+                        od, rid, os.path.relpath(os.path.join(top, f), od))
+                if not written_since(os.path.join(top, f), t0, t1):
+                    return None, "%s contient des fichiers écrits après la fin de %s (%s) : rien supprimé" % (
+                        od, rid, os.path.relpath(os.path.join(top, f), od))
         return [od], None
     # A shared directory: what this run wrote, i.e. after it was submitted
-    # (meta.json) -- run_logs/ also holds the older runs' logs, kept.
-    t0 = submitted_at(d)
+    # (meta.json) -- run_logs/ also holds the older runs' logs, kept -- and
+    # not after it ended (exit_code): those are a later run's, even one whose
+    # run directory is gone (deleted without its outputs, or launched by hand).
+    t0, t1 = submitted_at(d), ended_at(d)
     if t0 is None:
         return None, "date de soumission de %s illisible : rien supprimé" % rid
     out = []
@@ -1377,17 +1477,22 @@ def outputs_to_delete(base, rid, d, meta, own):
             for top, _dirs, files in os.walk(p):
                 for f in files:
                     fp = os.path.join(top, f)
-                    if written_since(fp, t0):
+                    if written_since(fp, t0, t1):
                         out.append(fp)
-        elif os.path.lexists(p) and written_since(p, t0):
+        elif os.path.lexists(p) and written_since(p, t0, t1):
             out.append(p)
     return out, None
 
-def written_since(p, t0):
+END_SLACK = 120     # s after exit_code: the clocks of two file systems, a last flush
+
+def written_since(p, t0, t1=None):
+    """@p p was last written from @p t0 on and, with @p t1 (ended_at), no
+    later than END_SLACK after it."""
     try:
-        return os.lstat(p).st_mtime >= t0
+        t = os.lstat(p).st_mtime
     except OSError:
         return False
+    return t >= t0 and (t1 is None or t <= t1 + END_SLACK)
 
 def prune_empty(root):
     """Remove the empty directories under @p root, @p root included."""
@@ -1413,26 +1518,35 @@ def act_delete_many(a):
     A run that cannot be deleted leaves the others alone."""
     base = rdir(a[0])
     out = {}
+    cache = {}
     items = sorted(json.loads(base64.b64decode(a[1]).decode()), key=lambda it: str(it.get("id", "")))
     for item in items:
         rid = str(item.get("id", ""))
         try:
             out[rid] = delete_run(base, rid, {"own": item["own"]} if item.get("own") else {},
-                                  keep_others=True)
+                                  keep_others=True, cache=cache)
         except Exception as e:          # one bad run must not stop the others
             out[rid] = {"error": "%s: %s" % (type(e).__name__, e)}
     print(json.dumps({"results": out}))
 
-def delete_run(base, rid, opts, keep_others=False):
+def delete_run(base, rid, opts, keep_others=False, cache=None):
     """Remove run @p rid (and, opts["own"], its own outputs). An output that
     is not its own refuses everything, unless @p keep_others: then it is kept
-    ("kept": why) and the run directory goes."""
+    ("kept": why) and the run directory goes. A run still active is refused
+    whatever the caller thought of its status; one that may be
+    (run_activity: "maybe") goes only with opts["force"]."""
     import shutil
     if not re.match(r"^[\w.-]+$", rid) or rid in (".", ".."):
         return {"error": "nom de run invalide : %s" % rid}
     d = os.path.join(base, rid)
     if not os.path.isfile(os.path.join(d, "meta.json")):
         return {"error": "%s n'est pas un run" % d}
+    act = run_activity(d, cache if cache is not None else {})
+    if act == "active":
+        return {"error": "%s est encore actif : arrêtez-le d'abord, rien supprimé" % rid}
+    if act == "maybe" and not opts.get("force"):
+        return {"error": "%s tourne peut-être encore (lancé depuis un autre nœud, ou file d'attente "
+                         "illisible) : rien supprimé" % rid}
     paths = []
     meta = {}
     kept = None
@@ -1696,6 +1810,17 @@ def submitted_at(d):
     """When run dir @p d was submitted (its meta.json's time) -- a node
     directory of a job of N nodes: its run's --, or None."""
     for p in (os.path.join(d, "meta.json"), os.path.join(os.path.dirname(d), "meta.json")):
+        try:
+            return os.path.getmtime(p)
+        except OSError:
+            continue
+    return None
+
+def ended_at(d):
+    """When run dir @p d ended (its exit_code's time; a node directory of a
+    job of N nodes: its own, else its run's), or None: no code was written
+    (killed at its time limit), nothing then bounds what it wrote."""
+    for p in (os.path.join(d, "exit_code"), os.path.join(os.path.dirname(d), "exit_code")):
         try:
             return os.path.getmtime(p)
         except OSError:

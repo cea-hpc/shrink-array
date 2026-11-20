@@ -16,7 +16,8 @@
 
 #include <array>   // g_chunk_stats (CHUNK_STATS only)
 #include <cstddef> // std::size_t
-#include <cstdio>  // std::fprintf (teardown_outside_region)
+#include <cstdio>  // stderr (teardown_outside_region)
+#include <print>   // std::println (teardown_outside_region)
 
 #include "chunk/internal/type_state_registry.h" // TypeStateRegistry
 #include "chunk/internal/zero_chunk.h"          // the declarations defined here (ChunkPoolParallelInterface)
@@ -132,8 +133,8 @@ namespace
     {
         CHUNK_INVARIANT_FAILED("{}() called inside a parallel region: call it once, after the last region", verb);
     }
-    std::fprintf(stderr,
-                 "shrink_array: %s() called inside a parallel region, skipped: call it once, after the last region\n",
+    std::println(stderr,
+                 "shrink_array: {}() called inside a parallel region, skipped: call it once, after the last region",
                  verb);
     return false;
 }

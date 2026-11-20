@@ -118,7 +118,7 @@ class TypeState final : public virtual TypeStateInterface,
 
     /// @brief zero_or_value: the second-value lists sweep_rank() drains, snapshotted
     ///        serially by sweep_prepare().
-    std::vector<SecondValueInfo<T>*> sweep_array_infos_;
+    std::vector<const SecondValueInfo<T>*> sweep_array_infos_;
 
     /// @brief Slab byte budget seen at the last register_chunk_size(); what
     ///        register_alloc_key() hands to the keyed allocator sets.

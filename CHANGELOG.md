@@ -60,6 +60,14 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `shrink_gui` 0.18, "cette machine": the launcher defaults to
+  `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` where `systemd-run --user`
+  works, so that a run out of memory is killed alone instead of bringing WSL down (a launcher
+  saved before stays as it was).
+- `CHUNK_NATIVE_TUNING` defaults to OFF in a project that consumes the library (`add_subdirectory`,
+  FetchContent): the library's objects no longer get `-march=native` / `-mcpu=native` while the
+  project's do not; the project's own target flags apply. It sets `CHUNK_NATIVE_TUNING=ON` before
+  including the library to have the former behaviour. Top level: unchanged (ON).
 - The first and second values have the names the documentation and the statistics give them:
   the `const_val1` / `const_val2` (and `const2`) names of the chunks, proxies and registry
   follow. `is_const_val1()` / `is_const_val2()` are `is_first_value()` / `is_second_value()`,
@@ -76,12 +84,96 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- python/multi_launch_stress_gdb.py: referenced nowhere (no script, document or `shrink_gui`
+  program).
 - `CHUNK_CST_VAL2_ID_LIMIT` and `CHUNK_CST2_RECLAIM`, the names these two settings had before
   0.3.0, as 0.3.0 announced: `CHUNK_SECOND_VALUE_ID_LIMIT` and `CHUNK_SECOND_VALUE_RECLAIM`
   above.
 
 ### Fixed
 
+- Smaller findings of the rescan of 2026-11-20:
+  - `RechunkDecider`: with `max_coarsen_factor` at 1 or 0 ("no cap", `--rechunk_max_coarsen`),
+    an array banned from coarsening went on being coarsened;
+  - `ChunkSizeAdvisor::analyze()` with `Options::max_mat_scans` at 0 divided by it when it
+    sampled the materialised chunks (read from the code, not reproduced: at least one chunk
+    is read now);
+  - `zero::Chunk`'s copy-assignment named a member that does not exist (nothing instantiated it);
+  - a shared library's soname carried the major version alone while two 0.x minor versions are
+    declared incompatible: `lib<name>.so.0.<minor>` at 0.x;
+  - `find_package(shrink_array)` through `shrink_array_DIR` alone did not find the
+    fast_allocators installed with it, and could take another installation's;
+  - a former option name (`-DOMP=OFF`, `-DSANITIZER=...`) given to a tree already configured
+    printed its deprecation and was ignored;
+  - fast_allocators built alone with the std backend stopped on a static_assert
+    (`ALLOCATORS_THREADED` followed `ALLOCATORS_OMP` only);
+  - the Spack recipe accepted `threads=std` and `+tbb` at 0.1.3 and `+stats` up to 0.1.1,
+    versions that ignore those options (serial libraries installed for `threads=std`);
+  - scripts/check_tracked.py followed relative Python imports only: an untracked module of
+    `shrink_gui`, whose imports are absolute, passed the check;
+  - docs: `zero_any::Array::compress()` reports and compresses nothing, and `shrink_to_fit()` is
+    refused inside a region (`docs/api.md`, `docs/getting_started.md` said otherwise).
+- `resize()` (and what goes through it: `reserve()`, `assign()`, a growing `push_back()`) of a
+  shared array inside a region, from one thread while the team waits (`omp single`), as
+  `docs/getting_started.md` section 5 allows: it purged the calling thread's candidate list
+  only, the other ranks kept pointers into the chunk list it reallocates and flags in the row
+  it replaces (an invariant failure in the check builds, a use after free in the others). An
+  array other ranks have queued chunks of has its candidates drained on every rank; a work
+  array of the calling thread, on its own rank as before (the three variants).
+- `zero_or_value`, serial builds, an array without a declared second value: `+=`, `-=`, `++`,
+  `--` and the bitwise operators on a zero element moved one of the chunk's two constant
+  counters only, so the element still counted as zero; the next plain write that zeroed the
+  rest of the chunk folded it, and the element read 0. Each counter now moves on its own
+  (`Proxy::count_constant_transitions()`), as in a plain assignment.
+- `zero`, OpenMP: a compression pass triggered from the write path took no writer handshake
+  when `omp_get_max_threads()` was 1 -- the size of the next region, also inside a team opened
+  with `num_threads(4)` under `OMP_NUM_THREADS=1`: chunks were folded under their writers
+  (200 to 300 writes lost per run of the new case of nested_region_validation). The pass
+  looks at the ranks that may hold work (`chunk_rank_bound()`).
+- `a[i] = b[j]` between arrays of two element types (a `double` array from an `int` one): a
+  deferred write kept a copy of `b`'s proxy and read `b[j]` when it was replayed, at the end
+  of the phase -- the value by then, or freed storage after a resize of `b`. The value is
+  read when the statement runs, as between two arrays of one type (the three variants).
+- `alloc_chunk()` (the three variants), found by the new alloc_chunk_validation:
+  - on a chunk compressed to a second value (`zero_or_value`, `zero_any`, bool's `true`) it
+    installed a buffer filled with the first constant: the chunk read `T{}` from then on, in
+    every build. It keeps the constant the chunk held; a serial `zero_or_value` also records
+    the chunk's count of it;
+  - in a dynamic build the buffer had the chunk size the calling thread used last (another
+    array's, or the process-wide one), not the array's: the stores that followed overran it.
+    The array's geometry and allocator set are pinned first, as the write proxies do.
+- `operator()(i)`, the raw reference, did not compile on a `zero_or_value::Array` of a non-bool
+  type in the check builds (the chunk's "materialised?" check instantiated a bool-only member):
+  the member is constrained, and the check is made by the array, which has the second-value
+  index.
+- `shrink_gui` 0.19, "Supprimer" and "Arrêter" (the cluster-side helper now checks what the
+  window assumed):
+  - a run's own output directory was removed with the outputs of later runs written below it
+    (a run given the default base as its output directory): refused when another run announces
+    a directory in it, or when it holds files written after the run ended;
+  - in a shared output directory, the files written after the run ended are no longer taken
+    for its own (a later run deleted without its outputs, or launched by hand, lost them);
+  - a run still active, or whose state cannot be known from here (started from another login
+    node, no squeue), could be deleted: the helper refuses the first and wants a second
+    confirmation for the other;
+  - "Arrêter" on a local or detached run that had ended sent SIGTERM to whatever process group
+    had its PID by then: refused once the run has an exit code, and the PID is tied to the run
+    by its start time and the boot id, so that a PID reused after a restart of WSL is neither
+    shown "en cours" nor signalled;
+  - "Arrêter" marked a batch run "arrêté" before trying to cancel it, also when the cancel
+    failed or the run had already ended with its exit code: marked once cancelled only.
+- `shrink_gui`, "Supprimer" with the run's own output directory: the directory the log announces
+  is removed whole only when every file in it was written after the run was submitted, it holds
+  no git repository and is no mount point; the former guard (absolute, not `/` nor the home,
+  three levels deep) let a log naming e.g. `~/Documents` have it removed.
+- A relocatable install with the optimised libm: `SHRINK_INTEL_LIBM` (on by default, when oneAPI's
+  `libimf` is found) and `SHRINK_ARM_LIBM` linked it into every target of the directory with an
+  absolute path and rpath, the libraries included: the installed chunk-targets.cmake and
+  fast_allocators-targets.cmake named `/opt/intel/.../libimf.so`. Only the project's executables
+  (`examples/`) link it now.
+- The installed fast_allocators-config.cmake calls `find_dependency(Threads)`: with the std backend its target
+  links `Threads::Threads`, and a project that found fast_allocators alone (without chunk) failed
+  to link.
 - `zero_any`: every `a[i] += x` ran `ensure_writable_storage()`, which re-armed the per-chunk
   pointers the write engine's `set_info_on_chunk()` had just armed and tested both constants,
   on a chunk already materialised as well: about 44 instructions per operation. It runs only on
