@@ -129,7 +129,7 @@ def build_parser():
                         help="Base wall-time cap per run (seconds). The effective "
                              "timeout is --timeout + --timeout-per-thread * threads, "
                              "so high thread counts (e.g. 288) get more time; a perf "
-                             "run gets at least 5x the baseline's time at the same "
+                             "run gets at least 8x the baseline's time at the same "
                              "thread count (PERF_TIMEOUT_BASELINE_FACTOR).")
     parser.add_argument("--timeout-per-thread", type=float,
                         default=DEFAULT_TIMEOUT_PER_THREAD,
