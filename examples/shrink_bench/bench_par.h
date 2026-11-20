@@ -89,9 +89,13 @@
     #include <oneapi/tbb/global_control.h> // oneapi::tbb::global_control (the thread count)
     #include <oneapi/tbb/parallel_for.h>   // oneapi::tbb::parallel_for, static_partitioner
     #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena, this_task_arena::current_thread_index (shared%)
-    #include <oneapi/tbb/task_scheduler_observer.h> // oneapi::tbb::task_scheduler_observer (BENCH_RANK_TIMING)
+    #include <oneapi/tbb/task_scheduler_observer.h> // oneapi::tbb::task_scheduler_observer (BENCH_RANK_TIMING, BENCH_TBB_PIN)
+    #if defined(__linux__)
+        #include <pthread.h> // pthread_setaffinity_np (BENCH_TBB_PIN)
+        #include <sched.h>   // sched_getaffinity, cpu_set_t (BENCH_TBB_PIN)
+    #endif
 
-    #include "chunk/phases.h"      // finalize_parallel_phase (the end of a region)
+    #include "chunk/phases.h"     // finalize_parallel_phase (the end of a region)
     #include "chunk/tbb_adaptor.h" // shrink_array::tbb::phase_body (the begin of each task), use_tbb_for_library_teams
 #endif
 
@@ -835,6 +839,113 @@ inline void start_parallel_phase_if_asked(oneapi::tbb::task_arena& a)
     #endif
 }
 
+/**
+ * @brief BENCH_TBB_PIN=1: each thread of the bench's arena pinned to one CPU,
+ *        the one of its arena slot -- the TBB counterpart of OMP_PROC_BIND=close.
+ * @details The CPUs are those the process may run on at the arena's creation
+ *          (sched_getaffinity: the job's cgroup, taskset), in increasing order;
+ *          slot s gets the s-th of them (modulo their count). The static
+ *          partitioner hands rank k to slot k, so rank k runs on the same CPU
+ *          region after region, as OpenMP's thread k on its place: its data
+ *          stays in that core's caches and on its NUMA node (first touch). The
+ *          pin is set when a thread joins the arena (on_scheduler_entry, the
+ *          main thread included) and undone when it leaves (on_scheduler_exit:
+ *          back to the process's CPUs). Kept past the exit, the main thread ran
+ *          the serial code between regions on one CPU -- and every thread it
+ *          started inherited that CPU -- and a worker gone to another arena
+ *          shared its old CPU with the thread now in its slot: serial time x15
+ *          on 14 threads. Linux only; elsewhere the variable is ignored, and
+ *          said so.
+ *          One line on stderr says whether it is on.
+ */
+class ArenaPin final : public oneapi::tbb::task_scheduler_observer
+{
+  public:
+    explicit ArenaPin(oneapi::tbb::task_arena& a, std::vector<int> cpus, const cpu_set_t& all)
+        : oneapi::tbb::task_scheduler_observer(a), cpus_(std::move(cpus)), all_(all)
+    {
+        observe(true);
+    }
+    ArenaPin(const ArenaPin&)            = delete;
+    ArenaPin& operator=(const ArenaPin&) = delete;
+    ~ArenaPin() override
+    {
+        observe(false);
+    }
+
+    void on_scheduler_entry(bool /*worker*/) override
+    {
+    #if defined(__linux__)
+        const int slot = oneapi::tbb::this_task_arena::current_thread_index();
+        if (slot < 0 || cpus_.empty())
+        {
+            return;
+        }
+        const int cpu = cpus_[static_cast<std::size_t>(slot) % cpus_.size()];
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(cpu, &set);
+        (void)pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+    #endif
+    }
+
+    void on_scheduler_exit(bool /*worker*/) override
+    {
+    #if defined(__linux__)
+        (void)pthread_setaffinity_np(pthread_self(), sizeof(all_), &all_);
+    #endif
+    }
+
+  private:
+    std::vector<int> cpus_;
+    cpu_set_t        all_;
+};
+
+/// @brief BENCH_TBB_PIN: the pinning observer on @p a, when asked (see ArenaPin).
+inline void pin_if_asked(oneapi::tbb::task_arena& a)
+{
+    const char* v = std::getenv("BENCH_TBB_PIN");
+    if (v == nullptr || v[0] == '\0' || v[0] == '0')
+    {
+        return;
+    }
+    #if defined(__linux__)
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (sched_getaffinity(0, sizeof(set), &set) != 0)
+    {
+        std::fputs("[bench] BENCH_TBB_PIN ignored: sched_getaffinity failed\n", stderr);
+        return;
+    }
+    std::vector<int> cpus;
+    for (int c = 0; c < CPU_SETSIZE; ++c)
+    {
+        if (CPU_ISSET(c, &set))
+        {
+            cpus.push_back(c);
+        }
+    }
+    if (cpus.empty())
+    {
+        return;
+    }
+    const int first = cpus.front();
+    const int count = static_cast<int>(cpus.size());
+    if (!a.is_active())
+    {
+        a.initialize();
+    }
+    (void)new ArenaPin(a, std::move(cpus), set); // NOLINT: immortal, as the arena
+    std::fprintf(stderr,
+                 "[bench] BENCH_TBB_PIN: arena slot s pinned to the s-th of the process's %d CPUs (first %d), "
+                 "%d slots\n",
+                 count, first, a.max_concurrency());
+    #else
+    (void)a;
+    std::fputs("[bench] BENCH_TBB_PIN ignored: Linux only\n", stderr);
+    #endif
+}
+
 inline oneapi::tbb::task_arena& arena()
 {
     static const int                    n = CHUNK_PMP_MAX_THREADS;
@@ -845,6 +956,7 @@ inline oneapi::tbb::task_arena& arena()
     {
         auto* const p = new oneapi::tbb::task_arena(n); // NOLINT: immortal
         start_parallel_phase_if_asked(*p);
+        pin_if_asked(*p);
         return p;
     }();
     (void)gc;
