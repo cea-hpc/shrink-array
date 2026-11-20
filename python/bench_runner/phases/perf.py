@@ -5,10 +5,10 @@ import sys
 import time
 
 from .. import share
-from ..builds import is_compression_only_config, short_config_label, skip_variant_on_config
+from ..builds import is_compression_only_config, is_threaded_config, short_config_label, skip_variant_on_config
 from ..progress import _prog, get_progress_bar
 from ..runs import _append_error_now, effective_timeout, run_with_rebuild_retry
-from ..settings import config_env
+from ..settings import PERF_TIMEOUT_BASELINE_FACTOR, config_env
 from ..term import bold, cyan, dim, green, red, yellow
 
 
@@ -53,6 +53,18 @@ def run_perf_phase(args, plan, counter, errors, results):
                 _reps = plan.reps_perf_for(var, tc, cfg)
                 _timeout = effective_timeout(
                     args.timeout, args.timeout_per_thread, tc)
+                # Never shorter than a multiple of the baseline's time at this
+                # thread count (run first, on this config): a serial build's
+                # vector takes 90-120 s at --mode perf on aarch64, its zero_any
+                # 2.4x that, and its _dyn runs went past the flat 300 s --
+                # "no valid run", a timeout reported as a missing point.
+                if var != args.baseline_variant and tc in baseline_times:
+                    _timeout = max(_timeout, int(PERF_TIMEOUT_BASELINE_FACTOR * baseline_times[tc]) + 1)
+                # A serial build ignores OMP_NUM_THREADS: it is timed once, under
+                # the reference thread count so that its rows line up with the
+                # threaded configs' (Plan.threads_for), but it runs ONE thread --
+                # and the live line says so.
+                _th_shown = tc if is_threaded_config(cfg) else 1
                 for r in range(_reps):
                     counter.idx += 1
 
@@ -62,7 +74,7 @@ def run_perf_phase(args, plan, counter, errors, results):
                     sys.stdout.write(
                         f"\r{get_progress_bar(counter.idx, counter.total)} "
                         + _prog("PERF", yellow, cfg, var,
-                                th=tc, run=r + 1, reps=_reps,
+                                th=_th_shown, run=r + 1, reps=_reps,
                                 extra=dim(f"ETA:{eta_min:5.1f}min") + "  ")
                     )
                     sys.stdout.flush()

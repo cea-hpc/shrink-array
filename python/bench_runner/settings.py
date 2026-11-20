@@ -316,6 +316,12 @@ DEFAULT_REPS_PERF      = 50
 DEFAULT_REPS_CHECK     = 64
 DEFAULT_TIMEOUT        = 300  # base seconds per run (see --timeout-per-thread)
 DEFAULT_TIMEOUT_PER_THREAD = 0  # extra seconds added per thread (0 = disabled)
+# A perf run's timeout is at least this many times the baseline's time at the
+# same thread count on the same config (phases/perf.py). On a serial aarch64
+# build, zero_any@256 is 2.4x vector and the _dyn runs more than 2.5x (they
+# passed the flat 300 s); 5 leaves room without letting a hung run hold the
+# campaign much longer than the variant's own time.
+PERF_TIMEOUT_BASELINE_FACTOR = 5
 
 # Thread count(s) that get the full --reps_perf averaged measurement by default.
 # All other thread counts in --threads get a single run (scalability curve).
