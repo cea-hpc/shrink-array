@@ -1206,8 +1206,8 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
     // BENCH_TBB_LINGER_US (detail::tbb_linger()): the ranks started and done.
     // BENCH_TBB_FINALIZE_INSIDE (detail::tbb_finalize_inside()): the finalize
     // run by the first task to see every rank done (leader), the others
-    // serving its library teams until it returns (fin_done); exited: the tasks
-    // that returned to TBB before, which serve nothing.
+    // serving its library teams until it returns (fin_done); tasks_begun /
+    // decided / staying: whether every task is still there to serve.
     const bool                inside = rt::depth == 0 && detail::tbb_finalize_inside();
     const rt::Clock::duration linger =
         rt::depth != 0 ? rt::Clock::duration::zero()
@@ -1216,7 +1216,9 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
             : detail::tbb_linger();
     std::atomic<int>      started{0};
     std::atomic<int>      done{0};
-    std::atomic<int>      exited{0};
+    std::atomic<int>      tasks_begun{0}; ///< tasks that entered `tasks` (a task may run several ranks)
+    std::atomic<int>      decided{0};     ///< tasks past the "every rank done?" test
+    std::atomic<int>      staying{0};     ///< those that saw every rank done: they serve or lead
     std::atomic<bool>     leader{false};
     std::atomic<bool>     fin_done{false};
     bool                  fin_inside = false; // written by the leader, read after the tasks
@@ -1242,6 +1244,7 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
     };
     const auto tasks = [&](const oneapi::tbb::blocked_range<int>& r)
     {
+        tasks_begun.fetch_add(1, std::memory_order_seq_cst);
         for (int k = r.begin(); k != r.end(); ++k)
         {
             started.fetch_add(1, std::memory_order_relaxed);
@@ -1275,27 +1278,42 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
         {
             return;
         }
-        // Counted as gone before reading done (seq_cst both), so that the task
-        // which sees every rank done also sees every task that returned to TBB
-        // before: those threads may have left the arena, and a team waiting
-        // for them would wait its whole join budget. Taken back if every rank
-        // is done: no task returns after that.
-        exited.fetch_add(1, std::memory_order_seq_cst);
-        if (done.load(std::memory_order_seq_cst) != n)
+        // Every task takes the "every rank done?" test once, and counts itself
+        // past it (decided) AFTER counting itself staying when it saw them all
+        // done. The leader waits until every task that began is past the test
+        // -- a few instructions each, every rank being done -- and runs the
+        // finalize inside only when all of them stay: a task that returned to
+        // TBB may have left the arena, and a team waiting for it would wait its
+        // whole join budget. (It was one counter, incremented before the test
+        // and taken back after it: the 72 tasks leave their linger at the same
+        // instant, so the leader nearly always saw another task between the two
+        // and ran the finalize after the tasks.) Every task began once every
+        // rank is done: tasks_begun is final by then.
+        const bool all_done = done.load(std::memory_order_seq_cst) == n;
+        if (all_done)
+        {
+            staying.fetch_add(1, std::memory_order_seq_cst);
+        }
+        decided.fetch_add(1, std::memory_order_seq_cst);
+        if (!all_done)
         {
             return; // a rank still running, or not started: the finalize after the tasks
         }
-        exited.fetch_sub(1, std::memory_order_seq_cst);
         bool expected = false;
         if (leader.compare_exchange_strong(expected, true, std::memory_order_seq_cst))
         {
-            if (exited.load(std::memory_order_seq_cst) != 0)
+            const int begun = tasks_begun.load(std::memory_order_seq_cst);
+            while (decided.load(std::memory_order_seq_cst) < begun)
+            {
+                std::this_thread::yield();
+            }
+            if (staying.load(std::memory_order_seq_cst) != begun)
             {
                 fin_done.store(true, std::memory_order_release); // the servers return
                 return;                                          // the finalize after the tasks
             }
             detail::TeamServe& sv = detail::team_serve();
-            sv.open(n - 1);
+            sv.open(begun - 1); // the other tasks, not the other ranks: a task may have run several
             finalize();
             sv.close();
             fin_inside = true;
