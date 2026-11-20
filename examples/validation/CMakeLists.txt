@@ -324,8 +324,10 @@ set_source_files_properties(validation_driver.cpp PROPERTIES SKIP_UNITY_BUILD_IN
 # mixed_operand_compound_validation uses the operands that are not clean on
 # purpose: their HPC warnings ([[deprecated]], raised in element_ref.h where a
 # #pragma around the call cannot reach) would fail the -Werror builds. A source
-# option also keeps the file out of the unity batches.
-set_source_files_properties(mixed_operand_compound_validation.cpp PROPERTIES
+# option also keeps the file out of the unity batches. deferred_path_validation
+# too: its `long = int` cross-type case (run_cross_type_assign) takes the trap
+# path on purpose, the one it checks.
+set_source_files_properties(mixed_operand_compound_validation.cpp deferred_path_validation.cpp PROPERTIES
                             COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>:-Wno-deprecated-declarations>")
 
 # test name, executable, harness, thread counts ("" = one test, OMP_NUM_THREADS=8), args...
