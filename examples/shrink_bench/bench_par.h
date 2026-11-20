@@ -241,10 +241,13 @@ struct TeamStats
     std::atomic<int>           came{0};    ///< its tasks started within the budget
     int                        asked    = 0;
     bool                       finalize = false;
+    bool                       serial   = false; ///< opened between two regions (no region, no finalize)
     bool                       open     = false; ///< a team not folded yet
 
     std::atomic<bool>      in_finalize{false}; ///< region() is in finalize_parallel_phase()
+    std::atomic<bool>      in_region{false};   ///< region() is in arena().execute() (timed regions)
     std::atomic<long long> late{0};            ///< tasks started past the budget (all teams)
+    std::atomic<long long> gap_teams{0};       ///< serial teams launched since the last region (Registry::enter)
 
     // Totals, the finalize's teams (folded by the launcher and region()).
     long long teams       = 0;
@@ -254,6 +257,26 @@ struct TeamStats
     double    wait_s      = 0;
     long long other_teams = 0; ///< teams opened outside a finalize
     long long other_asked = 0;
+    // Totals, the teams opened between regions (serial code), as the finalize's.
+    struct Serial
+    {
+        long long teams   = 0;
+        long long asked   = 0;
+        long long came    = 0;
+        double    enqueue = 0;
+        double    wait    = 0;
+
+        Serial& operator+=(const Serial& o) noexcept
+        {
+            teams += o.teams, asked += o.asked, came += o.came, enqueue += o.enqueue, wait += o.wait;
+            return *this;
+        }
+        [[nodiscard]] Serial operator-(const Serial& o) const noexcept
+        {
+            return {teams - o.teams, asked - o.asked, came - o.came, enqueue - o.enqueue, wait - o.wait};
+        }
+    };
+    Serial serial_totals; ///< every team opened outside a region and a finalize (setup included)
 
     /// @brief Fold the team being launched into the totals (a no-op if none).
     void fold(long long budget_ns) noexcept
@@ -262,18 +285,26 @@ struct TeamStats
         {
             return;
         }
-        open = false;
+        open         = false;
+        const int  c = came.load(std::memory_order_acquire);
+        const auto w = 1e-9 * static_cast<double>(c < asked ? budget_ns : last_ns.load(std::memory_order_acquire));
         if (!finalize)
         {
             ++other_teams;
             other_asked += asked;
+            if (serial)
+            {
+                ++serial_totals.teams;
+                serial_totals.asked += asked;
+                serial_totals.came += c;
+                serial_totals.wait += w;
+            }
             return;
         }
-        const int c = came.load(std::memory_order_acquire);
         ++teams;
         tasks_asked += asked;
         tasks_came += c;
-        wait_s += 1e-9 * static_cast<double>(c < asked ? budget_ns : last_ns.load(std::memory_order_acquire));
+        wait_s += w;
     }
 };
 
@@ -302,9 +333,20 @@ class Registry
     void enter(Clock::time_point t0)
     {
         const std::scoped_lock lock(mutex_);
+        TeamStats&             ts    = team_stats();
+        const long long        teams = ts.gap_teams.exchange(0, std::memory_order_acq_rel);
+        // The gap's last team is done (the calling thread came back from it):
+        // folded now, so that it counts in this gap.
+#if defined(BENCH_PAR_TBB) && BENCH_PAR_TBB
+        ts.fold(fast_alloc::pmp::std_backend::join_budget_ns());
+#endif
         if (have_last_)
         {
-            serial_ += seconds(t0 - last_end_);
+            gap_teams_ += ts.serial_totals - serial_mark_;
+            const double gap = seconds(t0 - last_end_);
+            serial_ += gap;
+            (teams > 0 ? serial_with_teams_ : serial_without_teams_) += gap;
+            ++(teams > 0 ? gaps_with_teams_ : gaps_without_teams_);
         }
     }
 
@@ -381,8 +423,9 @@ class Registry
         s.shared += shared ? 1 : 0;
         s.threads += distinct;
         finalize_ += seconds(finalize_end - wall_end);
-        last_end_  = finalize_end;
-        have_last_ = true;
+        serial_mark_ = team_stats().serial_totals;
+        last_end_    = finalize_end;
+        have_last_   = true;
     }
 
     /// @brief TBB: the arena's counts at a region's start (@p a), its end (@p b)
@@ -533,6 +576,23 @@ class Registry
                          ms_enq, ms_wait, 1e3 * finalize_ / calls - ms_enq - ms_wait,
                          t.late.load(std::memory_order_relaxed), t.other_teams);
         }
+        const long long gaps = gaps_with_teams_ + gaps_without_teams_;
+        if (gaps > 0)
+        {
+            const TeamStats::Serial& g = gap_teams_;
+            const auto mean            = [](double x, long long n) { return n > 0 ? x / static_cast<double>(n) : 0.0; };
+            std::fprintf(stderr,
+                         "[rank-timing] serial between regions: %lld gaps, %.3f s; %lld with library teams (%.3f s, "
+                         "%.3f ms each), %lld without (%.3f s, %.3f ms each); their %lld teams (%.1f tasks asked "
+                         "each, %.1f%% started within the join): enqueueing %.3f ms, waiting for the last task "
+                         "%.3f ms per team, %.3f s + %.3f s in all\n",
+                         gaps, serial_, gaps_with_teams_, serial_with_teams_,
+                         1e3 * mean(serial_with_teams_, gaps_with_teams_), gaps_without_teams_, serial_without_teams_,
+                         1e3 * mean(serial_without_teams_, gaps_without_teams_), g.teams,
+                         mean(static_cast<double>(g.asked), g.teams),
+                         100.0 * mean(static_cast<double>(g.came), g.asked), 1e3 * mean(g.enqueue, g.teams),
+                         1e3 * mean(g.wait, g.teams), g.enqueue, g.wait);
+        }
     }
 
     /// @brief TBB: the arena slots that miss a region or run two ranks, most often first.
@@ -583,16 +643,23 @@ class Registry
     std::vector<long long>             doubled_;        ///< TBB: regions each slot ran two ranks or more of
     long long                          slot_calls_ = 0; ///< TBB: regions with the slots recorded
     // TBB: the arena's observer counts, summed over the regions (record_arena()).
-    long long         arena_calls_            = 0;
-    long long         arena_in_               = 0;
-    long long         arena_entered_region_   = 0;
-    long long         arena_left_region_      = 0;
-    long long         arena_entered_finalize_ = 0;
-    long long         arena_left_finalize_    = 0;
-    long long         arena_entered_between_  = 0;
-    long long         arena_left_between_     = 0;
-    ArenaCount        arena_last_;
-    double            serial_    = 0;
+    long long  arena_calls_            = 0;
+    long long  arena_in_               = 0;
+    long long  arena_entered_region_   = 0;
+    long long  arena_left_region_      = 0;
+    long long  arena_entered_finalize_ = 0;
+    long long  arena_left_finalize_    = 0;
+    long long  arena_entered_between_  = 0;
+    long long  arena_left_between_     = 0;
+    ArenaCount arena_last_;
+    double     serial_ = 0;
+    // TBB: serial_ split by whether the gap launched a library team.
+    double            serial_with_teams_    = 0;
+    double            serial_without_teams_ = 0;
+    long long         gaps_with_teams_      = 0;
+    long long         gaps_without_teams_   = 0;
+    TeamStats::Serial gap_teams_;   ///< the library teams of the gaps between regions
+    TeamStats::Serial serial_mark_; ///< team_stats().serial_totals at the last region's end
     double            finalize_  = 0;
     Clock::time_point last_end_  = {};
     bool              have_last_ = false;
@@ -1201,6 +1268,7 @@ inline void bench_team_launch(int count, void (*task)(std::uint64_t), std::uint6
     const long long budget_ns = fast_alloc::pmp::std_backend::join_budget_ns();
     std::uint64_t   gen       = 0;
     bool            finalize  = false;
+    bool            serial    = false;
     if (timed)
     {
         rt::TeamStats& t = rt::team_stats();
@@ -1210,7 +1278,12 @@ inline void bench_team_launch(int count, void (*task)(std::uint64_t), std::uint6
         t.came.store(0, std::memory_order_relaxed);
         t.asked  = count;
         finalize = t.finalize = t.in_finalize.load(std::memory_order_acquire);
-        t.open                = true;
+        serial = t.serial = !finalize && !t.in_region.load(std::memory_order_acquire);
+        t.open            = true;
+        if (serial)
+        {
+            t.gap_teams.fetch_add(1, std::memory_order_relaxed);
+        }
     }
     const auto t0     = rt::Clock::now();
     int        served = 0;
@@ -1240,6 +1313,10 @@ inline void bench_team_launch(int count, void (*task)(std::uint64_t), std::uint6
     if (finalize)
     {
         rt::team_stats().enqueue_s += rt::seconds(rt::Clock::now() - t0);
+    }
+    else if (serial)
+    {
+        rt::team_stats().serial_totals.enqueue += rt::seconds(rt::Clock::now() - t0);
     }
 }
 
@@ -1439,6 +1516,10 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
         }
     };
     ++rt::depth;
+    if (timed)
+    {
+        rt::team_stats().in_region.store(true, std::memory_order_release);
+    }
     // The finalize inside the arena, right after the tasks: the workers that
     // finished their rank still spin in it and join the library's team at
     // once, rather than leaving and being woken back for it. Under
@@ -1456,6 +1537,7 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
     --rt::depth;
     if (timed)
     {
+        rt::team_stats().in_region.store(false, std::memory_order_release);
         rt::Registry::get().record(loc, *call, wall_end, fin_inside ? fin_end : rt::Clock::now());
         if (watch != nullptr)
         {
