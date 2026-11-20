@@ -916,13 +916,17 @@ inline void start_parallel_phase_if_asked(oneapi::tbb::task_arena& a)
  *          region after region, as OpenMP's thread k on its place: its data
  *          stays in that core's caches and on its NUMA node (first touch). The
  *          pin is set when a thread joins the arena (on_scheduler_entry, the
- *          main thread included) and undone when it leaves (on_scheduler_exit:
- *          back to the process's CPUs), so that neither the main thread's
- *          serial code nor a worker gone to another arena stays tied to a slot's
- *          CPU. Only for a machine the run has to itself: a pinned thread cannot
- *          flee a core another process uses, and since every thread spins at
- *          the joins, the whole team waits for it -- with a 3-job build beside
- *          it (nice 19), 14 threads ran 15-30x slower than unpinned; idle, as
+ *          main thread included) and loosened when it leaves (on_scheduler_exit:
+ *          to the arena's CPUs, the first max_concurrency() of them), so that
+ *          neither the main thread's serial code nor a worker gone to another
+ *          arena stays tied to a slot's CPU. Not back to every CPU of the
+ *          process: on a 288-CPU node (4 sockets) the main thread, out of the
+ *          arena between every two regions, then ran the serial code (the
+ *          reset sweep's scans, the library teams it opens) wherever the kernel
+ *          put it, often a socket away from the data first touched by the
+ *          arena's -- OpenMP's master stays on its place. Only for a machine the run has to itself: a pinned thread
+ * cannot flee a core another process uses, and since every thread spins at the joins, the whole team waits for it --
+ * with a 3-job build beside it (nice 19), 14 threads ran 15-30x slower than unpinned; idle, as
  *          fast or a little faster. Linux only; elsewhere the variable is
  *          ignored, and said so.
  *          One line on stderr says whether it is on.
@@ -930,8 +934,8 @@ inline void start_parallel_phase_if_asked(oneapi::tbb::task_arena& a)
 class ArenaPin final : public oneapi::tbb::task_scheduler_observer
 {
   public:
-    explicit ArenaPin(oneapi::tbb::task_arena& a, std::vector<int> cpus, const cpu_set_t& all)
-        : oneapi::tbb::task_scheduler_observer(a), cpus_(std::move(cpus)), all_(all)
+    explicit ArenaPin(oneapi::tbb::task_arena& a, std::vector<int> cpus, const cpu_set_t& out)
+        : oneapi::tbb::task_scheduler_observer(a), cpus_(std::move(cpus)), out_(out)
     {
         observe(true);
     }
@@ -961,13 +965,13 @@ class ArenaPin final : public oneapi::tbb::task_scheduler_observer
     void on_scheduler_exit(bool /*worker*/) override
     {
     #if defined(__linux__)
-        (void)pthread_setaffinity_np(pthread_self(), sizeof(all_), &all_);
+        (void)pthread_setaffinity_np(pthread_self(), sizeof(out_), &out_);
     #endif
     }
 
   private:
     std::vector<int> cpus_;
-    cpu_set_t        all_;
+    cpu_set_t        out_; ///< out of the arena: its slots' CPUs
 };
 
 /// @brief BENCH_TBB_PIN: the pinning observer on @p a, when asked (see ArenaPin).
@@ -1004,11 +1008,20 @@ inline void pin_if_asked(oneapi::tbb::task_arena& a)
     {
         a.initialize();
     }
-    (void)new ArenaPin(a, std::move(cpus), set); // NOLINT: immortal, as the arena
+    // Out of the arena: the CPUs of its slots, not the process's.
+    const int slots = std::min(a.max_concurrency(), count);
+    cpu_set_t out;
+    CPU_ZERO(&out);
+    for (int s = 0; s < slots; ++s)
+    {
+        CPU_SET(cpus[static_cast<std::size_t>(s)], &out);
+    }
+    const int last = cpus[static_cast<std::size_t>(slots - 1)];
+    (void)new ArenaPin(a, std::move(cpus), out); // NOLINT: immortal, as the arena
     std::fprintf(stderr,
                  "[bench] BENCH_TBB_PIN: arena slot s pinned to the s-th of the process's %d CPUs (first %d), "
-                 "%d slots\n",
-                 count, first, a.max_concurrency());
+                 "%d slots; out of the arena, the first %d of them (%d..%d)\n",
+                 count, first, a.max_concurrency(), slots, first, last);
     #else
     (void)a;
     std::fputs("[bench] BENCH_TBB_PIN ignored: Linux only\n", stderr);
