@@ -61,7 +61,10 @@ if(SHRINK_ARRAY_IS_TOP_LEVEL)
             if(_chunk_type STREQUAL "UNINITIALIZED" AND DEFINED CACHE{${_chunk_name}})
                 get_property(_chunk_type CACHE ${_chunk_name} PROPERTY TYPE)
             endif()
-            set(${_chunk_name} "$CACHE{${_chunk_former}}" CACHE ${_chunk_type} "(given as ${_chunk_former})" FORCE)
+            # ${...} and not $CACHE{...}: only a plain read marks a -D as used.
+            # With $CACHE{}, the value was taken and CMake still ended on
+            # "Manually-specified variables were not used by the project".
+            set(${_chunk_name} "${${_chunk_former}}" CACHE ${_chunk_type} "(given as ${_chunk_former})" FORCE)
             unset(${_chunk_former} CACHE)
         endif()
     endforeach()
