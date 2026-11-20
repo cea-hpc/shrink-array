@@ -88,6 +88,12 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `zero_or_value`: `set_second_value(T{})` on an array that had another second value took the
+  new-value path (T{}'s sentinel index reads as "not registered"): it gave T{} a block of its
+  own and replaced the T{} key every array without a second value is drained under. Called at
+  a sequential point, the T{} record took a real index; inside a region, the T{} candidates
+  other arrays had queued were dropped, their chunks left materialised. The call now puts the
+  array back to "no second value". `zero_or_value_shared_state_validation` (zero-key case).
 - Smaller findings of the rescan of 2026-11-20:
   - `RechunkDecider`: with `max_coarsen_factor` at 1 or 0 ("no cap", `--rechunk_max_coarsen`),
     an array banned from coarsening went on being coarsened;

@@ -246,6 +246,26 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
 
     if constexpr (is_not_bool)
     {
+        // T{} after another second value: the array goes back to having none
+        // (T{} is the first value; every write of it folds as the first one).
+        // Not a block of its own: T{}'s index is the sentinel, which
+        // find_second_value_index() also returns for an unknown value, so T{}
+        // took the new-value path below and replaced the T{} key that every
+        // array without a second value is drained under -- its record in
+        // array_info_map_ and each rank's candidate list, dropping the chunks
+        // queued there (dedup flags still set: never compressed).
+        if (same_value(sec_value, T{}))
+        {
+            registry.replace(this->registry_key(), T{}, chunk_config::no_second_value_index);
+            second_value_idx_ = chunk_config::no_second_value_index;
+            register_no_second_value_key();
+            sync_registry_mirror();
+            return;
+        }
+    }
+
+    if constexpr (is_not_bool)
+    {
         int idx = registry.find_second_value_index(sec_value);
 
         if (idx == -1)
@@ -1393,8 +1413,8 @@ void zero_or_value::Array<T, IntType>::register_no_second_value_key()
         {
             registry.insert(T{}, &array_info_none);
             // The between-phase pass drains only the values of THIS map: T{}
-            // must be in it, at the sentinel index (so set_second_value(T{})
-            // still sees it unregistered and builds a real block).
+            // must be in it, at the sentinel index. set_second_value(T{})
+            // never builds a block of its own: it puts the array back here.
             registry.insert_second_value_idx(T{}, chunk_config::no_second_value_index);
         }
         if constexpr (build_config::threaded)
