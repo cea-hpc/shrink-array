@@ -236,12 +236,14 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     ///        compressed; a no-op otherwise.
     void alloc_chunk(IntType index) noexcept
     {
+        this->pin_alloc_geometry();
         chunk_list_[this->chunk_index_of(index)].alloc_chunk();
     }
 
     /// @brief alloc_chunk(), taking the buffer from rank @p thr_rank's pool.
     void alloc_chunk(IntType index, int thr_rank) noexcept
     {
+        this->pin_alloc_geometry();
         chunk_list_[this->chunk_index_of(index)].alloc_chunk(thr_rank);
     }
 

@@ -88,6 +88,18 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `alloc_chunk()` (the three variants), found by the new alloc_chunk_validation:
+  - on a chunk compressed to a second value (`zero_or_value`, `zero_any`, bool's `true`) it
+    installed a buffer filled with the first constant: the chunk read `T{}` from then on, in
+    every build. It keeps the constant the chunk held; a serial `zero_or_value` also records
+    the chunk's count of it;
+  - in a dynamic build the buffer had the chunk size the calling thread used last (another
+    array's, or the process-wide one), not the array's: the stores that followed overran it.
+    The array's geometry and allocator set are pinned first, as the write proxies do.
+- `operator()(i)`, the raw reference, did not compile on a `zero_or_value::Array` of a non-bool
+  type in the check builds (the chunk's "materialised?" check instantiated a bool-only member):
+  the member is constrained, and the check is made by the array, which has the second-value
+  index.
 - `shrink_gui` 0.19, "Supprimer" and "Arrêter" (the cluster-side helper now checks what the
   window assumed):
   - a run's own output directory was removed with the outputs of later runs written below it

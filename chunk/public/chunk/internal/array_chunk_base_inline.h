@@ -608,6 +608,30 @@ void ArrayChunkBase<Derived>::swap(Derived& other) noexcept
 }
 
 template <typename Derived>
+CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T&
+ArrayChunkBase<Derived>::operator()(IndexType index) noexcept
+{
+    const int   chunk_index = chunk_index_of(index);
+    const int   elem_offset = offset_in_chunk(index);
+    const auto& chunk_t     = chunk_list_[chunk_index];
+
+    sync_chunk(chunk_t, chunk_index, elem_offset);
+
+    // The chunk's own check (ChunkBase::operator()) cannot tell for
+    // zero_or_value: its chunk needs the array's second-value index to know
+    // whether it is materialised.
+    if constexpr (build_config::any_check && has_chunk_written_v<Derived>)
+    {
+        if (!is_written_at(chunk_index)) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("operator()(i), the raw reference, on a chunk that is not materialised");
+        }
+    }
+
+    return chunk_t(elem_offset);
+}
+
+template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
 ArrayChunkBase<Derived>::operator()(IndexType index) const noexcept
 {

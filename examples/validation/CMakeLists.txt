@@ -102,6 +102,12 @@
 #                           resize's release) and zero_any's operator== equal a
 #                           std::vector's, with the phase bracketed; inside a
 #                           region they stay on the calling thread.
+#   alloc_chunk_validation  alloc_chunk() then the raw reference, operator()(i):
+#                           a preallocated chunk is materialised and holds
+#                           what it held (T{}, the second value it was
+#                           compressed to, its elements), raw stores stay in
+#                           their chunk; at dyn, its buffer has the array's
+#                           chunk size.
 #   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
@@ -269,8 +275,9 @@ set(_rt_harnesses       compress_roundtrip_validation pool_accounting_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         shrink_to_fit_validation chunk_exchange_validation signed_zero_validation
-                        no_init_release_validation nan_check_validation)
-set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation)
+                        no_init_release_validation nan_check_validation alloc_chunk_validation)
+set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation
+                        alloc_chunk_validation)
 
 # Compile definitions of a variant at a geometry.
 function(validation_variant_defs tgt vmacro geom)

@@ -47,6 +47,7 @@ il invalide les proxys du tableau.
 | lecture | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | renvoient un `T` |
 | écriture | `operator[](i)`, `at(i)` | renvoient un proxy d'écriture (§4) |
 | référence brute | `operator()(i)` (non const) | un `T&` dans le tampon : **seulement sur un chunk matérialisé**, contourne la bibliothèque |
+| préallocation | `alloc_chunk(i)`, `alloc_chunk(i, rank)` | matérialise le chunk de l'élément `i` s'il est compressé, en gardant ce qu'il lit (`T{}`, ou la seconde valeur à laquelle il était compressé) ; la boucle qui suit peut alors écrire par `operator()(i)`. Appelable dans une région parallèle, chaque thread sur ses propres chunks (`rank` : celui du thread appelant, sa réserve de tampons) |
 | agrandir, réduire **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` replie aussi chaque chunk devenu constant ; un `n` négatif (ici et au constructeur) lève `std::length_error`, comme `std::vector` |
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |

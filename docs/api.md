@@ -46,6 +46,7 @@ alone ([getting started, §5](getting_started.md)); it invalidates the array's p
 | read | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | return a `T` |
 | write | `operator[](i)`, `at(i)` | return a write proxy (§4) |
 | raw reference | `operator()(i)` (non-const) | a `T&` into the buffer: **only on a materialised chunk**, bypasses the library |
+| preallocate | `alloc_chunk(i)`, `alloc_chunk(i, rank)` | materialises the chunk holding element `i` if it is compressed, keeping what it reads (`T{}`, or the second value it was compressed to); the loop that follows can then store through `operator()(i)`. Callable from a parallel region, each thread on chunks of its own (`rank`: the calling thread's, its buffer pool) |
 | grow, shrink **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` also folds every chunk that became constant; a negative `n` (here and in the constructor) throws `std::length_error`, as `std::vector` |
 | append | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** only when it needs a new chunk |
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |

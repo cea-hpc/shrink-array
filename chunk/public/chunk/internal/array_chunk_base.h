@@ -744,15 +744,24 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] otherwise.
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(IndexType index) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(IndexType index) noexcept;
+
+    /**
+     * @brief alloc_chunk() allocates in THIS array's geometry and allocator
+     *        set, as every proxy materialisation does
+     *        (ensure_writable_storage()).
+     * @details The buffer is sized and routed by the calling thread's ambient
+     *          chunk size, which the last array it served left, or the
+     *          process-wide one on a thread that served none: a smaller
+     *          buffer is overrun by the stores that follow. Dynamic builds.
+     */
+    void pin_alloc_geometry() const noexcept
     {
-        const int   chunk_index = chunk_index_of(index);
-        const int   elem_offset = offset_in_chunk(index);
-        const auto& chunk_t     = chunk_list_[chunk_index];
-
-        sync_chunk(chunk_t, chunk_index, elem_offset);
-
-        return chunk_t(elem_offset);
+        if constexpr (build_config::chunk_dynamic)
+        {
+            shrink_array::set_thread_chunk_size(this->chunk_size());
+            shrink_array::set_thread_alloc_key(this->alloc_key());
+        }
     }
 
     /**
