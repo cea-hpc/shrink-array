@@ -330,6 +330,27 @@ jobs:
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
+      # Clang 18 + Ubuntu's libomp: the runtime has never loaded the library's
+      # OMPT tool here ("the OpenMP runtime did not load it"), where clang 23's
+      # does. Which libomp the harness loads, whether it is linked with
+      # -Bsymbolic*, whether the harness exports ompt_start_tool, and the
+      # runtime's own account of its tool search (OMP_TOOL_VERBOSE_INIT).
+      - name: OMPT tool discovery (diagnostic)
+        if: always() && startsWith(matrix.cc, 'clang')
+        run: |
+          # The harness's command as ctest runs it (one executable per group).
+          read -r exe harness < <(ctest --test-dir build -N -V -R '^mark_path_validation_zero_256_1thr$' \
+                                  | sed -n 's/.*Test command: //p' | tr -d '"' | head -1)
+          echo "harness: $exe $harness"
+          [ -n "$exe" ] || exit 0
+          ldd "$exe" | grep -i omp || true
+          lib=$(ldd "$exe" | awk '/libomp/ {print $3; exit}')
+          echo "--- $lib"
+          readelf -d "$lib" | grep -iE 'soname|flags|symbolic' || true
+          nm -D "$lib" | grep -E 'ompt_start_tool' || true
+          echo "--- $exe"
+          nm -D "$exe" | grep -E 'ompt_start_tool|g_ompt_suspended' || echo "ompt_start_tool not in the dynamic symbol table"
+          OMP_TOOL_VERBOSE_INIT=stdout OMP_NUM_THREADS=1 "$exe" $harness 2>&1 | head -40 || true
       - name: Examples (ctest -L examples)
         run: |
           cmake --build build --target getting_started simple_array_chunk multi_mat vectorisation_demo
