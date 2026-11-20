@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Phase 2: the timed sweep -- every perf binary over its thread counts."""
 import sys
-import time
 
 from .. import share
 from ..builds import is_compression_only_config, is_threaded_config, short_config_label, skip_variant_on_config
@@ -68,9 +67,7 @@ def run_perf_phase(args, plan, counter, errors, results):
                 for r in range(_reps):
                     counter.idx += 1
 
-                    elapsed = time.time() - counter.start
-                    eta_min = ((elapsed / counter.idx) *
-                               (counter.total - counter.idx) / 60)
+                    eta_min = counter.eta_s() / 60
                     sys.stdout.write(
                         f"\r{get_progress_bar(counter.idx, counter.total)} "
                         + _prog("PERF", yellow, cfg, var,
