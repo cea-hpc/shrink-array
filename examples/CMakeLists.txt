@@ -109,6 +109,11 @@ int main()
     target_link_libraries(${target} PRIVATE m)
 endfunction()
 
+# What the example programs and shrink_bench share, none of it about the
+# library (common/example_utils.h: the memory figure, the replayable seed).
+add_library(shrink_examples_common INTERFACE)
+target_include_directories(shrink_examples_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/common)
+
 # The examples that need one variant (or two) are left out with it
 # (CHUNK_VARIANTS, chunk/CMakeLists.txt).
 

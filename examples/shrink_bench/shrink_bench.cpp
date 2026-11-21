@@ -42,7 +42,8 @@
 
 // Utility templates and function declarations (checksums, correlations,
 // seed I/O, help/suggest, memory report).
-#include "bench_utils.h" // initialize_rng, memory_consumption
+#include "bench_utils.h"   // memory_consumption
+#include "example_utils.h" // initialize_rng
 
 // The phases extracted from main() and their shared context: the array type,
 // the second_value_* constants, the BenchArrays handle, and the OMPT phase
@@ -659,7 +660,7 @@ try
     const std::string str            = std::to_string(iter_max);
     const std::string seed_file_name = "seed" + str + ".txt"; // File to store the seed
     std::mt19937      rng;                                    // Random number generator
-    initialize_rng(rng, seed_file_name);
+    example_utils::initialize_rng(rng, seed_file_name);
 
     // Create a uniform distribution for interval sizes
     std::uniform_int_distribution<Int> size_distribution(1, interval);

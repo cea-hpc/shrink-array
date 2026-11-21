@@ -34,6 +34,7 @@ function(multi_mat_setup_target tgt)
     endif ()
 
     chunk_require_cxx20(${tgt} PRIVATE)
+    target_link_libraries(${tgt} PRIVATE shrink_examples_common) # common/example_utils.h
 
     # A library carrying BOTH variant defines: the three field arrays are
     # zero::Array<double>, the presence fraction zero_or_value::Array<double>.

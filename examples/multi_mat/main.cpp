@@ -39,7 +39,6 @@
 #include <iostream>    // std::cout, std::cerr
 #include <vector>      // std::vector
 #include <functional>  // std::function
-#include <fstream>     // std::ofstream
 #include <type_traits> // std::is_same_v, std::remove_reference_t
 #include <chrono>      // std::chrono::steady_clock
 
@@ -55,30 +54,9 @@
 #include "Dispatch.h"     // Dispatch
 #include "Simu.h"         // Simu
 
+#include "example_utils.h" // report_memory_mib
+
 using namespace shrink_array;
-
-/// @brief Bytes to MiB, and the figure written to memory_mo.txt for the
-///        scripts that collect it.
-double convert_memory(double memory_value)
-{
-    constexpr double byte_to_kb = 1.0 / 1024;
-    constexpr double kb_to_mb   = 1.0 / 1024;
-
-    const double kilobytes = memory_value * byte_to_kb;
-    const double megabytes = kilobytes * kb_to_mb;
-
-    if (std::ofstream file("memory_mo.txt"); file.is_open())
-    {
-        file << megabytes;
-        file.close();
-    }
-    else
-    {
-        std::cerr << "Error: unable to open the file.\n";
-    }
-
-    return megabytes;
-}
 
 /// @brief Required by fast_allocators (one definition per executable).
 
@@ -280,7 +258,8 @@ try
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
         const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
-        std::cout << "Memory consumption : " << convert_memory(static_cast<double>(rss * 1024)) << " Mo\n\n";
+        std::cout << "Memory consumption : " << example_utils::report_memory_mib(static_cast<double>(rss * 1024))
+                  << " Mo\n\n";
     }
     else
     {

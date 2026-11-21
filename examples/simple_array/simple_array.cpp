@@ -23,7 +23,6 @@
 #include <iostream>  // std::cout, std::cerr
 #include <random>    // std::mt19937, std::uniform_int_distribution
 #include <array>     // std::array
-#include <fstream>   // std::ifstream, std::ofstream
 #include <string>    // std::string, std::to_string
 
 #include <iomanip>        // std::setprecision, std::fixed
@@ -38,6 +37,7 @@
 #include "chunk/threads.h"    // shrink_array::max_threads
 #include "chunk/config.h"     // chunk_config::use_zero*, stats
 
+#include "example_utils.h" // initialize_rng, report_memory_mib
 
 /// @brief splitmix64's finaliser: a bijection on 64 bits that spreads every
 ///        input bit over the whole output.
@@ -80,78 +80,6 @@ uint64_t calculate_checksum(const V& vec)
         }
     }
     return checksum;
-}
-
-double convert_memory(double memory_value)
-{
-    constexpr double byte_to_kb = 1.0 / 1024;
-    constexpr double kb_to_mb   = 1.0 / 1024;
-
-    const double kilobytes = memory_value * byte_to_kb;
-    const double megabytes = kilobytes * kb_to_mb;
-
-    if (std::ofstream out_file("memory_mo.txt"); out_file.is_open())
-    {
-        out_file << megabytes;
-        out_file.close();
-    }
-    else
-    {
-        std::cerr << "Error: cannot open the file.\n";
-    }
-
-    return megabytes;
-}
-
-// Save seed to file
-void save_seed_to_file(unsigned seed, const std::string& filename)
-{
-    std::cout << "\nSave seed in file\n";
-
-    if (std::ofstream file(filename); file.is_open())
-    {
-        file << seed;
-        file.close();
-    }
-    else
-    {
-        std::cerr << "Unable to open file for saving seed." << '\n';
-    }
-}
-
-// Load seed from file
-unsigned load_seed_to_file(const std::string& filename)
-{
-    unsigned seed = 0;
-    if (std::ifstream file(filename); file.is_open())
-    {
-        file >> seed;
-        file.close();
-    }
-    else
-    {
-        std::cerr << "Unable to open file for loading seed. --> create new one" << '\n';
-    }
-    std::cout << "\nLoad seed in file\n";
-
-    return seed;
-}
-
-// Initialize random number generator with saved or new seed
-void initialize_rng(std::mt19937& rng, const std::string& seed_file_name)
-{
-    // Try to load seed from file
-    unsigned seed = load_seed_to_file(seed_file_name);
-    if (seed == 0)
-    {
-        // If loading failed, generate a new seed
-        std::random_device rd;
-        seed = rd();
-        // Save the new seed to file
-        save_seed_to_file(seed, seed_file_name);
-    }
-    // Initialize RNG with the seed
-    rng.seed(seed);
 }
 
 using namespace shrink_array;
@@ -230,7 +158,7 @@ int main()
     const std::string str            = std::to_string(iter_max);
     const std::string seed_file_name = "seed" + str + ".txt"; // File to store the seed
     std::mt19937      rng;                                    // Random number generator
-    initialize_rng(rng, seed_file_name);
+    example_utils::initialize_rng(rng, seed_file_name);
 
     // Create a uniform distribution for interval sizes
     std::uniform_int_distribution size_distribution(1, interval);
@@ -378,7 +306,8 @@ int main()
     if (struct rusage usage{}; getrusage(RUSAGE_SELF, &usage) == 0)
     {
         const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
-        std::cout << "\nMemory consumption : " << convert_memory(static_cast<double>(rss * 1024)) << " Mo \n\n";
+        std::cout << "\nMemory consumption : " << example_utils::report_memory_mib(static_cast<double>(rss * 1024))
+                  << " Mo \n\n";
     }
     else
     {
