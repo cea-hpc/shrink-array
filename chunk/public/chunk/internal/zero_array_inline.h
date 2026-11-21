@@ -39,6 +39,7 @@
 #include "chunk/internal/cold_path_lock.h"              // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/teardown_probe.h"              // teardown_probe (rechunk=debug: the tmp teardown split)
+#include "chunk/internal/teardown_park.h"               // park_live_chunks (the park step)
 #include "chunk/internal/same_value.h"                  // same_value
 
 namespace shrink_array
@@ -221,60 +222,11 @@ void zero::Array<T, IntType>::clear_core()
         pmp::team(pmp::Options{},
                   [&](pmp::Team& team)
                   {
-                      const int chunk_count0 = get_size_max_array_omp(chunk_count_);
-
-                      std::vector<Chunk<T>*> ll_chunk_loc;
-                      ll_chunk_loc.reserve(chunk_count0);
-
-                      team.for_static<int>(
-                          0, chunk_count_,
-                          [&](int j)
-                          {
-                              if (chunk_list_[j].written())
-                              {
-                                  if constexpr (chunk_config::stats)
-                                  {
-                                      inc_chunk_teardown_clear<Chunk<T>>();
-                                      // Released below without a compression: out of the live figures.
-                                      add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                          static_cast<long>(this->size_policy_.size()));
-                                  }
-                                  ll_chunk_loc.push_back(&chunk_list_[j]);
-                              }
-                          },
-                          pmp::nowait);
-
-                      const auto n = static_cast<int>(ll_chunk_loc.size());
-
-                      if (n > 0)
-                      {
-                          const int thr_rank = CHUNK_PMP_THREAD_RANK;
-
-                          // Park into the reuse list of THIS array's geometry, not the
-                          // ambient one. If my_sz has no per-size list this falls back to
-                          // the LEGACY list, which drain_reuse_list_for_size() never
-                          // drains: those blocks then stay until teardown.
-                          const unsigned int my_sz = this->size_policy_.size();
-                          auto&              lbf = Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
-
-                          for (int k = 0; k < n; ++k)
-                          {
-                              T*          values_loc = ll_chunk_loc[k]->values_;
-                              constexpr T zero{};
-                              std::uninitialized_fill_n(values_loc, my_sz, zero);
-
-                              // Ledger LIVE -> parked (no-op when the ledger is off).
-                              CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
-                              lbf.push_back(values_loc);
-
-                              // Neutralise the chunk NOW that its buffer is parked: still
-                              // materialised, a residual candidate would free the SAME
-                              // buffer a second time (a double free under std-alloc).
-                              // init_values_const_val() frees nothing; written() then
-                              // reports false, so every compress path short-circuits.
-                              ll_chunk_loc[k]->init_values_const_val();
-                          }
-                      }
+                      // init_values_const_val() frees nothing; written() then reports
+                      // false, so every compress path short-circuits.
+                      internal::park_live_chunks<T, internal::ParkedBuffer::zero_filled>(
+                          team, chunk_list_, chunk_count_, this->size_policy_.size(), [](const Chunk<T>& chunk)
+                          { return chunk.written(); }, [](Chunk<T>& chunk) { chunk.init_values_const_val(); });
                   });
     }
     else
@@ -301,14 +253,7 @@ void zero::Array<T, IntType>::clear_core()
     chunk_count_ = 0;
     probe.mark(internal::TeardownStep::tables);
 
-    // An array with its own slab affinity gives its memory back NOW: its parked
-    // buffers go home to its allocator set, whose slabs then empty (and
-    // the sweep madvises them). Sequential point; the drain opens its
-    // own region. Key 0: nothing to give back per array.
-    if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        TypeState<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
-    }
+    this->drain_own_reuse_list(); // an array with its own allocator set: its memory goes back now
     probe.mark(internal::TeardownStep::key_drain);
 
     // The candidate flags (one byte per chunk): released now that the purge
@@ -498,24 +443,8 @@ void zero::Array<T, IntType>::resize(IntType newsz)
     parallel_storage_init::for_each_chunk(chunk_count_ - old_chunk_count, [this, old_chunk_count](int k)
                                           { this->construct_chunk(old_chunk_count + k).init_values_const_val(); });
 
-    // std::vector semantics: the regrown range [old_size, newsz) reads T{}. The
-    // chunk holding the OLD end keeps its tail (values from before a shrink),
-    // so reset it through the normal write path. Serial: inside a region an
-    // `omp for` would cover 1/N of it.
-    if (newsz > old_size)
-    {
-        const auto csz = static_cast<IntType>(this->chunk_size());
-        // Up to the end of the OLD chunk count: chunks_for() keeps a spare chunk
-        // when old_size falls on a boundary, stale too. In long long:
-        // old_chunk_count * csz may pass IndexType's range.
-        const long long cover_ll  = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
-        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
-        for (IntType i = old_size; i < stale_end; ++i)
-        {
-            (*this)[i] = T{};
-        }
-    }
+    // The regrown range [old_size, newsz) reads T{}, as std::vector's.
+    this->reset_regrown_tail(old_size, newsz, old_chunk_count);
 }
 
 // ---------------------------------------------------------------------------

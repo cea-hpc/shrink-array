@@ -261,6 +261,18 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     void release_chunk_list();
 
     /**
+     * @brief At the end of a teardown, after release_chunk_list(): an array with
+     *        its own allocator set (alloc_key_) gives its memory back now.
+     * @details Every buffer parked by the teardown (own rank) or by another rank
+     *          (foreign, under this array's key) goes home to its allocator set,
+     *          whose slabs hold nothing else and so empty -- and the sweep
+     *          madvises them away. At a sequential point only (destructor,
+     *          rechunk_to): the drain opens its own region. Key 0 (the shared
+     *          pool): nothing to give back per array.
+     */
+    void drain_own_reuse_list() noexcept;
+
+    /**
      * @brief Chunk-size policy — the single home for chunk geometry.
      *
      * @details Shared by all containers that derive from ArrayChunkBase

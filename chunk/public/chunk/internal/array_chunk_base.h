@@ -826,6 +826,24 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     static void check_length(IndexType count, const char* who);
 
+    /**
+     * @brief The end of a growing resize(): std::vector semantics for the
+     *        regrown range [@p old_size, @p new_size), which reads T{}.
+     * @details The chunks the resize added are fresh, but the one holding the
+     *          OLD end keeps its tail: after a shrink, the values written there
+     *          would come back on the next growth. The tail is reset through the
+     *          normal write path, after the reallocations, up to the end of the
+     *          OLD chunk count: chunks_for() keeps a chunk past the last element,
+     *          so when @p old_size falls on a chunk boundary that spare chunk
+     *          holds stale values too. Serial: at most one chunk, and inside a
+     *          region an `omp for` would cover 1/N of it. Nothing when the array
+     *          did not grow.
+     * @param old_size the element count before the resize
+     * @param new_size the element count after it
+     * @param old_chunk_count the chunk count before it
+     */
+    void reset_regrown_tail(IndexType old_size, IndexType new_size, int old_chunk_count);
+
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
     /// @note Protected, not private with `friend Derived`: zero_or_value and zero_any
     ///       reach this base through SecondValueArrayBase<Derived>, which has to

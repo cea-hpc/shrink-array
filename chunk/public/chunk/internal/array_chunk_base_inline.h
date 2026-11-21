@@ -857,4 +857,24 @@ ArrayChunkBase<Derived>::sync_chunk(const ChunkType& chunk_t, int chunk_index, i
     }
 }
 
+
+template <typename Derived>
+void ArrayChunkBase<Derived>::reset_regrown_tail(IndexType old_size, IndexType new_size, int old_chunk_count)
+{
+    if (new_size <= old_size)
+    {
+        return;
+    }
+    const auto csz = static_cast<IndexType>(this->chunk_size());
+    // In long long: old_chunk_count * csz may pass IndexType's range near its top.
+    const long long cover_ll = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
+    const IndexType old_cover =
+        cover_ll < static_cast<long long>(new_size) ? static_cast<IndexType>(cover_ll) : new_size;
+    const IndexType stale_end = new_size < old_cover ? new_size : old_cover;
+    for (IndexType i = old_size; i < stale_end; ++i)
+    {
+        derived()[i] = T{};
+    }
+}
+
 } // namespace shrink_array

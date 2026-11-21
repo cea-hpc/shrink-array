@@ -453,6 +453,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/stable_table_inline.h
         public/chunk/internal/second_value_registry_inline.h
         public/chunk/internal/array_users.h
+        public/chunk/internal/teardown_park.h
         public/chunk/internal/teardown_probe.h
         public/chunk/internal/test_hooks.h
         public/chunk/internal/value_less.h
