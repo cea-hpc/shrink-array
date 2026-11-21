@@ -69,7 +69,10 @@ Quand le projet est intégré à un autre par `add_subdirectory` ou `FetchConten
 bibliothèques sont construites.
 
 Avec Clang ou oneAPI, un build OpenMP utilise aussi l'interface **OMPT** du runtime, ce qui
-dispense le programme des appels de phase du §5.
+dispense le programme des appels de phase du §5. La configuration vérifie que le runtime OpenMP
+charge l'outil de la bibliothèque, que porte l'exécutable ; avec un runtime qui ne le fait pas
+(le `libomp5-18` d'Ubuntu 24.04), la bibliothèque est construite sans lui, comme avec GCC, et un
+avertissement CMake le dit.
 
 ## 3. L'utiliser depuis CMake
 

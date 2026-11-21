@@ -88,6 +88,15 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Clang or oneAPI with an OpenMP runtime that never loads an OMPT tool defined in the
+  executable -- Ubuntu 24.04's `libomp5-18` binds its own weak `ompt_start_tool` at link time
+  and searches only the objects loaded after it, so `-rdynamic` does not help -- built the
+  library with its tool anyway: the regions ran with their phase boundaries missing (chunks
+  left materialised, the concurrent-teams invariants broken; 40 validation tests of the nightly
+  clang 18 job). The configure step now runs a probe (`cmake/ompt_probe.cpp`) and, when the
+  runtime does not call it, builds without the tool (`CHUNK_OPT_OMPT` 0, `shrink_array_OMPT`
+  OFF) with a warning. The verdict is cached in `CHUNK_OMPT_TOOL_LOADS`, which can also be set
+  to skip the probe; it is not run when cross-compiling without an emulator.
 - `zero_or_value`: `set_second_value(T{})` on an array that had another second value took the
   new-value path (T{}'s sentinel index reads as "not registered"): it gave T{} a block of its
   own and replaced the T{} key every array without a second value is drained under. Called at

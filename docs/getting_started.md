@@ -65,7 +65,9 @@ only the libraries, configure with `-DSHRINK_ARRAY_BUILD_EXAMPLES=OFF`, or give
 into another project with `add_subdirectory` or `FetchContent`, it builds only the libraries.
 
 With Clang or oneAPI, an OpenMP build also uses the runtime's **OMPT** interface, which spares
-your program the phase calls of §5.
+your program the phase calls of §5. The configure step checks that the OpenMP runtime loads the
+library's tool, which the executable carries; a runtime that does not (Ubuntu 24.04's
+`libomp5-18`) gets a library built without it, as with GCC, and a CMake warning says so.
 
 ## 3. Link it from CMake
 
