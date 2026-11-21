@@ -44,37 +44,52 @@ namespace shrink_array
 // array_registry registry and pair with no release. Do not add one: on
 // aarch64 it was the hottest instruction of assign_impl (several % of a run).
 
+namespace internal
+{
+/**
+ * @brief Check builds: a zero_or_value proxy's armed mirror against the
+ *        registry -- the check both ProxySpec specialisations run in
+ *        armed_array_info().
+ * @details idx and array_id only: idx maps one-to-one to the value, and a
+ *          value compare would raise a false alarm on a NaN second value. Once
+ *          per (array, idx, array_id) and registry generation, not per write:
+ *          see verify_once_per_generation().
+ * @tparam Derived the proxy's derived class (its get_info_second_value()).
+ * @param ptr the array the proxy belongs to.
+ * @param armed the mirror the proxy was armed with.
+ */
+template <typename Derived, typename Ptr, typename ArrayInfo>
+void verify_armed_second_value_mirror(Ptr ptr, const ArrayInfo& armed)
+{
+    const int idx      = armed.idx;
+    const int array_id = armed.array_id;
+    verify_once_per_generation(ptr, std::tuple{ptr, idx, array_id},
+                               [ptr, idx, array_id]
+                               {
+                                   const ArrayInfo reg = Derived::get_info_second_value(ptr);
+                                   if (reg.idx != idx || reg.array_id != array_id)
+                                   {
+                                       CHUNK_INVARIANT_FAILED(
+                                           "zero_or_value::ProxySpec::load_array_info: armed (index_value {}, "
+                                           "array_id {}) differs from the registry's (index_value {}, array_id {}) "
+                                           "for array {} -- a registry write without sync_registry_mirror()?",
+                                           idx, array_id, reg.idx, reg.array_id, ptr);
+                                   }
+                               });
+}
+} // namespace internal
+
 // The armed mirror, checked against the registry under any_check; nullptr when
 // the proxy is not armed. Callers read the fields THROUGH this pointer: see the
 // note on set_info_on_chunk() below for why not through a returned copy.
 template <typename T, typename Derived>
 const zero_or_value::ProxySpec<T, Derived>::ArrayInfo* zero_or_value::ProxySpec<T, Derived>::armed_array_info() const
 {
-    if (array_info_src_ != nullptr) [[likely]]
+    if constexpr (build_config::any_check)
     {
-        if constexpr (build_config::any_check)
+        if (array_info_src_ != nullptr) [[likely]]
         {
-            // idx and array_id only: idx maps one-to-one to the value, and a
-            // value compare would raise a false alarm on a NaN second value.
-            // Once per (array, idx, array_id) and registry generation, not per
-            // write: see verify_once_per_generation().
-            const auto ptr      = get_ptr_on_array();
-            const int  idx      = array_info_src_->idx;
-            const int  array_id = array_info_src_->array_id;
-            internal::verify_once_per_generation(
-                ptr, std::tuple{ptr, idx, array_id},
-                [ptr, idx, array_id]
-                {
-                    const ArrayInfo reg = Derived::get_info_second_value(ptr);
-                    if (reg.idx != idx || reg.array_id != array_id)
-                    {
-                        CHUNK_INVARIANT_FAILED(
-                            "zero_or_value::ProxySpec::load_array_info: armed (index_value {}, array_id {}) "
-                            "differs from the registry's (index_value {}, array_id {}) for array {} -- a "
-                            "registry write without sync_registry_mirror()?",
-                            idx, array_id, reg.idx, reg.array_id, ptr);
-                    }
-                });
+            internal::verify_armed_second_value_mirror<Derived>(get_ptr_on_array(), *array_info_src_);
         }
     }
     return array_info_src_;
@@ -94,31 +109,11 @@ template <typename T, typename Derived>
     requires is_bool_like_v<T>
 const zero_or_value::ProxySpec<T, Derived>::ArrayInfo* zero_or_value::ProxySpec<T, Derived>::armed_array_info() const
 {
-    if (array_info_src_ != nullptr) [[likely]]
+    if constexpr (build_config::any_check)
     {
-        if constexpr (build_config::any_check)
+        if (array_info_src_ != nullptr) [[likely]]
         {
-            // idx and array_id only: idx maps one-to-one to the value, and a
-            // value compare would raise a false alarm on a NaN second value.
-            // Once per (array, idx, array_id) and registry generation, not per
-            // write: see verify_once_per_generation().
-            const auto ptr      = get_ptr_on_array();
-            const int  idx      = array_info_src_->idx;
-            const int  array_id = array_info_src_->array_id;
-            internal::verify_once_per_generation(
-                ptr, std::tuple{ptr, idx, array_id},
-                [ptr, idx, array_id]
-                {
-                    const ArrayInfo reg = Derived::get_info_second_value(ptr);
-                    if (reg.idx != idx || reg.array_id != array_id)
-                    {
-                        CHUNK_INVARIANT_FAILED(
-                            "zero_or_value::ProxySpec::load_array_info: armed (index_value {}, array_id {}) "
-                            "differs from the registry's (index_value {}, array_id {}) for array {} -- a "
-                            "registry write without sync_registry_mirror()?",
-                            idx, array_id, reg.idx, reg.array_id, ptr);
-                    }
-                });
+            internal::verify_armed_second_value_mirror<Derived>(get_ptr_on_array(), *array_info_src_);
         }
     }
     return array_info_src_;

@@ -35,20 +35,17 @@
 // EXIT STATUS: 0 when both runs follow that rule, 1 otherwise; the
 // deferred run is skipped (noted) in builds without the hook.
 
-#include <type_traits> // std::conditional_t, std::declval
+#include <type_traits> // std::declval
 #include <utility>     // std::as_const, std::forward
 
-#include "chunk/zero_array.h"          // zero::Array
-#include "chunk/zero_or_value_array.h" // zero_or_value::Array
-#include "chunk/zero_any_array.h"      // zero_any::Array
 #include "chunk/runtime.h"             // Runtime::init
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"              // chunk_config::use_zero_any / use_zero_or_value, build_config::use_openmp
-#include "chunk/phases.h"              // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/config.h"              // build_config::use_openmp
 #include "chunk/print.h"               // shrink_array::println
 #include "chunk/internal/test_hooks.h" // force_defer_every, force_defer_compiled
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name, begin_phase / end_phase
 
 namespace validation::mixed_operand_compound_validation
 {
@@ -57,44 +54,6 @@ using namespace shrink_array;
 
 namespace
 {
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
-void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-
-void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
 
 constexpr long count = 4096; ///< elements per case
 

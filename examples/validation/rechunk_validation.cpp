@@ -53,19 +53,15 @@
 // ambient chunk size, the registries -- so they run in separate processes,
 // never side by side in one).
 
-#include <cstdio>      // std::fprintf, stderr
-#include <cstring>     // std::strcmp
-#include <functional>  // std::function
-#include <limits>      // std::numeric_limits (index-split)
-#include <string>      // std::string
-#include <vector>      // std::vector
-#include <cmath>       // std::floor, std::sin
-#include <type_traits> // std::conditional_t
+#include <cstdio>     // std::fprintf, stderr
+#include <cstring>    // std::strcmp
+#include <functional> // std::function
+#include <limits>     // std::numeric_limits (index-split)
+#include <string>     // std::string
+#include <vector>     // std::vector
+#include <cmath>      // std::floor, std::sin
 
 #include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
-#include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_or_value_array.h"        // zero_or_value::Array
-#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/runtime.h"                    // Runtime::register_chunk_size, init
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_zero*
@@ -78,6 +74,7 @@ using namespace shrink_array;
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h"        // Array, variant_name
 
 namespace validation::rechunk_validation
 {
@@ -180,28 +177,6 @@ std::string pass_label(const char* label)
 static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
               "rechunk_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY "
               "(re-chunk is chunk-only; no std::vector fallback here)");
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 // set_second_value only exists on zero_or_value / zero_any: no-op elsewhere. REQUIRED
 // on zero_or_value before any write (see the contract at the top of the file); also

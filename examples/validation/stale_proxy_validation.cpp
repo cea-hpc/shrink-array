@@ -39,51 +39,26 @@
 // is compiled out and the harness only says so.
 // ============================================================================
 
-#include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
-#include <cstdlib>     // std::system, std::atoi
-#include <iterator>    // std::size
-#include <string>      // std::string, std::to_string
-#include <type_traits> // std::conditional_t
-#include <utility>     // std::move
-#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
+#include <cstdio>     // std::fopen, std::fclose, std::fread, FILE, std::remove
+#include <cstdlib>    // std::system, std::atoi
+#include <iterator>   // std::size
+#include <string>     // std::string, std::to_string
+#include <utility>    // std::move
+#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // chunk_config::use_zero_or_value*, build_config::chunk_dynamic / any_check
+#include "chunk/config.h"                // build_config::chunk_dynamic, any_check
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name
 
 namespace validation::stale_proxy_validation
 {
 
 using namespace shrink_array;
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 constexpr long n_items = 4096;
 

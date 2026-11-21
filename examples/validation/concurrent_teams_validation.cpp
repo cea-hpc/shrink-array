@@ -39,54 +39,29 @@
 // In a serial build there are no teams: A runs single-threaded, B is skipped.
 // ============================================================================
 
-#include <cstdio>      // std::fopen, std::fclose, std::fread, std::fflush, FILE, stdout, std::remove
-#include <cstdlib>     // std::system
-#include <latch>       // std::latch (B: the two teams held open together)
-#include <string>      // std::string, std::to_string
-#include <thread>      // std::thread (the two host threads)
-#include <type_traits> // std::conditional_t
-#include <vector>      // std::vector
-#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
+#include <cstdio>     // std::fopen, std::fclose, std::fread, std::fflush, FILE, stdout, std::remove
+#include <cstdlib>    // std::system
+#include <latch>      // std::latch (B: the two teams held open together)
+#include <string>     // std::string, std::to_string
+#include <thread>     // std::thread (the two host threads)
+#include <vector>     // std::vector
+#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
-#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::use_openmp / needs_explicit_phases
-#include "chunk/internal/pmp_chunk.h" // chunk_pmp_team_rank
-#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/print.h"              // shrink_array::println
+#include "chunk/config.h"                // build_config::use_openmp, needs_explicit_phases
+#include "chunk/internal/pmp_chunk.h"    // chunk_pmp_team_rank
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h"        // Array, variant_name
 
 namespace validation::concurrent_teams_validation
 {
 
 using namespace shrink_array;
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 /// The value element i holds after round `round` of host thread `who`.
 static int expected(long index, int round, int who)

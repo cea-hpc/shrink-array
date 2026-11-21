@@ -66,12 +66,13 @@
 #include "chunk/runtime.h"                    // Runtime::init
 #include "chunk/config.h"                     // chunk_config::use_zero_any, build_config::needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h"         // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
-#include "chunk/phases.h"                     // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                     // finalize_parallel_phase
 #include "chunk/internal/env_parse.h"         // arg_number (checked, not atoi)
 #include "chunk/print.h"                      // shrink_array::println
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size (G)
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, begin_phase
 
 namespace validation::second_value_reclaim_validation
 {
@@ -84,13 +85,6 @@ static_assert(chunk_config::use_zero_any,
 using Arr      = zero_any::Array<double>;
 using Registry = zero_any::Chunk<double>::Holder::VecHolder;
 
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
 static void end_phase()
 {
     if constexpr (build_config::needs_explicit_phases)

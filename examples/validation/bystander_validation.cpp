@@ -46,11 +46,11 @@
 #include "chunk/zero_any_array.h"      // zero_any::Array
 #include "chunk/runtime.h"             // Runtime::init
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"              // chunk_config::use_zero_any / use_zero_or_value, build_config
-#include "chunk/phases.h"              // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/config.h"              // chunk_config::use_zero_any, use_zero_or_value
 #include "chunk/print.h"               // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name, begin_phase / end_phase
 
 namespace validation::bystander_validation
 {
@@ -74,22 +74,6 @@ constexpr double wa = 9.0;                          ///< what `a` is rewritten t
 constexpr double wb = 13.0;                         ///< what `b` is rewritten to
 
 constexpr long n_chunks = 16;
-
-void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-
-void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
 
 double ramp(long i)
 {
@@ -371,22 +355,6 @@ int run_queued(Queue q)
         return 1;
     }
     return 0;
-}
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
 }
 
 } // namespace

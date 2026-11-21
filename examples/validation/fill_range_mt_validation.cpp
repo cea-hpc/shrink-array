@@ -41,68 +41,26 @@
  *                                                      copy_range_mt
  */
 
-#include <chrono>      // std::chrono::steady_clock, std::chrono::duration
-#include <complex>     // std::complex: an element type without relaxed access
-#include <cstring>     // std::strcmp
-#include <type_traits> // std::conditional_t
-#include <vector>      // std::vector
+#include <chrono>  // std::chrono::steady_clock, std::chrono::duration
+#include <complex> // std::complex: an element type without relaxed access
+#include <cstring> // std::strcmp
+#include <vector>  // std::vector
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/range_ops.h"             // fill_range_mt
 #include "chunk/runtime.h"               // Runtime::init
-#include "chunk/config.h"                // chunk_config::use_zero_or_value*, build_config::needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h"        // Array, variant_name, begin_phase / end_phase
 
 namespace validation::fill_range_mt_validation
 {
 
 using namespace shrink_array;
-
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-static void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 constexpr long blk = 64;
 

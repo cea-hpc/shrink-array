@@ -45,20 +45,16 @@
 // OpenMP without OMPT only (the protocol is manual there); 77 = skipped.
 // ============================================================================
 
-#include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
-#include <cstdlib>     // std::system, std::atoi
-#include <cstring>     // std::strcmp
-#include <iterator>    // std::size
-#include <string>      // std::string
-#include <type_traits> // std::conditional_t
-#include <utility>     // std::as_const
-#include <vector>      // std::vector, the reference
+#include <cstdio>   // std::fopen, std::fclose, std::fread, FILE, std::remove
+#include <cstdlib>  // std::system, std::atoi
+#include <cstring>  // std::strcmp
+#include <iterator> // std::size
+#include <string>   // std::string
+#include <utility>  // std::as_const
+#include <vector>   // std::vector, the reference
 
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
-#include "chunk/zero_array.h"          // zero::Array
-#include "chunk/zero_or_value_array.h" // zero_or_value::Array
-#include "chunk/zero_any_array.h"      // zero_any::Array
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools
 #include "chunk/config.h"              // chunk_config::use_zero*, build_config::needs_explicit_phases, any_check
 #include "chunk/internal/test_hooks.h" // test_hooks::force_defer_every
@@ -68,6 +64,7 @@
 #include "chunk/print.h"               // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name
 
 namespace validation::phase_protocol_validation
 {
@@ -79,28 +76,6 @@ namespace
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
               "phase_protocol_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 constexpr int n_items   = 1 << 18;
 constexpr int n_regions = 6;
