@@ -182,7 +182,10 @@ void ompt_finalize(ompt_data_t*) {}
 } // namespace
 
 /// @brief The entry point the OpenMP runtime looks up at start-up.
-ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
+// extern "C": the runtime finds the tool with dlsym("ompt_start_tool"). Some
+// omp-tools.h (LLVM 18) do not declare it, and a C++-mangled definition is
+// never found: the tool stays silently inert.
+extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
 {
     static ompt_start_tool_result_t result = {&ompt_initialize, &ompt_finalize, {0}};
     return &result;
