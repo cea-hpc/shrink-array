@@ -259,58 +259,15 @@ if(CHUNK_OPENMP)
             # (examples/multi_mat's embedded-compression executable).
             set(CHUNK_HAVE_OMPT ON)
 
-            # The library's tool is in the executable (-rdynamic, chunk/CMakeLists.txt):
-            # check that the runtime linked here loads such a tool. Ubuntu 24.04's
-            # libomp5-18 does not (its weak ompt_start_tool is bound at link time and
-            # it only searches the objects loaded after it): a library built with
-            # the tool would then run with its phase boundaries missing. Built
-            # without it, it takes the path of the GCC builds (parallel_phase()).
-            # The verdict is cached in CHUNK_OMPT_TOOL_LOADS; setting it skips the run.
-            if(NOT DEFINED CHUNK_OMPT_TOOL_LOADS)
-                if(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
-                    message(STATUS "OMPT: cross-compiling, the runtime's loading of the tool is not checked")
-                else()
-                    # The probe's run must not see a user's OMP_TOOL=disabled.
-                    set(_chunk_omp_tool_env "$ENV{OMP_TOOL}")
-                    unset(ENV{OMP_TOOL})
-                    try_run(_chunk_ompt_probe_exit _chunk_ompt_probe_compiles
-                        "${CMAKE_CURRENT_BINARY_DIR}/ompt_probe"
-                        "${CMAKE_CURRENT_LIST_DIR}/cmake/ompt_probe.cpp"
-                        LINK_LIBRARIES OpenMP::OpenMP_CXX
-                        LINK_OPTIONS -rdynamic
-                        COMPILE_OUTPUT_VARIABLE _chunk_ompt_probe_log)
-                    if(NOT _chunk_omp_tool_env STREQUAL "")
-                        set(ENV{OMP_TOOL} "${_chunk_omp_tool_env}")
-                    endif()
-                    if(NOT _chunk_ompt_probe_compiles)
-                        # Not the runtime's verdict: keep the tool, the build will tell.
-                        message(STATUS "OMPT: the probe did not build, the runtime's loading of the tool is not checked")
-                        message(DEBUG "${_chunk_ompt_probe_log}")
-                    elseif(_chunk_ompt_probe_exit STREQUAL "0")
-                        set(CHUNK_OMPT_TOOL_LOADS ON CACHE BOOL
-                            "The OpenMP runtime loads an OMPT tool defined in the executable (configure-time probe)")
-                    else()
-                        set(CHUNK_OMPT_TOOL_LOADS OFF CACHE BOOL
-                            "The OpenMP runtime loads an OMPT tool defined in the executable (configure-time probe)")
-                    endif()
-                    unset(_chunk_ompt_probe_exit CACHE)
-                    unset(_chunk_ompt_probe_compiles CACHE)
-                    mark_as_advanced(CHUNK_OMPT_TOOL_LOADS)
-                endif()
-            endif()
-            if(NOT DEFINED CHUNK_OMPT_TOOL_LOADS)
-                # Not checked (cross-compiling, probe not built): the tool stays.
-            elseif(CHUNK_OMPT_TOOL_LOADS)
-                message(STATUS "OMPT: the OpenMP runtime loads the tool of the executable")
-            else()
-                set(CHUNK_HAVE_OMPT OFF)
-                message(WARNING
-                    "OMPT: the OpenMP runtime does not load an OMPT tool defined in the executable: the "
-                    "library is built without its tool, and a parallel region that touches an array goes "
-                    "through parallel_phase() (or open_parallel_phase() / finalize_parallel_phase()), as "
-                    "with GCC. Ubuntu 24.04's libomp5-18 is such a runtime; the libomp of apt.llvm.org is "
-                    "not. -UCHUNK_OMPT_TOOL_LOADS checks again.")
-            endif()
+            # The OpenMP runtime finds the tool with dlsym("ompt_start_tool") in the
+            # EXECUTABLE: its symbols must be in the dynamic symbol table, which an
+            # executable does not export by default (chunk/CMakeLists.txt gives these
+            # options to every executable linking a variant).
+            set(CHUNK_OMPT_TOOL_LINK_OPTIONS -rdynamic)
+            # Not every runtime looks there (cmake/ompt_probe.cpp): check that this
+            # one does; CHUNK_HAVE_OMPT goes OFF if not.
+            include(${PROJECT_SOURCE_DIR}/cmake/shrink_ompt_probe.cmake)
+            shrink_check_ompt_tool_loads(${CHUNK_OMPT_TOOL_LINK_OPTIONS})
         endif()
         message(STATUS "Clang/IntelLLVM compiler detected")
     else()
