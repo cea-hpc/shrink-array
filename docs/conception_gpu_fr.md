@@ -39,7 +39,7 @@ La bibliothèque CPU a deux couches de natures très différentes :
 
 | couche | contenu | sur GPU |
 |---|---|---|
-| **format** | table de chunks ; un chunk = tampon privé ou constante ; S puissance de 2 ou multiple de 64 ; indice `i >> decalage`, `i & modulo` ; métadonnées par chunk | **se porte tel quel**, et s'y trouve même mieux qu'en CPU (section 4) |
+| **format** | table de chunks ; un chunk = tampon privé ou constante ; S puissance de 2 ou multiple de 64 ; indice `i >> shift`, `i & modulo` ; métadonnées par chunk | **se porte tel quel**, et s'y trouve même mieux qu'en CPU (section 4) |
 | **sémantique d'accès** | lecture d'un chunk compressé = la constante ; écrire la constante d'un chunk compressé ne fait rien ; écrire autre chose matérialise, pré-rempli de la constante quittée ; compression des chunks redevenus uniformes ; rechunk par `copy_range` | **se porte** : c'est la définition du conteneur |
 | **machinerie d'exécution** | Dekker asymétrique et `membarrier`, écritures différées par thread, barrière de lecture et dirty bitset, hazard pointers, OMPT, `thread_local`, `fast_allocators` (slabs par rang, arènes `mmap`), listes de réutilisation par thread, adaptateur TBB, registre des secondes valeurs sans verrou | **ne se porte pas**, et est remplacée par le modèle de la section 3 |
 

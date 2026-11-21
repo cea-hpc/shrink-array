@@ -56,6 +56,9 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `ParamChunk::set_decalage_chunk()` is `set_chunk_shift()` (a no-op kept for old call sites, as
+  before); the former name stays, deprecated. Internally ChunkSizePolicy's decalage() is
+  `shift()`, and `print_info_chunk()` prints "chunk shift" instead of "decalage chunk".
 - `shrink_gui` 0.18, "cette machine": the launcher defaults to
   `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` where `systemd-run --user`
   works, so that a run out of memory is killed alone instead of bringing WSL down (a launcher

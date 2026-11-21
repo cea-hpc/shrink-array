@@ -343,8 +343,8 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int iter, Int beg_s, Int end_s
     }
 
     // Smaller than a chunk at every geometry: several threads per chunk.
-    constexpr Int blk  = 64;
-    const Int     nblk = (end_s - beg_s + blk - 1) / blk;
+    constexpr Int blk      = 64;
+    const Int     n_blocks = (end_s - beg_s + blk - 1) / blk;
     // Every other run swaps the constants, so the same chunks go from one
     // constant to the other (and back) across the run.
     const bool swap = ((iter / 5) & 1) != 0;
@@ -354,7 +354,7 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int iter, Int beg_s, Int end_s
         {
             begin_parallel_phase_g();
             team.for_static_chunks<Int>(
-                0, nblk, 1,
+                0, n_blocks, 1,
                 [&](const Int b) __attribute__((always_inline))
                 {
                     const auto lo = static_cast<std::size_t>(beg_s + (b * blk));

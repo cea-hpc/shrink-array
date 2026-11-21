@@ -121,8 +121,8 @@ template <typename V>
 void init(int                              start0,
           int                              end0,
           int                              iter,
-          const std::array<int, iter_max>& array_nba1,
-          const std::array<int, iter_max>& array_nba2,
+          const std::array<int, iter_max>& array_threshold1,
+          const std::array<int, iter_max>& array_threshold2,
           V&                               arr1,
           V&                               arr2,
           V&                               arr3)
@@ -131,11 +131,11 @@ void init(int                              start0,
     for (int i = start0; i < end0; ++i)
     {
         arr1[i] = std::sqrt(double(i));
-        if (i > array_nba1[iter])
+        if (i > array_threshold1[iter])
         {
             arr2[i] = std::cos(double(2 * i));
         }
-        if (i > array_nba2[iter])
+        if (i > array_threshold2[iter])
         {
             arr3[i] = std::sin(arr1[i] + arr2[i]);
         }
@@ -252,8 +252,8 @@ try
 
     std::array<int, iter_max> array_size{};
     std::array<int, iter_max> array_start{};
-    std::array<int, iter_max> array_nba1{};
-    std::array<int, iter_max> array_nba2{};
+    std::array<int, iter_max> array_threshold1{};
+    std::array<int, iter_max> array_threshold2{};
 
     for (int k = 0; k < iter_max; ++k)
     {
@@ -264,8 +264,8 @@ try
         array_start[k]   = start0;
 
         std::uniform_int_distribution uni1(start0, end0);
-        array_nba1[k] = uni1(rng);
-        array_nba2[k] = uni1(rng);
+        array_threshold1[k] = uni1(rng);
+        array_threshold2[k] = uni1(rng);
     }
 
     end             = std::chrono::steady_clock::now();
@@ -351,8 +351,8 @@ try
             {
                 // To simulate behavior of a code where we read more than we write
 
-                init(start0, end0, k, array_nba1, array_nba2, arr1, arr2, arr3);
-                init(start0, end0, k, array_nba1, array_nba2, array_chunk1, array_chunk2, array_chunk3);
+                init(start0, end0, k, array_threshold1, array_threshold2, arr1, arr2, arr3);
+                init(start0, end0, k, array_threshold1, array_threshold2, array_chunk1, array_chunk2, array_chunk3);
 
                 for (int p = 0; p < 5; ++p)
                 {

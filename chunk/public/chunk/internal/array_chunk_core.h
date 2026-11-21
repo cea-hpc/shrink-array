@@ -265,7 +265,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      *
      * @details Shared by all containers that derive from ArrayChunkBase
      *          (zero::Array, zero_or_value::Array, zero_any::Array). Geometry use-sites go
-     *          through size_policy_.decalage()/modulo()/size().
+     *          through size_policy_.shift()/modulo()/size().
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 

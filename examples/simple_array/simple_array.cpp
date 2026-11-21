@@ -242,8 +242,8 @@ int main()
 
     std::array<int, iter_max> array_size{};
     std::array<int, iter_max> array_start{};
-    std::array<int, iter_max> array_nba1{};
-    std::array<int, iter_max> array_nba2{};
+    std::array<int, iter_max> array_threshold1{};
+    std::array<int, iter_max> array_threshold2{};
 
     for (int k = 0; k < iter_max; ++k)
     {
@@ -254,8 +254,8 @@ int main()
         array_start[k]   = start0;
 
         std::uniform_int_distribution uni1(start0, end0);
-        array_nba1[k] = uni1(rng);
-        array_nba2[k] = uni1(rng);
+        array_threshold1[k] = uni1(rng);
+        array_threshold2[k] = uni1(rng);
     }
 
     end             = std::chrono::steady_clock::now();
@@ -308,11 +308,11 @@ int main()
                 for (int i = start0; i < end0; ++i)
                 {
                     arr1[i] = std::sqrt(static_cast<double>(i));
-                    if (i > array_nba1[k])
+                    if (i > array_threshold1[k])
                     {
                         arr2[i] = std::cos(double(2 * i));
                     }
-                    if (i > array_nba2[k])
+                    if (i > array_threshold2[k])
                     {
                         arr3[i] = std::sin(arr1[i] + arr2[i]);
                     }

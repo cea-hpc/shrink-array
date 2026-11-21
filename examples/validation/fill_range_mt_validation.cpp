@@ -153,8 +153,8 @@ static int run_validation(long count, int rounds)
     std::vector   ref(static_cast<std::size_t>(count), 0.0);
     std::vector   src(static_cast<std::size_t>(count), 0.0); // copy rounds
     Array<double> src_arr(count);                            // transform rounds: a chunked source
-    const long    nblk = (count + blk - 1) / blk;
-    long          bad  = 0;
+    const long    n_blocks = (count + blk - 1) / blk;
+    long          bad      = 0;
 
     for (int r = 0; r < rounds && bad == 0; ++r)
     {
@@ -186,7 +186,7 @@ static int run_validation(long count, int rounds)
         {
             begin_phase();
 #pragma omp for schedule(static, 1) nowait
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 if (!is_fill(b))
                 {
@@ -210,7 +210,7 @@ static int run_validation(long count, int rounds)
                 }
             }
 #pragma omp for schedule(static, 1) nowait
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 if (is_fill(b))
                 {
@@ -226,7 +226,7 @@ static int run_validation(long count, int rounds)
         }
         end_phase();
 
-        for (long b = 0; b < nblk; ++b)
+        for (long b = 0; b < n_blocks; ++b)
         {
             const long lo = b * blk;
             const long hi = lo + blk < count ? lo + blk : count;
@@ -348,12 +348,12 @@ constexpr long perf_blk = 32;
 static void run_perf(long count)
 {
     Array<double>       arr(count);
-    const long          nblk = (count + perf_blk - 1) / perf_blk;
-    const auto          now  = [] { return std::chrono::steady_clock::now(); };
-    double              t_el = 0;
-    double              t_mt = 0;
-    double              t_ce = 0; // copy: element loop
-    double              t_cm = 0; // copy: copy_range_mt
+    const long          n_blocks = (count + perf_blk - 1) / perf_blk;
+    const auto          now      = [] { return std::chrono::steady_clock::now(); };
+    double              t_el     = 0;
+    double              t_mt     = 0;
+    double              t_ce     = 0; // copy: element loop
+    double              t_cm     = 0; // copy: copy_range_mt
     std::vector<double> src(static_cast<std::size_t>(count));
     for (int rep = 0; rep < 6; ++rep)
     {
@@ -365,7 +365,7 @@ static void run_perf(long count)
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 const long   lo       = b * perf_blk;
                 const long   hi       = lo + perf_blk < count ? lo + perf_blk : count;
@@ -382,7 +382,7 @@ static void run_perf(long count)
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 const long lo = b * perf_blk;
                 const long hi = lo + perf_blk < count ? lo + perf_blk : count;
@@ -401,7 +401,7 @@ static void run_perf(long count)
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 const long lo = b * perf_blk;
                 const long hi = lo + perf_blk < count ? lo + perf_blk : count;
@@ -417,7 +417,7 @@ static void run_perf(long count)
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 const long lo = b * perf_blk;
                 const long hi = lo + perf_blk < count ? lo + perf_blk : count;

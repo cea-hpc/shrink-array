@@ -64,8 +64,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                          Int                     iter,
                          Int                     start0,
                          Int                     end0,
-                         const std::vector<Int>& array_nba1,
-                         const std::vector<Int>& array_nba2,
+                         const std::vector<Int>& array_threshold1,
+                         const std::vector<Int>& array_threshold2,
                          double&                 val_sum_out,
                          long&                   long_val_sum_out,
                          double&                 v_real_out,
@@ -309,7 +309,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                         array_complex[i] = ComplexDouble(std::sqrt(double(i + 1)), std::sqrt(double(i - 1)));
 
-                        if (i > array_nba1[iter])
+                        if (i > array_threshold1[iter])
                         {
                             arr2[i]       = std::cos(double(2 * i));
                             array_char[i] = static_cast<unsigned char>(
@@ -318,7 +318,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                                 exponential_correlation(i, sz, std::numeric_limits<short>::max(), 2));
                         }
 
-                        if (i > array_nba2[iter])
+                        if (i > array_threshold2[iter])
                         {
                             arr3[i] = std::sin(arr1[i] + arr2[i]);
                             arr4[i] *= arr5[i] + 1;
