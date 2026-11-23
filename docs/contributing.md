@@ -53,7 +53,7 @@ What to run, depending on what the change touches:
 | re-chunk, dynamic geometry | `rechunk_validation`, `dyn_geometry_validation`, the benchmark with `--force_rechunk <size> --force_rechunk_toggle` |
 | range operations | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_or_value_validation`, `range_counters_validation` |
 | thread ranks, regions | `thread_growth_validation`, `nested_region_validation` |
-| container interface | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
+| container interface | `iterator_validation`, `swap_move_validation`, `differential_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
 | documentation | `check_docs` |
 
 The source checks run with the others (`ctest -R check_`):

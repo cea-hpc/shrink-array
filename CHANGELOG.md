@@ -58,6 +58,15 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- differential_validation, a harness that draws its operations: random sequences of container
+  operations (writes, compound operations, `resize`, `push_back`, `assign`, `swap`, copies and
+  moves, `compress`, `shrink_to_fit`, the range operations, `alloc_chunk`, export / import,
+  parallel phases, `rechunk_to` at dyn) applied to an array and to a `std::vector`, the two read
+  back in full after each. A difference prints the seed and the last operations. In the grouped
+  executables, static and dyn, at 1 and 8 threads.
+
 ### Fixed
 
 - `swap()` between two arrays of different chunk sizes (a run-time geometry build, one of them

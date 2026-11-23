@@ -53,7 +53,7 @@ Que lancer, selon ce que touche la modification :
 | rechunk, géométrie dynamique | `rechunk_validation`, `dyn_geometry_validation`, le banc avec `--force_rechunk <taille> --force_rechunk_toggle` |
 | opérations sur des plages | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_or_value_validation`, `range_counters_validation` |
 | rangs des threads, régions | `thread_growth_validation`, `nested_region_validation` |
-| interface du conteneur | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
+| interface du conteneur | `iterator_validation`, `swap_move_validation`, `differential_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
 | documentation | `check_docs` |
 
 Les vérifications des sources tournent avec les autres (`ctest -R check_`) :

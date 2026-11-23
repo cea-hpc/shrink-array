@@ -102,6 +102,15 @@
 #                           resize's release) and zero_any's operator== equal a
 #                           std::vector's, with the phase bracketed; inside a
 #                           region they stay on the calling thread.
+#   differential_validation random sequences of container operations on an
+#                           array and on a std::vector, the two read back
+#                           in full after every operation (40 seeds of 120
+#                           operations; double, int, bool): writes, compound
+#                           operations, sizes, swap, copies and moves,
+#                           compression, range operations, alloc_chunk,
+#                           export / import, parallel phases, rechunk_to at
+#                           dyn. A difference prints the seed and the last
+#                           operations.
 #   alloc_chunk_validation  alloc_chunk() then the raw reference, operator()(i):
 #                           a preallocated chunk is materialised and holds
 #                           what it held (T{}, the second value it was
@@ -297,9 +306,10 @@ set(_rt_harnesses       compress_roundtrip_validation pool_accounting_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         fill_range_constant_validation copy_range_constant_validation
                         constant_switch_validation shrink_to_fit_validation chunk_exchange_validation
-                        signed_zero_validation no_init_release_validation nan_check_validation alloc_chunk_validation)
+                        signed_zero_validation no_init_release_validation nan_check_validation alloc_chunk_validation
+                        differential_validation)
 set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation
-                        alloc_chunk_validation swap_move_validation)
+                        alloc_chunk_validation swap_move_validation differential_validation)
 
 # Compile definitions of a variant at a geometry.
 function(validation_variant_defs tgt vmacro geom)
