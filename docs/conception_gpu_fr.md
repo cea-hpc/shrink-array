@@ -644,6 +644,25 @@ Ce que la grosse carte montre, et que le portable cachait derrière ses 170 Go/s
   latence d'une matérialisation plus que les compteurs ; le chemin aligné reste la réponse de
   la façade.
 
+**Profil Nsight Compute sur le GH200** (S = 256, 1 Gio, nvcc 12.4) :
+
+| kernel | registres, occupation (théorique / atteinte) | débit HBM | attente principale |
+|---|---|---|---|
+| `write_ramp<Flat>` | 32, 100 % / 82 % | 90 % | file mémoire pleine (limité par la bande passante) |
+| `write_ramp<View>`, chunks matérialisés | 38, 75 % / 66 % | 46 % | long scoreboard 69 % (attente de la lecture du descripteur) |
+| `write_ramp<View>`, première écriture (matérialise) | 38, 75 % / 74 % | 7 % | barrière mémoire 46 %, puis long scoreboard 31 % ; 26 threads actifs par warp |
+
+- L'écriture dans un chunk matérialisé est limitée par la latence de la lecture de son
+  descripteur (une seule en vol par warp), l'occupation limitée par les registres venant en
+  second. Les quatre lectures d'avance (1,2×) traitent la première cause. Les boucles de la
+  façade liront leurs descripteurs par lots, et `assign()` lui-même ne sera pas réglé
+  davantage.
+- La première écriture attend les barrières du pré-remplissage (un `__threadfence` par lane).
+  La publication passe maintenant par un seul CAS (échange) release du lane qui publie, après
+  la barrière de warp ou de bloc (`PROTO_PUBLISH=1`, le défaut ; `0` garde une barrière par
+  lane, pour comparer). L'essai précédent, avec une barrière par le leader, avait été mesuré
+  avec le coup d'œil à la pile libre et annulé avec lui : c'est sa première mesure seule.
+
 ## 14. Risques et questions ouvertes
 
 - **La lecture à plus de 1,5×** : si la latence de l'indirection n'est pas masquée sur un

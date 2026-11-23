@@ -616,6 +616,24 @@ What the large GPU shows, and the laptop hid behind its 170 GB/s:
 - The first write by `assign()` stays at 15x to 22x: its cost is the latency chain of a
   materialisation more than the counters; the chunk-aligned path stays the facade's answer.
 
+**Nsight Compute profile on the GH200** (S = 256, 1 GiB, nvcc 12.4):
+
+| kernel | registers, occupancy (theoretical / achieved) | DRAM throughput | main stall |
+|---|---|---|---|
+| `write_ramp<Flat>` | 32, 100% / 82% | 90% | LG queue full (bandwidth-bound) |
+| `write_ramp<View>`, materialised chunks | 38, 75% / 66% | 46% | long scoreboard 69% (waits for the descriptor load) |
+| `write_ramp<View>`, first write (materialises) | 38, 75% / 74% | 7% | memory barrier 46%, then long scoreboard 31%; 26 active threads per warp |
+
+- The write into a materialised chunk is latency-bound on its descriptor load (one in flight
+  per warp), with the register-limited occupancy second: four loads ahead (1.2x) address the
+  first; the facade's loops will batch their descriptor loads, and `assign()` itself is not
+  tuned further.
+- The first write waits on the pre-fill's fences (one `__threadfence` per lane). The
+  publication now uses one release CAS (exchange) by the publishing lane after the warp or
+  block barrier (`PROTO_PUBLISH=1`, the default; `0` keeps the fence per lane, to compare).
+  The earlier leader-fence attempt was measured together with the free-stack look and
+  reverted with it, so this is its first measurement alone.
+
 ## 14. Risks and open questions
 
 - **Reads beyond 1.5×**: if the latency of the indirection is not hidden on a kernel that is

@@ -136,6 +136,50 @@ __device__ inline P* exchange_ptr(P** slot, P* desired) noexcept
     return reinterpret_cast<P*>(atomicExch(s, reinterpret_cast<unsigned long long>(desired)));
 }
 
+/// @brief cas_ptr with release semantics, device scope: the stores that happen before it
+///        (this thread's, and those of the threads that met it at a warp or block barrier
+///        just before, by cumulativity) are visible to whoever reads the new value with
+///        acquire. One release by the publishing lane instead of a fence by every lane.
+template <typename P>
+__device__ inline P* cas_ptr_release(P** slot, P* expected, P* desired) noexcept
+{
+#if defined(__HIP_PLATFORM_AMD__)
+    __hip_atomic_compare_exchange_strong(slot, &expected, desired, __ATOMIC_RELEASE, __ATOMIC_RELAXED,
+                                         __HIP_MEMORY_SCOPE_AGENT);
+    return expected;
+#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+    unsigned long long old;
+    asm volatile("atom.release.gpu.global.cas.b64 %0, [%1], %2, %3;"
+                 : "=l"(old)
+                 : "l"(slot), "l"(reinterpret_cast<unsigned long long>(expected)),
+                   "l"(reinterpret_cast<unsigned long long>(desired))
+                 : "memory");
+    return reinterpret_cast<P*>(old);
+#else
+    __threadfence();
+    return cas_ptr(slot, expected, desired);
+#endif
+}
+
+/// @brief exchange_ptr with release semantics, device scope (see cas_ptr_release).
+template <typename P>
+__device__ inline P* exchange_ptr_release(P** slot, P* desired) noexcept
+{
+#if defined(__HIP_PLATFORM_AMD__)
+    return __hip_atomic_exchange(slot, desired, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_AGENT);
+#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+    unsigned long long old;
+    asm volatile("atom.release.gpu.global.exch.b64 %0, [%1], %2;"
+                 : "=l"(old)
+                 : "l"(slot), "l"(reinterpret_cast<unsigned long long>(desired))
+                 : "memory");
+    return reinterpret_cast<P*>(old);
+#else
+    __threadfence();
+    return exchange_ptr(slot, desired);
+#endif
+}
+
 /// @brief Relaxed device-scope load of a pointer slot (no tearing, no caching across the kernel).
 template <typename P>
 __device__ inline P* load_ptr(P* const* slot) noexcept

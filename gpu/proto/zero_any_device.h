@@ -159,6 +159,17 @@ struct ArenaCounters
 #endif
 inline constexpr int n_shards = PROTO_SHARDS;
 
+#ifndef PROTO_PUBLISH
+    #define PROTO_PUBLISH 1
+#endif
+/// @brief How a materialisation orders its pre-fill before its publication. 0: every lane
+///        fences its own stores (__threadfence), then the warp (block) barrier, then a
+///        relaxed CAS. 1: the barrier, then one release CAS (exchange) by the publishing
+///        lane, cumulative over the stores of the lanes that met it at the barrier. A GH200
+///        profile of the first write showed 46% of the warps' stall cycles on memory
+///        barriers with 0.
+inline constexpr int publish_mode = PROTO_PUBLISH;
+
 
 /// @brief One shard's counters, alone on a 128-byte line.
 struct alignas(128) Shard
@@ -273,6 +284,7 @@ struct View
     __device__ T*   materialise_claim(long nc, ChunkDesc<T>& d) const noexcept;
     __device__ void prefill(T* buf, T c, LaneMask group, int leader, int lane) const noexcept;
     __device__ T*   take_spare() const noexcept;
+    __device__ T*   publish_cas(ChunkDesc<T>& d, T* mine) const noexcept;
     __device__ void append(long i, T v) const noexcept;
 };
 
@@ -374,10 +386,9 @@ __device__ void View<T, S>::park(T* lost) const noexcept
     }
 }
 
-/// @brief Step 3 of 6.2: the lanes of @p group fill @p buf with @p c, coalesced, then make
-///        it visible device-wide before the publication (every lane fences its own stores,
-///        concurrently: a fence by the leader alone after the warp barrier measured slower
-///        on the GH200, the fences then running one after the other).
+/// @brief Step 3 of 6.2: the lanes of @p group fill @p buf with @p c, coalesced, and meet
+///        at the warp barrier; the ordering before the publication is publish_mode's (a
+///        fence per lane, or the publisher's release CAS).
 template <typename T, int S>
 __device__ void View<T, S>::prefill(T* buf, T c, LaneMask group, int leader, int lane) const noexcept
 {
@@ -388,8 +399,25 @@ __device__ void View<T, S>::prefill(T* buf, T c, LaneMask group, int leader, int
     {
         buf[k] = c;
     }
-    fence_device();
+    if constexpr (publish_mode == 0)
+    {
+        fence_device();
+    }
     sync_lanes(group);
+}
+
+/// @brief The publication CAS of a pre-filled buffer (6.2 step 4), after prefill().
+template <typename T, int S>
+__device__ T* View<T, S>::publish_cas(ChunkDesc<T>& d, T* mine) const noexcept
+{
+    if constexpr (publish_mode == 0)
+    {
+        return cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
+    }
+    else
+    {
+        return cas_ptr_release(&d.buf, static_cast<T*>(nullptr), mine);
+    }
 }
 
 /// @brief The buffer parked in this warp's spare slot, if any.
@@ -459,7 +487,14 @@ __device__ T* View<T, S>::materialise_claim(long nc, ChunkDesc<T>& d) const noex
         prefill(mine, d.constant, group, leader, lane);
         if (lane == leader)
         {
-            exchange_ptr(&d.buf, mine); // after prefill()'s fence: a release store
+            if constexpr (publish_mode == 0)
+            {
+                exchange_ptr(&d.buf, mine); // after prefill()'s fences: a release store
+            }
+            else
+            {
+                exchange_ptr_release(&d.buf, mine);
+            }
             fetch_add(&counters->materialise, 1ULL);
         }
     }
@@ -563,7 +598,7 @@ __device__ T* View<T, S>::materialise_race(long nc, ChunkDesc<T>& d) const noexc
         prefill(mine, d.constant, group, leader, lane);
         if (lane == leader)
         {
-            T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
+            T* found = publish_cas(d, mine);
             if (found == nullptr)
             {
                 winner = mine;
@@ -713,11 +748,14 @@ __device__ void View<T, S>::block_write(long c, long lo, long hi, const F& f) co
     {
         mine[t + j * BLOCK] = vals[j];
     }
-    fence_device();
+    if constexpr (publish_mode == 0)
+    {
+        fence_device();
+    }
     __syncthreads();
     if (t == 0)
     {
-        T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
+        T* found = publish_cas(d, mine);
         if (found == nullptr)
         {
             fetch_add(&counters->materialise, 1ULL);
