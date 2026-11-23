@@ -905,7 +905,7 @@ __global__ void count_materialised(const ChunkDesc<T>* desc, long n_chunks, unsi
  *        that each chunk has one writer and one vote. f: `T operator()(long) const`.
  */
 template <int BLOCK, typename T, int S, typename F>
-__global__ void __launch_bounds__(BLOCK, SA_THREADS_PER_SM / BLOCK) for_each_chunk(View<T, S> v, long lo, long hi, F f)
+__global__ void __launch_bounds__(BLOCK) for_each_chunk(View<T, S> v, long lo, long hi, F f)
 {
     const long first = lo / S;
     const long last  = (hi + S - 1) / S;

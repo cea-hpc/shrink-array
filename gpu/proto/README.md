@@ -104,12 +104,14 @@ What the large GPU shows, and the laptop hid behind its 170 GB/s:
   paths and the folds at S = 1024 (83% -> 67%) got slower. Not the buffers' placement: a home
   shard per run of 1, 64 or 1024 chunks measured the same (and runs of 64 concentrated the
   allocations on one 16-buffer shard: 9x more lost CAS, a roomy arena exhausted; dropped).
-  **Registers**: the slow path, inlined into `assign()`, took the write kernel from 32 to 38
-  registers, 64 -> 48 resident warps per SM, a quarter fewer descriptor loads in flight for a
-  latency-bound path: 64/48 = 1.33, the ratio measured. Out of line (`__noinline__`) is worse
-  (46 registers, the call convention); the write kernels now declare
-  `__launch_bounds__(block, SA_THREADS_PER_SM / block)`, which keeps them at 32 registers and
-  spills in the cold path. The facade's kernels will do the same.
+  Nor the register count: the inlined slow path took the write kernel from 32 to 38
+  registers (48 resident warps per SM instead of 64), but forcing 32 registers with
+  `__launch_bounds__(256, 8)` gave 1.92x, and the 4-loads-ahead kernel, which then spilled
+  its pointers, went from 1.24x to 2.46x; reverted. The 1.5x to 1.9x of `assign()` into a
+  materialised chunk moves with unrelated code changes (1.75x at S = 1024 on the first run);
+  an Nsight Compute profile of the write kernel (occupancy, stall reasons) is the next step
+  instead of more guesses. What is robust: four descriptor loads ahead per thread give 1.2x,
+  and the facade's loops will be written that way.
 - The first write by `assign()` stays at 15x to 22x: its cost is the latency chain of a
   materialisation more than the counters; the chunk-aligned path stays the facade's answer.
 

@@ -631,14 +631,15 @@ Ce que la grosse carte montre, et que le portable cachait derrière ses 170 Go/s
   n'est pas la place des tampons : un shard d'origine par série de 1, 64 ou 1024 chunks a donné
   les mêmes mesures. Les séries de 64 concentraient de plus les allocations sur un shard de
   16 tampons : 9 fois plus de CAS perdus, et une arène pourtant large épuisée. Option
-  abandonnée. **Les registres** : le chemin lent, compilé en ligne dans `assign()`, faisait
-  passer le kernel d'écriture de 32 à 38 registres, donc de 64 à 48 warps résidents par SM.
-  Cela fait un quart de lectures de descripteur en vol en moins pour un chemin limité par la
-  latence : 64/48 = 1,33, le rapport mesuré. Sortir le chemin lent (`__noinline__`) est pire
-  (46 registres, à cause de la convention d'appel). Les kernels d'écriture déclarent
-  maintenant `__launch_bounds__(bloc, SA_THREADS_PER_SM / bloc)`, ce qui les garde à
-  32 registres et fait déborder le chemin froid en mémoire. Les kernels de la façade feront de
-  même.
+  abandonnée. Ce n'est pas non plus le nombre de registres. Le chemin lent, compilé en ligne,
+  faisait bien passer le kernel d'écriture de 32 à 38 registres (48 warps résidents par SM au
+  lieu de 64). Mais imposer 32 registres avec `__launch_bounds__(256, 8)` a donné 1,92×, et le
+  kernel à quatre lectures d'avance, qui débordait alors ses pointeurs en mémoire, est passé
+  de 1,24× à 2,46× ; annulé. Le 1,5× à 1,9× d'`assign()` dans un chunk matérialisé bouge avec
+  des changements de code sans rapport (1,75× à S = 1024 au premier passage). Plutôt que
+  d'autres suppositions, l'étape suivante est un profil Nsight Compute du kernel d'écriture
+  (occupation, raisons d'attente). Ce qui est solide : quatre lectures de descripteur d'avance
+  par thread donnent 1,2×, et les boucles de la façade seront écrites ainsi.
 - La première écriture via `assign()` reste entre 15× et 22× : son coût est la chaîne de
   latence d'une matérialisation plus que les compteurs ; le chemin aligné reste la réponse de
   la façade.
