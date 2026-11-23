@@ -231,15 +231,16 @@ int second_value_zero()
 int run_child(int which)
 {
     Arr<int> arr(1024);
-    arr[5]            = 7;
-    volatile int zero = 0; // not a constant the compiler could see
+    arr[5]              = 7;
+    volatile int hidden = 0;      // not a constant the compiler could see
+    const int    zero   = hidden; // read once: the operand is a plain int, not a volatile one
     if (which == 0)
     {
-        arr[5] /= static_cast<int>(zero);
+        arr[5] /= zero;
     }
     else
     {
-        arr[5] %= static_cast<int>(zero);
+        arr[5] %= zero;
     }
     println("value {}", static_cast<int>(std::as_const(arr)[5]));
     return 0;

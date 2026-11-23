@@ -150,7 +150,7 @@ int check_past_int_max()
         big[pos[k]] = value_at(k);
     }
 
-    const auto verify = [&](const char* step, auto expected) -> int
+    const auto verify = [&](const char* step, auto expected)
     {
         int         nbad = 0;
         const auto& cbig = std::as_const(big);
@@ -259,7 +259,7 @@ int check_int_top_rechunk()
             top[pos[k]] = value_at(k);
         }
 
-        const auto verify = [&](const char* step, unsigned want_size) -> int
+        const auto verify = [&](const char* step, unsigned want_size)
         {
             int         nbad = 0;
             const auto& ctop = std::as_const(top);
