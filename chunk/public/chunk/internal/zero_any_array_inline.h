@@ -825,7 +825,7 @@ std::size_t zero_any::ArrayImpl<Derived>::reclaim_second_values()
             Gvh::refused_degraded.fetch_add(1, std::memory_order_relaxed);
             // Sticky until the last array of the type goes: say it once, the
             // run will otherwise end on the identifier exhaustion with no cause.
-            static std::atomic warned{false};
+            static std::atomic warned{false}; // NOSONAR(cpp:S6004): a static stays out of the if
             if (!warned.exchange(true, std::memory_order_relaxed))
             {
                 CHUNK_LOG(warn, compress,

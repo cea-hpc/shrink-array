@@ -1674,7 +1674,7 @@ zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_
     const bool discover = (same_value(second_value, first_value) && !same_value(new_value, first_value));
     const bool leave    = (!same_value(second_value, first_value) && same_value(old_value, second_value) &&
                            !same_value(new_value, second_value));
-    if (!discover && !leave)
+    if (!discover && !leave) // NOSONAR(cpp:S6004): leave reads as the pair of discover
     {
         return false;
     }

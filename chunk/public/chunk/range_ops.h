@@ -618,7 +618,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             chunk.clear_st(thr, count);
         } && requires(ChunkType& chunk) { chunk.clear_st(); };
 
-        if constexpr (can_release)
+        if constexpr (can_release) // NOSONAR(cpp:S6004): the named requires-expression documents the test
         {
             if (whole && value_is_first)
             {
@@ -693,9 +693,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // so none is made -- whole chunk or part of one. Not while an op is
             // pending: an older op would replay over the fill, the proxy's own
             // condition.
-            const bool at_value =
-                value_is_first ? ch.is_first_value() : internal::at_second_constant(arr, ch, idx2, value);
-            if (at_value && !ch.pending_any())
+            if (const bool at_value =
+                    value_is_first ? ch.is_first_value() : internal::at_second_constant(arr, ch, idx2, value);
+                at_value && !ch.pending_any())
             {
                 continue;
             }

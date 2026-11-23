@@ -123,8 +123,7 @@ template <typename T>
     {
         return fallback;
     }
-    T value{};
-    if (parse_number(env, value))
+    if (T value{}; parse_number(env, value))
     {
         return value;
     }
@@ -139,8 +138,7 @@ template <typename T>
 template <typename T>
 [[nodiscard]] inline T arg_number(const char* text, T fallback, const char* what) noexcept
 {
-    T value{};
-    if (parse_number(text, value))
+    if (T value{}; parse_number(text, value))
     {
         return value;
     }

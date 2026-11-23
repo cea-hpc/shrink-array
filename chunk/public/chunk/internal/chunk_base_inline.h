@@ -1251,8 +1251,7 @@ template <bool Relaxed>
         }
         if (Derived::is_motif_ptr(vals)) [[unlikely]]
         {
-            T off{};
-            if (derived().motif_offset(vals, offset_slot, off)) [[likely]]
+            if (T off{}; derived().motif_offset(vals, offset_slot, off)) [[likely]]
             {
                 return Derived::motif_value(vals, offset, off);
             }

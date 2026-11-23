@@ -1430,8 +1430,7 @@ template <typename Derived, typename T, typename ChunkT>
         // the chunk still points at that motif; else the chunk as it is now (F5).
         if (ChunkT::is_motif_ptr(vals)) [[unlikely]]
         {
-            T off{};
-            if (chunk_.motif_offset(vals, derived().motif_offset_slot(), off)) [[likely]]
+            if (T off{}; chunk_.motif_offset(vals, derived().motif_offset_slot(), off)) [[likely]]
             {
                 return ChunkT::motif_value(vals, elem_offset_, off);
             }
