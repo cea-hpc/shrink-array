@@ -85,8 +85,10 @@ inline constexpr bool is_element_ref<ElementRef<P, T>> = true;
 /// @brief The operand an ElementRef hands to its proxy: the other side's proxy
 ///        when it is an ElementRef too (so proxy-to-proxy operations keep their
 ///        own semantics), the operand itself otherwise.
+/// @note constexpr already implies inline; CHUNK_FORCE_INLINE's `inline` comes with
+///       its always_inline attribute (internal/def_force_inline.h).
 template <typename U>
-CHUNK_FORCE_INLINE constexpr decltype(auto) unwrap(U&& operand) noexcept
+CHUNK_FORCE_INLINE constexpr decltype(auto) unwrap(U&& operand) noexcept // NOSONAR(cpp:S5408)
 {
     if constexpr (is_element_ref<std::remove_cvref_t<U>>)
     {

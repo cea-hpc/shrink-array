@@ -244,14 +244,14 @@ class alignas(64) TCSlab
      *        the size, is capped to fit the index width.
      * @pre #arena_kind is set: the block is taken from that arena here.
      */
-    inline void init(int elem_size, uintptr_t block_bytes);
+    void init(int elem_size, uintptr_t block_bytes);
 
     /**
      * @brief Hand out one element.
      * @return An element with unspecified contents (see the class @warning).
      * @pre The slab is not full -- the caller checks is_full().
      */
-    [[nodiscard]] inline void* alloc() noexcept;
+    [[nodiscard]] void* alloc() noexcept;
 
     /**
      * @brief Take element @p elem back. Its bytes are left as they are, but for
@@ -259,7 +259,7 @@ class alignas(64) TCSlab
      *        the payload.
      * @param elem Index from num_block() / num_block_pow2().
      */
-    inline void free_block(int elem) noexcept;
+    void free_block(int elem) noexcept;
 
     /// @brief Make an emptied slab fresh again: bump index back to the start,
     ///        free list empty. For a slab revived from a pool's reserve.
@@ -422,7 +422,7 @@ class alignas(64) TCSlab
 
     /// @brief Free #array_first_free_ and hand the block back to the arena named
     ///        by #arena_kind.
-    inline void destroy();
+    void destroy();
 
     /**
      * @brief Obtain the block and lay it out.
@@ -432,7 +432,7 @@ class alignas(64) TCSlab
      *          block from the arena and writes `this` into its last word. The
      *          block is not cleared, fresh or recycled: see the class @warning.
      */
-    inline void alloc_block();
+    void alloc_block();
 
     int log2_element_size_ = 0; ///< log2(#element_size), for num_block_pow2().
 
