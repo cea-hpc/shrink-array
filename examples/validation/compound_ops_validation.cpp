@@ -136,7 +136,7 @@ int leave_zero_by_operator()
 {
     constexpr int n_ops = 5;
     Arr<int>      arr(0);
-    const int     chunk_size = static_cast<int>(arr.chunk_size());
+    const auto    chunk_size = static_cast<int>(arr.chunk_size());
     const int     count      = n_ops * chunk_size;
     arr.resize(count);
     std::vector ref(static_cast<std::size_t>(count), 0);

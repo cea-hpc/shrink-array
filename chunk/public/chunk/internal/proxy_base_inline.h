@@ -1463,7 +1463,7 @@ Derived ProxyBase<Derived, T, ChunkT>::operator^=(const U& operand) noexcept
 {
     if (static_cast<bool>(operand))
     {
-        const bool cur = static_cast<bool>(read_pure()); // synchronised read, as operator bool()
+        const auto cur = static_cast<bool>(read_pure()); // synchronised read, as operator bool()
         derived()      = !cur;
     }
     return derived();

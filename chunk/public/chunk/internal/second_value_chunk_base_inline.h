@@ -185,8 +185,8 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int      
 {
     if constexpr (build_config::any_check)
     {
-        const void* chunk_ptr  = static_cast<const void*>(this);
-        const void* values_ptr = static_cast<const void*>(derived().values_load());
+        const auto* chunk_ptr  = static_cast<const void*>(this);
+        const auto* values_ptr = static_cast<const void*>(derived().values_load());
         const int   thr        = get_thr_rank_fast();
 
         // --- 1. Check primary constant (first_value) ---

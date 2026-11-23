@@ -71,7 +71,7 @@ template <typename T>
                                                  std::size_t                            meta_per_block)
 {
     const unsigned sp       = chunk_sz * multiple;
-    const int      nchunks  = static_cast<int>(summary.size());
+    const auto     nchunks  = static_cast<int>(summary.size());
     int            n_blocks = 0;
     int            n_const  = 0;
 

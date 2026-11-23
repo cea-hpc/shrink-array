@@ -660,7 +660,7 @@ ArrayChunkBase<Derived>::operator[](IndexType index) const noexcept
     // Lets the compiler drop bounds/sign checks (0 <= elem_offset <= modulo by construction).
     // modulo() is read into a local first: clang ignores an assumption that
     // calls a function it cannot prove side-effect free (-Wassume).
-    [[maybe_unused]] const int chunk_mod = static_cast<int>(size_policy_.modulo());
+    [[maybe_unused]] const auto chunk_mod = static_cast<int>(size_policy_.modulo());
     CHUNK_ASSUME(chunk_index >= 0);
     CHUNK_ASSUME(elem_offset >= 0 && elem_offset <= chunk_mod);
     const auto& chunk_t = chunk_list_[chunk_index];

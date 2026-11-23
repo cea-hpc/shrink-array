@@ -284,7 +284,7 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_co
             const auto*  vec_tuple_p = elm.second.get();
             if (vec_tuple_p)
             {
-                const int sz_before = static_cast<int>(vec_tuple_p->size());
+                const auto sz_before = static_cast<int>(vec_tuple_p->size());
 
                 if (sz_before > sz_threshold)
                 {

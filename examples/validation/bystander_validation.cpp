@@ -123,7 +123,7 @@ long mismatches(const Arr& arr, long count, F&& expected)
 /// @brief Every element of @p arr set to @p value: half sequentially, half in a region.
 void rewrite(Arr& arr, double value)
 {
-    const long count = static_cast<long>(arr.size());
+    const auto count = static_cast<long>(arr.size());
     for (long i = 0; i < count / 2; ++i)
     {
         arr[static_cast<Index>(i)] = value;
@@ -175,7 +175,7 @@ int run_case(Op op)
     Arr        d;
     Arr        a;
     Arr        b;
-    const long chunk_sz = static_cast<long>(c.chunk_size());
+    const auto chunk_sz = static_cast<long>(c.chunk_size());
     const long count    = n_chunks * chunk_sz;
     for (Arr* arr : {&c, &d, &a, &b})
     {
@@ -287,7 +287,7 @@ const char* queue_name(Queue q)
 long queued_run(Queue q, bool with_temporary)
 {
     Arr        e;
-    const long chunk_sz = static_cast<long>(e.chunk_size());
+    const auto chunk_sz = static_cast<long>(e.chunk_size());
     const long count    = n_chunks * chunk_sz;
     e.resize(static_cast<Index>(count));
     declare(e, v1);

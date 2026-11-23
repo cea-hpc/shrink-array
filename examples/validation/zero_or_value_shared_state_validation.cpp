@@ -112,7 +112,7 @@ int run_copy_assign()
     Arr        c;
     Arr        a;
     Arr        b;
-    const long chunk_sz = static_cast<long>(a.chunk_size());
+    const auto chunk_sz = static_cast<long>(a.chunk_size());
     const long count    = n_chunks * chunk_sz;
     c.resize(static_cast<Index>(count));
     a.resize(static_cast<Index>(count));
@@ -200,7 +200,7 @@ BoolRun bool_run(bool build_other)
     using Index = BoolArr::IndexType;
     BoolRun    out;
     BoolArr    x;
-    const long chunk_sz = static_cast<long>(x.chunk_size());
+    const auto chunk_sz = static_cast<long>(x.chunk_size());
     const long count    = n_chunks * chunk_sz;
     x.resize(static_cast<Index>(count));
 #pragma omp parallel
@@ -328,7 +328,7 @@ OwnerRun owner_run(Gone gone)
 
     OwnerRun   out;
     Arr        c;
-    const long chunk_sz = static_cast<long>(c.chunk_size());
+    const auto chunk_sz = static_cast<long>(c.chunk_size());
     const long count    = n_chunks * chunk_sz;
     c.resize(static_cast<Index>(count));
     c.set_second_value(v1);
@@ -473,7 +473,7 @@ ZeroKeyRun zero_key_run(Redeclare redeclare)
     ZeroKeyRun out;
     DblArr     x;
     DblArr     y;
-    const long chunk_sz = static_cast<long>(x.chunk_size());
+    const auto chunk_sz = static_cast<long>(x.chunk_size());
     const long count    = n_chunks * chunk_sz;
     x.resize(static_cast<Index>(count));
     y.resize(static_cast<Index>(count));
