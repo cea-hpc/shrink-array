@@ -111,6 +111,18 @@
 #                           export / import, parallel phases, rechunk_to at
 #                           dyn. A difference prints the seed and the last
 #                           operations.
+#   transform_ranges_validation transform_ranges_mt(), dst[i] = op(a[i], b[i],
+#                           ...) by chunks: sources on a pattern by whole
+#                           chunks (T{}, a constant, data) shifted from one
+#                           to the next, so that a target chunk meets every
+#                           combination; from a team, on slices cut inside
+#                           chunks. Two chunked sources, onto a new target
+#                           and onto data; the chunks whose sources both
+#                           read T{} stay without a buffer; three sources
+#                           of two element types and a std::vector; a bool
+#                           source and a std::vector target (element path);
+#                           empty, clamped and one-chunk ranges; at dyn, a
+#                           source of another chunk size.
 #   alloc_chunk_validation  alloc_chunk() then the raw reference, operator()(i):
 #                           a preallocated chunk is materialised and holds
 #                           what it held (T{}, the second value it was
@@ -285,9 +297,10 @@ set(_rt_harnesses       compress_roundtrip_validation pool_accounting_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         shrink_to_fit_validation chunk_exchange_validation signed_zero_validation
                         no_init_release_validation nan_check_validation alloc_chunk_validation
-                        differential_validation)
+                        differential_validation transform_ranges_validation)
 set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation
-                        alloc_chunk_validation swap_move_validation differential_validation)
+                        alloc_chunk_validation swap_move_validation differential_validation
+                        transform_ranges_validation)
 
 # Compile definitions of a variant at a geometry.
 function(validation_variant_defs tgt vmacro geom)

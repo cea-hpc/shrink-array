@@ -616,6 +616,20 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     template <typename OutIt>
     OutIt read_range(IndexType first, IndexType last, OutIt out) const;
+
+    /**
+     * @brief read_range() into a T*, unless [@p first, @p last) lies in one
+     *        chunk that is compressed: then nothing is copied and
+     *        @p constant receives what every element of the range reads.
+     * @details What transform_ranges_mt() reads its sources with: a
+     *          compressed chunk costs one test, and the caller can keep the
+     *          result compressed too. A range over several chunks is always
+     *          copied, each block straight into @p out.
+     * @pre  0 <= @p first < @p last <= size(); read_range()'s otherwise.
+     * @return true when @p constant was set (and @p out left untouched),
+     *         false when @p out holds the last - first elements.
+     */
+    bool read_range_or_constant(IndexType first, IndexType last, T* out, T& constant) const;
     /** @} */
 
     /**

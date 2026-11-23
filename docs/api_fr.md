@@ -129,6 +129,7 @@ les variantes et tous les builds, différé ou non : un élément `int` `*= 1.5`
 | `fill_range_mt(a, first, last, v)` | appelable par plusieurs threads à la fois, sur des plages disjointes (un chunk peut être partagé) |
 | `copy_range_mt(a, first, last, src_first)` | `copy_range`, appelable comme `fill_range_mt` |
 | `transform_range_mt(a, first, last, src_first, op)` | l'élément `i` reçoit `op(*(src_first + (i - first)))`, appelable comme `fill_range_mt` ; `op` ne doit pas toucher `a` |
+| `transform_ranges_mt(a, first, last, op, b, c, ...)` | l'élément `i` reçoit `op(b[i], c[i], ...)`, calculé chunk par chunk : les sources (tableaux compressés ou conteneurs contigus) sont lues par blocs, `op` tourne dans une boucle que le compilateur peut vectoriser, et un intervalle où toutes les sources sont compressées reçoit un seul résultat, sans tampon ; appelable comme `fill_range_mt`. Aucune source ne doit être `a`, ni être écrite pendant l'appel |
 | `for_each_value(a, first, last, f)` | lecture : `f(v)` sur chaque élément, une section de lecture par bloc |
 | `for_each_span(a, first, last, f)` | lecture : `f(std::span<const T>)` par bloc (une boucle vectorisable) ; un chunk compressé en `f(v, count)` quand `f` l'accepte. Un `std::vector` est un seul span |
 | `read_range(a, first, last, out)` | lecture : `[first, last)` copié vers `out` |

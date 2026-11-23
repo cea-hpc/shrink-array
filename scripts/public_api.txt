@@ -41,7 +41,7 @@ BitArray
 Bit
 
 [chunk/range_ops.h]
-fill_range copy_range fill_range_mt copy_range_mt transform_range_mt
+fill_range copy_range fill_range_mt copy_range_mt transform_range_mt transform_ranges_mt
 for_each_value for_each_span read_range
 
 [chunk/vector_range_ops.h]

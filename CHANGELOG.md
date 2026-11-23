@@ -56,6 +56,18 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `transform_ranges_mt(dst, first, last, op, a, b, ...)` (`chunk/range_ops.h`): `dst[i] = op(a[i], b[i], ...)`
+  computed chunk by chunk. The sources -- chunked arrays of any variant, chunk size and element
+  type, or contiguous containers -- are read by blocks, `op` runs in a plain loop over contiguous
+  values, and each chunk span is stored with one write session; where every source is compressed
+  on the span, `op` is called once and the span is filled with its result, so that the target
+  chunk is not materialised. Callable from several threads on their own indices. A loop over two
+  arrays written element by element, `c[i] = a[i] + k * b[i]`, costs 13 to 23 times a
+  `std::vector`'s on the development machine (2 cores, GCC 13, `zero_any`, 2^25 doubles); through
+  `transform_ranges_mt` 1.7 times on dense data, and a fifth to a quarter of the vector's time
+  when nine chunks in ten are compressed. A source that is also the target is not supported.
+  Behind it, `read_range_or_constant()`, the bulk read that reports a compressed chunk instead of
+  copying it. New harness transform_ranges_validation.
 - differential_validation, a harness that draws its operations: random sequences of container
   operations (writes, compound operations, `resize`, `push_back`, `assign`, `swap`, copies and
   moves, `compress`, `shrink_to_fit`, the range operations, `alloc_chunk`, export / import,
