@@ -591,7 +591,33 @@ endif ()
 set(CHUNK_USE_MOLD "AUTO" CACHE STRING "Link with mold: AUTO, ON, OFF")
 set_property(CACHE CHUNK_USE_MOLD PROPERTY STRINGS AUTO ON OFF)
 
-if(NOT CHUNK_USE_MOLD STREQUAL "OFF")
+# LTO (CMAKE_INTERPROCEDURAL_OPTIMIZATION, compile_all.sh --lto) with a
+# Clang-based compiler: the objects are LLVM bitcode, which mold and ld.bfd
+# read only through LLVMgold.so -- absent from some LLVM installs (llvm 23.2
+# on the development machine: "mold: fatal: could not open plugin file
+# .../lib/LLVMgold.so"). lld reads bitcode itself: it is taken instead of
+# mold, from the compiler's own directory first. GCC's LTO goes through its
+# liblto_plugin, which mold and ld.bfd load: nothing changes there.
+set(_chunk_lto_lld FALSE)
+if(CMAKE_INTERPROCEDURAL_OPTIMIZATION AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|IntelLLVM")
+    get_filename_component(_cxx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    find_program(CHUNK_LLD_EXECUTABLE ld.lld HINTS "${_cxx_dir}" "${_cxx_dir}/compiler")
+    if(CHUNK_LLD_EXECUTABLE)
+        get_filename_component(_lld_dir "${CHUNK_LLD_EXECUTABLE}" DIRECTORY)
+        set(_lld_link_opts "-fuse-ld=lld")
+        if(NOT _lld_dir STREQUAL _cxx_dir)
+            list(APPEND _lld_link_opts "--ld-path=${CHUNK_LLD_EXECUTABLE}")
+        endif()
+        add_link_options("$<$<LINK_LANGUAGE:CXX>:${_lld_link_opts}>")
+        set(_chunk_lto_lld TRUE)
+        message(STATUS "Linker: lld for LTO -- ${CHUNK_LLD_EXECUTABLE} (mold and ld.bfd need LLVMgold.so)")
+    else()
+        message(WARNING "LTO with ${CMAKE_CXX_COMPILER_ID} and no ld.lld found: the link needs "
+                        "LLVMgold.so next to the compiler (lib/LLVMgold.so), or the build fails")
+    endif()
+endif()
+
+if(NOT CHUNK_USE_MOLD STREQUAL "OFF" AND NOT _chunk_lto_lld)
     # CHUNK_MOLD_PATH is set by scripts/compile_all.sh, which resolves mold in a
     # subshell: on x86 the mold module conflicts with the gnu version the build
     # uses, so its path is extracted without letting the module state leak here.

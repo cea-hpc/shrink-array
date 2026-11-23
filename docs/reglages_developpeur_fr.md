@@ -219,6 +219,7 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--target=<glob>` | seulement les configurations dont le nom correspond (`omp-llvm`, ou un motif du shell entre apostrophes) ; un motif qui ne correspond à rien est une erreur |
 | `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_omp_zero_256`, ou un motif du shell entre apostrophes : ``'shrink_bench_*_zero_256'`` la prend quel que soit le backend) |
 | `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles (par un jobserver avec ninja 1.13 ou plus, voir plus bas) |
+| `--lto` | optimisation à l'édition de liens (`CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`) sur les builds optimisés, pas sur les Debug, sanitizer ni nvhpc ; transmis à `compile_all_gnu.sh`. Le réglage reste dans le cache de chaque répertoire de build : donner à un run LTO son propre `CHUNK_BUILD_ROOT` pour garder les builds sans LTO à comparer |
 | `--no-hardening` | sans `CHUNK_GLIBCXX_ASSERTIONS` ni `CHUNK_UBSAN` sur les builds Debug et sanitizer |
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
 | `--pool=<id>` | partager les configurations avec les autres runs qui ont le même `<id>` (un job batch par nœud, champ « Nœuds » de `shrink_gui`) : chacun construit celles qu'il réclame le premier ; `<id>` est un nom sous `$CHUNK_BUILD_ROOT/.pools/` ou un dossier partagé par tous les nœuds |

@@ -56,6 +56,11 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `scripts/compile_all.sh --lto` (and `compile_all_gnu.sh --lto`): link-time optimisation
+  (`CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`) on the optimised builds, not on the Debug, sanitizer
+  and nvhpc ones; every other configure gets it OFF. With a Clang-based compiler and LTO, the
+  top-level CMakeLists links with lld instead of mold: mold and ld.bfd read LLVM bitcode only
+  through LLVMgold.so, which some LLVM installs lack.
 - `transform_ranges_mt(dst, first, last, op, a, b, ...)` (`chunk/range_ops.h`): `dst[i] = op(a[i], b[i], ...)`
   computed chunk by chunk. The sources -- chunked arrays of any variant, chunk size and element
   type, or contiguous containers -- are read by blocks, `op` runs in a plain loop over contiguous

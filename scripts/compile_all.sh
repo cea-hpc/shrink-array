@@ -131,6 +131,7 @@ llvm_cs_size=""          # on-demand llvm build with a custom CHUNK_SIZE (e.g. 1
 NO_HARDENING=false       # --no-hardening: skip CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN on Debug+sanitizer builds
 WITH_LEDGER=false        # --with-ledger: also build the gnu debug ledger config (forwarded)
 WITH_TOKEN=false         # --with-token-sanitizer: also build the llvm token (alloc-token) sanitizer config
+LTO=false                # --lto: link-time optimisation on the optimised builds (forwarded)
 
 # Parse command-line arguments
 usage() {
@@ -202,6 +203,14 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    fixed shares only).
   --no-hardening   Do not add -DCHUNK_GLIBCXX_ASSERTIONS=ON to Debug/sanitizer builds,
                    nor -DCHUNK_UBSAN=ON to the address-sanitizer builds (default: added).
+  --lto            Link-time optimisation (CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON)
+                   on the optimised builds of every compiler but nvhpc; not
+                   on Debug nor sanitizer builds. Forwarded to
+                   compile_all_gnu.sh. The other builds, and every build of a
+                   run without --lto, are configured with it OFF. It lives in
+                   each build dir's cache: give an LTO run its own
+                   CHUNK_BUILD_ROOT to keep the non-LTO builds for comparison
+                   (switching a dir rebuilds it in full).
   --llvm-cs=<N>    Also build an llvm RelWithDebInfo variant with CHUNK_SIZE=N (power of two).
   --pool=<id>      Share the configurations with the other runs given the same
                    <id> (one batch job per node; shrink_gui's "Nodes" field):
@@ -274,6 +283,7 @@ for arg in "$@"; do
         --no-hardening)  NO_HARDENING=true;       shift ;;
         --with-ledger)   WITH_LEDGER=true;        shift ;;
         --with-token-sanitizer) WITH_TOKEN=true;  shift ;;
+        --lto)           LTO=true;                shift ;;
         --jobs=*)
             # How many build DIRS may compile at once (see functions_for_compile.sh).
             export CHUNK_MAX_JOBS="${arg#*=}"
@@ -453,6 +463,15 @@ else
     export CHUNK_HARDENING=on
 fi
 
+# LTO switch, read by lto_opts_for (functions_for_compile.sh) for every cmake
+# configure issued here, and inherited by compile_all_gnu.sh.
+if [ "$LTO" = true ]; then
+    export CHUNK_LTO=on
+    echo "compile_all.sh: --lto → CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON on the optimised builds (not Debug, sanitizers, nvhpc)"
+else
+    export CHUNK_LTO=off
+fi
+
 build_root="$CHUNK_BUILD_ROOT"
 run_cmd "echo $build_root"
 
@@ -471,6 +490,7 @@ gnu_args=""
 [ "$DEBUG_ONLY" = true ] && gnu_args="$gnu_args --debug-only"
 [ "$NO_HARDENING" = true ] && gnu_args="$gnu_args --no-hardening"
 [ "$WITH_LEDGER" = true ] && gnu_args="$gnu_args --with-ledger"
+[ "$LTO" = true ] && gnu_args="$gnu_args --lto"
 [ -n "${CHUNK_MAX_JOBS:-}" ] && gnu_args="$gnu_args --jobs=$CHUNK_MAX_JOBS"
 # CHUNK_SLOT_DIR is exported by __slot_dir(): passing it down makes the gnu
 # script share THIS run's slot pool instead of opening a second one, which is

@@ -136,12 +136,34 @@ hardening_opts_for() {  # <cmake-args> → echo extra -D flags ("" if none)
     printf '%s' "${out# }"
 }
 
-# Insert the hardening flags into a full `... cmake -S ... -B ... [|| fallback]`
+# --lto (CHUNK_LTO=on, compile_all.sh / compile_all_gnu.sh): link-time
+# optimisation, CMake's CMAKE_INTERPROCEDURAL_OPTIMIZATION (-flto=auto with
+# GCC, -flto=thin with Clang and its derivatives; the archives through gcc-ar /
+# llvm-ar, which CMake picks next to the compiler). Only on the optimised
+# builds: not on Debug, not on a sanitizer build, not with nvc++ (no IPO in
+# CMake for NVHPC). Every other configure gets an explicit OFF, so that a
+# cache left ON by an earlier --lto run does not stay so. The flag lives in the
+# cache of the build dir: point CHUNK_BUILD_ROOT elsewhere for an LTO run to
+# keep the non-LTO builds next to it (a switch rebuilds the dir in full).
+lto_opts_for() {  # <cmake-args or cmd-string> → echo the IPO -D flag
+    local args=$1
+    case "$args" in *CMAKE_INTERPROCEDURAL_OPTIMIZATION*) return 0 ;; esac
+    if [ "${CHUNK_LTO:-off}" = on ]; then
+        case "$args" in
+            *-DCMAKE_BUILD_TYPE=Debug*|*-DCHUNK_SANITIZER=*|*nvc++*|*nvcxx*) ;;
+            *) printf '%s' "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON"; return 0 ;;
+        esac
+    fi
+    printf '%s' "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF"
+}
+
+# Insert the hardening and LTO flags into a full `... cmake -S ... -B ... [|| fallback]`
 # command string (compile_all.sh style). Flags go before any trailing `||` so
 # the fallback branch is preserved; cmake does not care about -D ordering.
 __with_hardening() {  # <cmd-string> → echo rewritten command
     local cmd=$1 extra
     extra=$(hardening_opts_for "$cmd")
+    extra="${extra:+$extra }$(lto_opts_for "$cmd")"
     [ -z "$extra" ] && { printf '%s' "$cmd"; return 0; }
     case "$cmd" in
         *" || "*) printf '%s %s || %s' "${cmd%% || *}" "$extra" "${cmd#* || }" ;;
@@ -1696,7 +1718,7 @@ compile_with_cmake() {
     local _hard
     _hard=$(hardening_opts_for "$cmake_args")
     [ -n "$_hard" ] && cmake_args="$cmake_args $_hard"
-    cmake_args="$cmake_args$(__ninja_opt)"
+    cmake_args="$cmake_args $(lto_opts_for "$cmake_args")$(__ninja_opt)"
 
     if [ "$DRYRUN" = true ]; then
         if [ "$BUILD_ONLY" = false ]; then

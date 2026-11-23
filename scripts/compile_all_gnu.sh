@@ -31,6 +31,7 @@ FRESH_CACHE=false   # --fresh-cache: rm each build dir's CMakeCache.txt before c
 NO_IPA_ICF=false
 NO_HARDENING=false # --no-hardening: skip CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN on Debug+sanitizer builds
 WITH_LEDGER=false  # --with-ledger: also build cmake-build-omp-gnu-debug-ledger (off by default)
+LTO=false          # --lto: link-time optimisation on the optimised builds (functions_for_compile.sh)
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -56,6 +57,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-ledger)
             WITH_LEDGER=true
+            shift
+            ;;
+        --lto)
+            # Link-time optimisation on the optimised builds (rule in
+            # functions_for_compile.sh::lto_opts_for).
+            LTO=true
             shift
             ;;
         --jobs=*)
@@ -100,7 +107,7 @@ while [[ $# -gt 0 ]]; do
         *)
             # Previously swallowed silently — a --debug_only (underscore) went
             # unnoticed and the intended flag was never applied.
-            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--jobs=<N>|--target=<glob>|--exec=<ninja-target>|--pool=<id>)" >&2
+            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--lto|--jobs=<N>|--target=<glob>|--exec=<ninja-target>|--pool=<id>)" >&2
             exit 2
             ;;
     esac
@@ -128,6 +135,15 @@ if [ "$NO_HARDENING" = true ]; then
     echo "compile_all_gnu.sh: --no-hardening → Debug/sanitizer builds without CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN"
 else
     export CHUNK_HARDENING="${CHUNK_HARDENING:-on}"
+fi
+
+# LTO switch, read by lto_opts_for (functions_for_compile.sh). Default off;
+# --lto (or an inherited CHUNK_LTO=on from compile_all.sh) turns it on.
+if [ "$LTO" = true ]; then
+    export CHUNK_LTO=on
+    echo "compile_all_gnu.sh: --lto → CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON on the optimised builds"
+else
+    export CHUNK_LTO="${CHUNK_LTO:-off}"
 fi
 
 source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
