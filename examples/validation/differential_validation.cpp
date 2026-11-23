@@ -601,13 +601,16 @@ void op_ranges_mt(Run<T>& run)
     if (draw(run, 2) == 0)
     {
         const T v = draw_value(run);
-        begin_phase();
-#pragma omp parallel sections
+#pragma omp parallel
         {
+            begin_phase();
+#pragma omp sections
+            {
 #pragma omp section
-            fill_range_mt(run.a, std::size_t{0}, half, v);
+                fill_range_mt(run.a, std::size_t{0}, half, v);
 #pragma omp section
-            fill_range_mt(run.a, half, size, v);
+                fill_range_mt(run.a, half, size, v);
+            }
         }
         end_phase();
         run.ra.assign(size, v);
@@ -616,13 +619,16 @@ void op_ranges_mt(Run<T>& run)
     else
     {
         const std::vector<T> source = draw_source(run, count);
-        begin_phase();
-#pragma omp parallel sections
+#pragma omp parallel
         {
+            begin_phase();
+#pragma omp sections
+            {
 #pragma omp section
-            copy_range_mt(run.a, std::size_t{0}, half, source.begin());
+                copy_range_mt(run.a, std::size_t{0}, half, source.begin());
 #pragma omp section
-            copy_range_mt(run.a, half, size, source.begin() + static_cast<std::ptrdiff_t>(half));
+                copy_range_mt(run.a, half, size, source.begin() + static_cast<std::ptrdiff_t>(half));
+            }
         }
         end_phase();
         run.ra = source;
@@ -679,17 +685,20 @@ void op_parallel_phase(Run<T>& run)
     const int  count = static_cast<int>(run.ra.size());
     const bool every = draw(run, 2) == 0;
     const T    v     = draw_value(run);
-    begin_phase();
-#pragma omp parallel for
-    for (int i = 0; i < count; ++i)
+#pragma omp parallel
     {
-        if (every)
+        begin_phase(); // every thread, before its first write (chunk/phases.h)
+#pragma omp for
+        for (int i = 0; i < count; ++i)
         {
-            run.a[i] = v;
-        }
-        else if (i % 3 != 1)
-        {
-            run.a[i] = phase_value(run, i);
+            if (every)
+            {
+                run.a[i] = v;
+            }
+            else if (i % 3 != 1)
+            {
+                run.a[i] = phase_value(run, i);
+            }
         }
     }
     end_phase();
