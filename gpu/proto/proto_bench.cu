@@ -470,8 +470,8 @@ int main(int argc, char** argv)
     cudaDeviceProp p{};
     SA_GPU(cudaGetDeviceProperties(&p, 0));
 #endif
-    std::printf("proto_bench on %s (%d SMs, %.1f GB), %d reps, median times\n", p.name, p.multiProcessorCount,
-                static_cast<double>(p.totalGlobalMem) / 1e9, reps);
+    std::printf("proto_bench on %s (%d SMs, %.1f GB), %d reps, median times; %d shards, home run %ld\n", p.name,
+                p.multiProcessorCount, static_cast<double>(p.totalGlobalMem) / 1e9, reps, sa::n_shards, sa::home_run);
     try
     {
         bench<256>(n, reps);

@@ -159,6 +159,16 @@ struct ArenaCounters
 #endif
 inline constexpr int n_shards = PROTO_SHARDS;
 
+#ifndef PROTO_HOME_RUN
+    #define PROTO_HOME_RUN 64
+#endif
+/// @brief Consecutive chunks sharing a home shard: chunk c starts its allocation in shard
+///        (c / home_run) % n_shards. With 1, neighbouring chunks get buffers in different
+///        regions of the arena, and a sweep over the array scatters its accesses over every
+///        shard (GH200: writes into materialised chunks 1.48x -> 1.85x); a run keeps them
+///        contiguous while still spreading the counters.
+inline constexpr long home_run = PROTO_HOME_RUN;
+
 /// @brief One shard's counters, alone on a 128-byte line.
 struct alignas(128) Shard
 {
@@ -288,7 +298,7 @@ struct View
 template <typename T, int S>
 __device__ T* View<T, S>::take_buffer(long home) const noexcept
 {
-    const int s0 = static_cast<int>(static_cast<unsigned long>(home) % n_shards);
+    const int s0 = static_cast<int>(static_cast<unsigned long>(home / home_run) % n_shards);
     for (int a = n_arenas - 1; a >= 0; --a)
     {
         const ArenaDesc<T>& ar = arenas[a];

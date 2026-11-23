@@ -87,6 +87,28 @@ What the large GPU shows, and the laptop hid behind its 170 GB/s:
   run in two). The grouping is now warp-uniform, as the claim path's already was
   (`group_by_chunk`), and 16 runs out of 16 pass.
 
+**Third GH200 run** (eb29b07df: 128 shards, home shard = chunk index modulo 128), 8 GiB:
+
+| | S = 256 | S = 1024 |
+|---|---|---|
+| write into materialised chunks, acquire / 4 loads ahead | 1.85x / 1.24x | 1.79x / 1.21x |
+| write into materialised chunks, chunk-aligned | 1.71x | 1.43x |
+| first write, race / claim / chunk-aligned | 15.1x / 14.8x / 5.0x | 22.1x / 14.3x / 2.3x |
+| range rewrites + `finalize()`, race / claim / chunk-aligned | 5.9x / 4.5x / 4.5x | 5.1x / 2.7x / 2.4x |
+| `compress()` by warp, every chunk folds back | 62% | 67% |
+
+- Four descriptor loads ahead bring the write down to 1.2x: the one-load-in-flight
+  explanation holds, and the facade's loop will batch its descriptor loads.
+- The shards helped where the counters were contended (folds at S = 256: 36% -> 62%; claim
+  range rewrites), but writes into materialised chunks (1.48x -> 1.85x), the chunk-aligned
+  paths and the folds at S = 1024 (83% -> 67%) got slower. Likely cause, not measured yet:
+  with a home shard per chunk, neighbouring chunks get buffers in different regions of the
+  arena and a sweep scatters its accesses. The home shard is now taken per run of
+  `home_run` consecutive chunks (`-DPROTO_HOME_RUN`, default 64), to be measured at 1, 64 and
+  1024.
+- The first write by `assign()` stays at 15x to 22x: its cost is the latency chain of a
+  materialisation more than the counters; the chunk-aligned path stays the facade's answer.
+
 ## What the prototype changed in the design
 
 - **A chunk spans S/32 warps** (S/64 wavefronts): warp aggregation (6.2) gives one

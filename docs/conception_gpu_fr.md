@@ -612,6 +612,30 @@ Ce que la grosse carte montre, et que le portable cachait derrière ses 170 Go/s
   uniforme sur le warp, comme l'était déjà celui de la réservation (`group_by_chunk`), et
   16 passages sur 16 réussissent.
 
+**Troisième passage GH200** (eb29b07df : 128 shards, shard d'origine = indice du chunk modulo
+128), 8 Gio :
+
+| | S = 256 | S = 1024 |
+|---|---|---|
+| écriture dans des chunks matérialisés, acquire / 4 lectures d'avance | 1,85× / 1,24× | 1,79× / 1,21× |
+| écriture dans des chunks matérialisés, alignée | 1,71× | 1,43× |
+| première écriture, course / réservation / alignée | 15,1× / 14,8× / 5,0× | 22,1× / 14,3× / 2,3× |
+| réécriture de plages + `finalize()`, course / réservation / alignée | 5,9× / 4,5× / 4,5× | 5,1× / 2,7× / 2,4× |
+| `compress()` par warp, tous les chunks se replient | 62 % | 67 % |
+
+- Quatre lectures de descripteur d'avance ramènent l'écriture à 1,2× : l'explication par une
+  seule lecture en vol tient, et la boucle de la façade lira ses descripteurs par lots.
+- Les shards ont aidé là où les compteurs étaient disputés (replis à S = 256 : 36 % → 62 % ;
+  réécritures de plages en réservation). En revanche, l'écriture dans des chunks matérialisés
+  (1,48× → 1,85×), les chemins alignés et les replis à S = 1024 (83 % → 67 %) ont ralenti.
+  Cause probable, pas encore mesurée : avec un shard d'origine par chunk, des chunks voisins
+  reçoivent leurs tampons dans des régions différentes de l'arène, et un parcours éparpille
+  ses accès. Le shard d'origine est maintenant pris par série de `home_run` chunks consécutifs
+  (`-DPROTO_HOME_RUN`, 64 par défaut), à mesurer à 1, 64 et 1024.
+- La première écriture via `assign()` reste entre 15× et 22× : son coût est la chaîne de
+  latence d'une matérialisation plus que les compteurs ; le chemin aligné reste la réponse de
+  la façade.
+
 ## 14. Risques et questions ouvertes
 
 - **La lecture à plus de 1,5×** : si la latence de l'indirection n'est pas masquée sur un
