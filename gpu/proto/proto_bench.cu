@@ -256,6 +256,31 @@ float median(std::vector<float> t)
 constexpr unsigned grid  = 2048;
 constexpr unsigned block = 256;
 
+/// @brief Registers, local memory (spills) and theoretical occupancy of a kernel at
+///        @p threads per block: what a profiler would say first, without one.
+template <typename K>
+void kernel_info(const char* what, K kernel, int threads)
+{
+#if defined(__HIP_PLATFORM_AMD__)
+    hipFuncAttributes attr{};
+    SA_GPU(hipFuncGetAttributes(&attr, reinterpret_cast<const void*>(kernel)));
+    int blocks = 0;
+    SA_GPU(hipOccupancyMaxActiveBlocksPerMultiprocessor(&blocks, kernel, threads, 0));
+    hipDeviceProp_t p{};
+    SA_GPU(hipGetDeviceProperties(&p, 0));
+#else
+    cudaFuncAttributes attr{};
+    SA_GPU(cudaFuncGetAttributes(&attr, kernel));
+    int blocks = 0;
+    SA_GPU(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blocks, kernel, threads, 0));
+    cudaDeviceProp p{};
+    SA_GPU(cudaGetDeviceProperties(&p, 0));
+#endif
+    std::printf("  %-44s %3d registers, %4zu B local, %d blocks of %d / SM = %3.0f%% occupancy\n", what, attr.numRegs,
+                static_cast<std::size_t>(attr.localSizeBytes), blocks, threads,
+                100.0 * blocks * threads / p.maxThreadsPerMultiProcessor);
+}
+
 void line(const char* what, float ms, float ref_ms, const char* criterion)
 {
     std::printf("  %-44s %9.3f ms  %6.2fx flat  %s\n", what, ms, ms / ref_ms, criterion);
@@ -277,6 +302,12 @@ void bench(long n, int reps)
     // Room for every chunk plus a quarter for the buffers of lost CAS: a grid-stride write
     // puts S/32 warps on each chunk at once, and their losers wait for compress().
     sa::DeviceArray<double, S> a(n, static_cast<unsigned long long>(n_chunks + n_chunks / 4), 1UL << 20);
+
+    kernel_info("kernel write_ramp<Flat>", write_ramp<Flat>, block);
+    kernel_info("kernel write_ramp<View>", write_ramp<sa::View<double, S>>, block);
+    kernel_info("kernel write_ramp_ahead<View>", write_ramp_ahead<S>, block);
+    kernel_info("kernel read_sum<View>", read_sum<sa::View<double, S>>, block);
+    kernel_info("kernel for_each_chunk<View, Ramp>", sa::kernels::for_each_chunk<256, double, S, Ramp>, 256);
 
     // Stream bandwidth of this device: the flat copy-free reference (read + write).
     write_ramp<<<grid, block>>>(flat, n, 1.0);
