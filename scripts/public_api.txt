@@ -19,11 +19,11 @@
 zero::Array
 size empty capacity at front back resize reserve clear shrink_to_fit
 push_back emplace_back pop_back assign swap begin end cbegin rbegin rend
-compress stats written_chunk_count get_nb_chunk_written chunk_size rechunk_to element_proxy set_chunk_size
+compress stats written_chunk_count chunk_size rechunk_to element_proxy set_chunk_size
 
 [chunk/zero_or_value_array.h]
 zero_or_value::Array
-set_second_value second_value get_second_value
+set_second_value second_value
 
 [chunk/zero_any_array.h]
 zero_any::Array
@@ -74,8 +74,8 @@ force_at force_toggle force_alt
 
 [chunk/config.h]
 build_config::use_openmp build_config::threaded build_config::has_ompt
-build_config::needs_explicit_phases build_config::has_not_ompt build_config::chunk_dynamic chunk_config::use_zero
-chunk_config::use_zero_or_value chunk_config::use_zero_one_value chunk_config::use_zero_any chunk_config::use_second_value
+build_config::needs_explicit_phases build_config::chunk_dynamic chunk_config::use_zero
+chunk_config::use_zero_or_value chunk_config::use_zero_any chunk_config::use_second_value
 chunk_config::stats
 
 [chunk/log.h]
@@ -99,22 +99,6 @@ print println
 
 [chunk/threads.h]
 max_threads team_size thread_rank pmp::max_threads pmp::team_size pmp::thread_rank
-
-# The former names (0.2), deprecated: each header includes the new one.
-[chunk/manage_ompt.h]
-begin_parallel_phase finalize_parallel_phase parallel_phase
-
-[chunk/param_chunk.h]
-ParamChunk init_indexes destroy_block_chunk
-
-[chunk/array_chunk_bits.h]
-ArrayChunkBits
-
-[chunk/array_chunk_range_ops.h]
-fill_range copy_range
-
-[chunk/zero_one_value_array.h]
-zero_one_value
 
 [not public]
 ManagerType Manager ChunkType ChunkListType ProxyType get_chunk_list

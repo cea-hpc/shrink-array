@@ -18,8 +18,8 @@
 
 /**
  * @file pool_release.h
- * @brief The two shutdown calls of a program: release_chunk_pools() and
- *        destroy_block_chunk(), defined in chunk/private/chunk_std.cpp.
+ * @brief The two shutdown calls of a program: release_chunk_pools() and the
+ *        body of Runtime::shutdown(), defined in chunk/private/chunk_std.cpp.
  *
  * @details Declarations only, with no include: chunk/runtime.h (the public
  *          header a program includes for its start and its end) and
@@ -30,19 +30,13 @@
 namespace shrink_array
 {
 
-/// @brief When fast allocation is enabled, call destroy_block_chunk() on the TypeStateRegistry singleton; otherwise
-///        do nothing. Nothing either while an array is alive (see release_chunk_pools()).
 namespace internal
 {
-/// @brief The body of Runtime::shutdown() (chunk/runtime.h), which is what a program calls.
+/// @brief The body of Runtime::shutdown() (chunk/runtime.h), which is what a program calls: when fast allocation is
+///        enabled, TypeStateRegistry::destroy_block_chunk() on the singleton; otherwise nothing. Nothing either while
+///        an array is alive (see release_chunk_pools()).
 extern void shutdown_runtime();
 } // namespace internal
-
-/// @brief Former name of Runtime::shutdown().
-[[deprecated("renamed Runtime::shutdown() (chunk/runtime.h)")]] inline void destroy_block_chunk()
-{
-    internal::shutdown_runtime();
-}
 
 /**
  * @brief Let go of the chunk reuse pools, whichever thread model this build is.
@@ -50,17 +44,17 @@ extern void shutdown_runtime();
  * @details OpenMP releases the per-rank lists (clear_all_list_block_free_thr()
  *          then delete_list_block_chunk_free_itself()); a serial build deletes
  *          its single allocator (delete_chunk_allocator()).
- * @note Pair it with destroy_block_chunk(). Both are optional: the process can
+ * @note Pair it with Runtime::shutdown(). Both are optional: the process can
  *       simply exit.
  * @note While an array is alive (typically a global one, destroyed after main)
- *       this only empties the free lists, and destroy_block_chunk(),
+ *       this only empties the free lists, and Runtime::shutdown(),
  *       delete_list_block_chunk_free_itself() and delete_chunk_allocator() do
  *       nothing: the array parks its buffers there when it dies.
  * @warning Sequential point: call it once, after the last parallel region. From
  *          inside a region (OpenMP's, the std backend's team or application
  *          phase) a check build aborts; any other build says so on stderr and
  *          does nothing. Every thread of the team would otherwise empty the
- *          same pools at once. The same holds for destroy_block_chunk(),
+ *          same pools at once. The same holds for Runtime::shutdown(),
  *          delete_chunk_allocator(), clear_all_list_block_free_thr(),
  *          delete_list_block_chunk_free_itself() and an array's shrink_to_fit().
  */

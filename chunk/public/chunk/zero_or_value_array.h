@@ -234,12 +234,6 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      */
     [[nodiscard]] T second_value() const noexcept;
 
-    /// @brief Former name of second_value().
-    [[deprecated("renamed second_value()")]] [[nodiscard]] T get_second_value() const noexcept
-    {
-        return second_value();
-    }
-
     /// @brief Full registry tuple for this array: second value, its index, array_id.
     [[nodiscard]] ArrayInfo get_info_second_value() const noexcept
     {
@@ -463,20 +457,3 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 // The mixins' bodies, after zero_or_value_array_inline.h: self() needs a complete zero_or_value::Array.
 #include "chunk/internal/zero_or_value_array_parallel_inline.h"      // zero_or_value::FastBlockSupport's bodies
 #include "chunk/internal/zero_or_value_array_rechunk_hooks_inline.h" // zero_or_value::RechunkHooks's bodies
-
-namespace shrink_array
-{
-
-/// @brief Former name of zero_or_value (0.2): `zero_one_value::Array<T>` is
-///        `zero_or_value::Array<T>`. Gone at the next minor version. The
-///        public names one by one, not a using-directive: the former namespace
-///        brings in nothing else.
-namespace [[deprecated("renamed shrink_array::zero_or_value")]] zero_one_value
-{
-using zero_or_value::Array;
-using zero_or_value::Chunk;
-using zero_or_value::ChunkDef;
-using zero_or_value::Proxy;
-} // namespace zero_one_value
-
-} // namespace shrink_array

@@ -256,8 +256,8 @@ The examples print through them.
 
 ## Names changed in 0.3
 
-The former names still compile, with a deprecation warning (the headers: silently), and go at
-the next minor version.
+The former names compiled until 0.3, deprecated; 0.4 removed them. A program written against
+0.2 replaces them as follows (the `pmp::` spellings of the three thread functions remain).
 
 | former name | name |
 |---|---|

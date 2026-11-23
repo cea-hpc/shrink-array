@@ -378,10 +378,11 @@ void TypeStateRegistry::run_compress_pass(bool apply) const
 
 bool TypeStateRegistry::has_candidates() const
 {
+    // chunk_rank_bound() in a threaded build, 1 in a serial one: the capture is needed there.
     const int max_thr = CHUNK_PMP_RANK_BOUND;
 
-    return std::ranges::any_of(get_list_type_chunk(),
-                               [max_thr](const auto* elm) { return elm->has_candidates(max_thr); });
+    const auto has = [max_thr](const auto* elm) { return elm->has_candidates(max_thr); }; // NOSONAR(cpp:S1481)
+    return std::ranges::any_of(get_list_type_chunk(), has);
 }
 
 template <typename Derived>

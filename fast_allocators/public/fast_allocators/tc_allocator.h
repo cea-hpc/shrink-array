@@ -108,7 +108,7 @@ namespace fast_alloc
     return ps;
 }
 
-/// @brief CHUNK_LOG=alloc=trace (formerly FAST_ALLOC_TRACE): trace the
+/// @brief CHUNK_LOG=alloc=trace: trace the
 ///        evictions of emptied slabs.
 [[nodiscard]] inline bool trace_evictions() noexcept
 {

@@ -294,19 +294,20 @@ enum class Gone
 
 const char* gone_name(Gone g)
 {
+    using enum Gone;
     switch (g)
     {
-        case Gone::control:
+        case control:
             return "control";
-        case Gone::destroyed:
+        case destroyed:
             return "destroyed";
-        case Gone::cleared:
+        case cleared:
             return "cleared";
-        case Gone::copy_assigned:
+        case copy_assigned:
             return "copy-assigned";
-        case Gone::move_assigned:
+        case move_assigned:
             return "move-assigned";
-        case Gone::swapped_then_destroyed:
+        case swapped_then_destroyed:
             return "swapped, then destroyed";
     }
     return "?";
@@ -340,23 +341,24 @@ OwnerRun owner_run(Gone gone)
         Arr b;
         b.resize(static_cast<Index>(count));
         b.set_second_value(v2);
+        using enum Gone;
         switch (gone)
         {
-            case Gone::control:
+            case control:
                 break;
-            case Gone::destroyed:
+            case destroyed:
                 a.reset();
                 break;
-            case Gone::cleared:
+            case cleared:
                 a->clear();
                 break;
-            case Gone::copy_assigned:
+            case copy_assigned:
                 *a = b;
                 break;
-            case Gone::move_assigned:
+            case move_assigned:
                 *a = std::move(b);
                 break;
-            case Gone::swapped_then_destroyed:
+            case swapped_then_destroyed:
                 a->swap(b);
                 break; // b dies at the brace
         }

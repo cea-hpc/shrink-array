@@ -277,9 +277,6 @@ class GlobalVecHolder
     // Capacity: ONE bound, region_usable = min(CHUNK_SECOND_VALUE_REGION_BYTES, max_ids x id_stride),
     // used by the reservation, the range test (region_end) and region_alloc()'s abort. Running
     // out aborts: a fallback array outside the region would break the range test.
-#if !defined(CHUNK_SECOND_VALUE_REGION_BYTES) && defined(CHUNK_CONST_VAL2_REGION_BYTES)
-    #define CHUNK_SECOND_VALUE_REGION_BYTES CHUNK_CONST_VAL2_REGION_BYTES // its former name, still read until 1.0
-#endif
 #ifndef CHUNK_SECOND_VALUE_REGION_BYTES
     #define CHUNK_SECOND_VALUE_REGION_BYTES (2uz << 30U)
 #endif
@@ -324,9 +321,6 @@ class GlobalVecHolder
     ///          (max_ids + 1) x sizeof(T) of value table per type, address space
     ///          only (MAP_NORESERVE, backed as identifiers are handed out). The
     ///          default leaves ample headroom over real workloads.
-#if !defined(CHUNK_SECOND_VALUE_MAX_IDS) && defined(CHUNK_CONST_VAL2_MAX_IDS)
-    #define CHUNK_SECOND_VALUE_MAX_IDS CHUNK_CONST_VAL2_MAX_IDS // its former name, still read until 1.0
-#endif
 #ifndef CHUNK_SECOND_VALUE_MAX_IDS
     #define CHUNK_SECOND_VALUE_MAX_IDS (4uz << 20U)
 #endif
@@ -756,9 +750,6 @@ class GlobalVecHolder
     static constexpr std::size_t region_usable =
         (max_ids * id_stride) < region_bytes ? (max_ids * id_stride) : region_bytes;
 
-#if !defined(CHUNK_SECOND_VALUE_LOOKUP_LOG2) && defined(CHUNK_CONST_VAL2_INDEX_LOG2)
-    #define CHUNK_SECOND_VALUE_LOOKUP_LOG2 CHUNK_CONST_VAL2_INDEX_LOG2 // its former name, still read until 1.0
-#endif
 #ifndef CHUNK_SECOND_VALUE_LOOKUP_LOG2
     static constexpr int lookup_slots_log2 = 18;
     // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
