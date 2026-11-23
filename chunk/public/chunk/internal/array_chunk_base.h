@@ -749,8 +749,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param other the container to exchange state with
      * @note noexcept: the drain and registry update only fail on memory
      *       exhaustion or a corrupt registry, which terminates.
-     * @pre Both operands must share chunk geometry (enforced under check; with
-     *      StaticChunkSize this is always true).
+     * @note The geometries may differ (a run-time geometry build, after
+     *       rechunk_to()): the geometry is exchanged with the chunks, as a move
+     *       does -- each array keeps reading its values at the chunk size they
+     *       came with.
      */
     void swap(this Derived& self, Derived& other) noexcept;
 

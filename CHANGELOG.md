@@ -58,6 +58,15 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Fixed
+
+- `swap()` between two arrays of different chunk sizes (a run-time geometry build, one of them
+  rechunked by `rechunk_to()` or the decider) aborted a check build ("mismatched chunk
+  geometry") while a release build did it right, and while a move -- the same exchange, geometry
+  included -- was accepted in both. The geometry goes with the chunks, as in a move: the check
+  is gone, the documentation says so, and `swap_move_validation` is built at the run-time
+  geometry too, with a swap after a rechunk.
+
 ## 0.4.0 -- 2026-11-23
 
 A breaking release: every compatibility path for a former name is gone (see Removed).

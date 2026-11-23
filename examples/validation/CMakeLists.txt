@@ -299,7 +299,7 @@ set(_rt_harnesses       compress_roundtrip_validation pool_accounting_validation
                         constant_switch_validation shrink_to_fit_validation chunk_exchange_validation
                         signed_zero_validation no_init_release_validation nan_check_validation alloc_chunk_validation)
 set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation
-                        alloc_chunk_validation)
+                        alloc_chunk_validation swap_move_validation)
 
 # Compile definitions of a variant at a geometry.
 function(validation_variant_defs tgt vmacro geom)
