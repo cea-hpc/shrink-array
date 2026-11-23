@@ -326,6 +326,7 @@ template <typename Done>
  *        the hardware threads, and the caller sleeps at once (a spinning
  *        waiter would hold the core of a thread it waits for -- libgomp
  *        throttles its spin count the same way).
+ * @param done the condition, called until it returns true
  * @return @p done()'s last value: false means the caller must sleep.
  */
 template <typename Done>

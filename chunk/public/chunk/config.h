@@ -532,6 +532,8 @@ class CheckNaN<true>
         check_nan = state;
     }
     /// @brief global_check_nan(@p val, @p index, @p in_array) if the switch is on.
+    /// @param val      the value written
+    /// @param index    where it is written (see @p in_array)
     /// @param in_array true: @p index is the index in the array; false: the
     ///                 position in the chunk (the array index is not known).
     static void maybe(auto val, long index, bool in_array = true) noexcept

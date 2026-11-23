@@ -12,7 +12,7 @@
 > leaving it unset -- except for the traces of §2 marked *set*, on as soon as they are defined
 > (even at `0`), and for the variables whose row says what `0` does. A variable that is not read
 > is ignored without any message: when in doubt, check with
-> `grep -rn '"NAME"' chunk fast_allocators examples`.
+> ``grep -rn '"NAME"' chunk fast_allocators examples``.
 >
 > **Removal dates.** A switch that keeps an old behaviour, or a choice no build tests, carries a
 > removal date in its row; at that date it goes, with its code path, unless a measurement written
@@ -55,7 +55,7 @@ arena's and OMPT's counters with them, which cost a little time.
 
 | setting | what it prints |
 |---|---|
-| `CHUNK_LOG=rechunk=info` | the decider's moves (`decide <array>: re-chunk S=.. -> S'=.. ... [APPLIED]`, or `[dry-run] would re-chunk`) |
+| `CHUNK_LOG=rechunk=info` | the decider's moves (``decide <array>: re-chunk S=.. -> S'=.. ... [APPLIED]``, or `[dry-run] would re-chunk`) |
 | `CHUNK_LOG=rechunk=debug` (formerly `CHUNK_RECHUNK_TRACE`, and `CHUNK_RECHUNK_CHURN` for the churn) | in addition, the verdicts that wait, for each rechunk the duration of the phases and of the slices, and at each pass, per array analysed, the materialisations since the previous pass and an estimate of the transient cost they imply (`churn` line); for zero_any (and pattern), a `teardown split` line divides each rechunk's `tmp teardown` phase into its steps (flush, candidates, terminal sweep, park region, registry release, metadata tables, key drain, registry erase, `chunk_list_` unmap, rest) |
 | `CHUNK_LOG=rechunk=trace` (formerly `CHUNK_RECHUNK_TRACE_SLICES`) | in addition, memory at each slice of the `zero` rebuild |
 | `CHUNK_LOG=memory=info` (formerly `CHUNK_RECHUNK_MEMTRACE`) | at each advisor pass: exact memory, including the resident part of the buffer arena |
@@ -214,7 +214,7 @@ the common options. `--help` gives the full list.
 | `--with-ledger` | add `cmake-build-omp-gnu-debug-ledger` (OpenMP Debug with `CHUNK_FORCE_LEDGER=ON`), disabled by default; a `--target` that selects it also builds it |
 | `--with-token-sanitizer` | add `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`CHUNK_SANITIZER=token`), disabled by default; a `--target` that selects it also builds it; `--no-sanitizers` skips it |
 | `--target=<glob>` | only the configurations whose name matches (`omp-llvm`, or a quoted shell glob); a pattern that matches nothing is an error |
-| `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_omp_zero_256`, or a quoted shell glob: `'shrink_bench_*_zero_256'` matches it regardless of the backend) |
+| `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_omp_zero_256`, or a quoted shell glob: ``'shrink_bench_*_zero_256'`` matches it regardless of the backend) |
 | `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them (a jobserver with ninja 1.13 or later, see below) |
 | `--no-hardening` | without `CHUNK_GLIBCXX_ASSERTIONS` or `CHUNK_UBSAN` on the Debug and sanitizer builds |
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
@@ -245,13 +245,13 @@ ninja of `PATH` that runs on the node, ahead of the module's (a `~/.local/bin/ni
 than the module's 1.11), and when it is 1.13 or later they set `CHUNK_NINJA` to it.
 `CHUNK_NINJA=<ninja>` configures the build dirs with that ninja (each dir that changes ninja
 rebuilds in full once: the two versions do not read each other's `.ninja_log`); set by hand, it
-wins (`CHUNK_NINJA=<the module's ninja>` keeps the old one). `CHUNK_JOBSERVER=off` keeps the
+wins (``CHUNK_NINJA=<the module's ninja>`` keeps the old one). `CHUNK_JOBSERVER=off` keeps the
 fixed shares.
 
 The std threading backend (`CHUNK_THREADS=std`) has its own builds: `std-gnu`, `std-gnu-check`
 and a ThreadSanitizer one from `compile_all_gnu.sh`, `std-llvm`, `std-llvm-check` and a
-ThreadSanitizer one from `compile_all.sh`. They lengthen the compilation (`--target='omp-*'`
-leaves them out, `--target='std-*'` builds only them). Their bench executables say so in their
+ThreadSanitizer one from `compile_all.sh`. They lengthen the compilation (``--target='omp-*'``
+leaves them out, ``--target='std-*'`` builds only them). Their bench executables say so in their
 name, `shrink_bench_std_*` (`shrink_bench_omp_*` in the OpenMP builds, `shrink_bench_serial_*`
 in the serial ones): none of them uses OpenMP. The TBB bench (`shrink_bench_tbb_*`) and
 `tbb_validation` need oneTBB in those builds: the scripts add `CHUNK_WITH_TBB=ON` when `TBBROOT`

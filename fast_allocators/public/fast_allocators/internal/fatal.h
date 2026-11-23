@@ -137,7 +137,7 @@ inline std::atomic_flag fatal_reporting{};
 
 /**
  * @brief The pid after "TracerPid:" in @p status, the text of a
- *        /proc/<pid>/status: the process tracing this one, 0 when none (or
+ *        `/proc/<pid>/status`: the process tracing this one, 0 when none (or
  *        when the line is missing, or cut off by the buffer it was read into).
  *
  * The line is looked for after a newline: it is never the first one (Name
@@ -165,7 +165,7 @@ inline std::atomic_flag fatal_reporting{};
 }
 
 /**
- * @brief True when @p comm, the text of a /proc/<pid>/comm (newline
+ * @brief True when @p comm, the text of a `/proc/<pid>/comm` (newline
  *        included), names a debugger: gdb, cuda-gdb, gdbserver, lldb,
  *        lldb-server (the process lldb traces through on Linux).
  *

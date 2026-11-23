@@ -716,8 +716,8 @@ void remove_tc_type_allocator_inst(VTCTypeAllocator* /*inst*/);
  *        fast_alloc::TCTypeAllocator and fast_alloc::TCTypeCAllocator.
  *
  * @details Slabs are kept in three places, and which one a slab is in is a
- *          function of its `nn_ref`: #block has room, #block_full has none, and
- *          #block_empty is a small reserve of emptied slabs kept back so the
+ *          function of its `nn_ref`: `block` has room, `block_full` has none, and
+ *          `block_empty` is a small reserve of emptied slabs kept back so the
  *          next allocation does not have to go to the arena. alloc() and the
  *          frees move slabs between them; the moves themselves live in
  *          fast_alloc::sl_manage_full_empty.
@@ -1210,7 +1210,7 @@ class TCAllocatorEB
         return static_cast<int>((static_cast<const std::byte*>(ptr) - data) / element_size);
     }
 
-    /// @brief num_block() by shift. Valid only if #element_size_ is a power of two.
+    /// @brief num_block() by shift. Valid only if `element_size_` is a power of two.
     int num_block_pow2(const void* ptr) const noexcept
     {
         return static_cast<int>((static_cast<const std::byte*>(ptr) - data) >> log2_element_size);
@@ -1293,8 +1293,8 @@ class TCAllocatorEB
 /**
  * @brief Owns every fast_alloc::TCAllocatorEB slab for one compile-time geometry.
  *
- * @details Third slab family, same three-way split (#block, #block_full,
- *          #block_empty); the geometry is a template parameter, so indexing
+ * @details Third slab family, same three-way split (`block`, `block_full`,
+ *          `block_empty`); the geometry is a template parameter, so indexing
  *          folds to shifts and the allocator carries no size fields.
  *
  * @tparam ElementSize Element size in bytes.

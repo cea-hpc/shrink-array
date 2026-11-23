@@ -114,8 +114,8 @@ et `--exec` ont un bouton « Choisir… » qui liste les configurations et les e
 trouvés sur le calculateur.
 
 **Compiler sur plusieurs nœuds.** Avec « Nœuds » N > 1 et « N jobs d'un nœud », « Soumettre » crée N jobs batch d'un
-nœud chacun, avec les mêmes directives et la même commande plus `--pool=<l'id de la
-soumission>`. Ils apparaissent dans le tableau comme `compile_all.sh [k/N]`, runs `<id>-n1` à
+nœud chacun, avec les mêmes directives et la même commande plus ``--pool=<l'id de la
+soumission>``. Ils apparaissent dans le tableau comme `compile_all.sh [k/N]`, runs `<id>-n1` à
 `<id>-nN`. Chaque job parcourt les configurations dans l'ordre habituel et ne construit une
 configuration que s'il est le premier à la réclamer (un `mkdir` atomique dans
 `$CHUNK_BUILD_ROOT/.pools/<id>/`) ; il saute celles qu'un autre job a réclamées. La charge
@@ -341,7 +341,7 @@ Pour en écrire un, copier un exemple dans `~/.config/shrink_gui/site.toml` et l
 | `[detached]` | la commande du mode détaché et ses options de durée et de QoS ; absente si le site n'en a pas |
 | `[qos]` | les limites des QoS en attendant que la vérification de la connexion les lise |
 | `[partitions.<nom>]` | libellé, architecture, directives, lanceur, options du mode détaché |
-| `[discovered]` | les gabarits des partitions que liste `[batch] partition_info` (`ccc_mpinfo`, `sinfo -o '%P %c %D %a'`) et que `[partitions]` ne décrit pas : directives, lanceur et options du mode détaché avec `{name}` et `{cores}` (les cœurs d'un nœud), un motif sur le nom pour les partitions ARM (`arm`, les autres sont x86) et un pour celles à ne pas proposer (`skip`) |
+| `[discovered]` | les gabarits des partitions que liste `[batch] partition_info` (`ccc_mpinfo`, ``sinfo -o '%P %c %D %a'``) et que `[partitions]` ne décrit pas : directives, lanceur et options du mode détaché avec `{name}` et `{cores}` (les cœurs d'un nœud), un motif sur le nom pour les partitions ARM (`arm`, les autres sont x86) et un pour celles à ne pas proposer (`skip`) |
 | `[defaults."<programme>".<arch>]` | les valeurs par défaut des options par programme et architecture (`{build_root}` est celle du site) |
 
 Les partitions que liste la machine sont lues à chaque vérification de la connexion et mémorisées

@@ -514,7 +514,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          chunk otherwise.
     void check_nan_written([[maybe_unused]] InT<T> value) const noexcept;
 
-    /// @brief Write @p value straight through #values, with no synchronisation.
+    /// @brief Write @p value straight through the chunk's `values`, with no synchronisation.
     /// @pre The chunk is materialised and the caller holds the write path.
     void store_value(InT<T> value) const noexcept
     {
@@ -1034,16 +1034,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires is_packed_bit_v<T> && bit_operand_v<U>;
 
     /**
-     * @brief Compound left shift operator
+     * @brief Bitwise shift left -- clean types (Integral <<= Integral).
      *
      * @tparam U Type of the shift amount (must be integral)
-     * @param v Number of positions to shift
+     * @param operand Number of positions to shift
      * @return This proxy (see operator+=).
-     * @note Requires T and U to be integral types
-     * @note noexcept guaranteed
      */
-
-    /** @brief Bitwise shift left — clean types (Integral <<= Integral). */
     template <typename U>
         requires IsCleanShiftOp<T, U> && ElementShiftable<T>
     Derived operator<<=(const U& operand) noexcept

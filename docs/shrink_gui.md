@@ -113,7 +113,7 @@ turns this check off for a program.
 the cluster.
 
 **Compiling on several nodes.** With "Nodes" N > 1 and "N jobs of one node", "Submit" creates N batch jobs, one node
-each, with the same directives and the same command plus `--pool=<the submission's id>`.
+each, with the same directives and the same command plus ``--pool=<the submission's id>``.
 They appear in the table as `compile_all.sh [k/N]`, runs `<id>-n1` to `<id>-nN`. Each job walks
 the configurations in the usual order and builds a configuration only if it is the first to
 claim it (an atomic `mkdir` in `$CHUNK_BUILD_ROOT/.pools/<id>/`); it skips those another job
@@ -324,7 +324,7 @@ To create one, copy an example to `~/.config/shrink_gui/site.toml` and edit it:
 | `[detached]` | the detached mode's command and its time and QoS options; left out when the site has none |
 | `[qos]` | the QoS limits used until the connection check reads them |
 | `[partitions.<name>]` | label, architecture, directives, launcher, detached options |
-| `[discovered]` | the templates of the partitions `[batch] partition_info` lists (`ccc_mpinfo`, `sinfo -o '%P %c %D %a'`) that `[partitions]` does not describe: directives, launcher and detached options with `{name}` and `{cores}` (the cores of one node), a pattern on the name for the ARM ones (`arm`, the others are x86) and one for those not to offer (`skip`) |
+| `[discovered]` | the templates of the partitions `[batch] partition_info` lists (`ccc_mpinfo`, ``sinfo -o '%P %c %D %a'``) that `[partitions]` does not describe: directives, launcher and detached options with `{name}` and `{cores}` (the cores of one node), a pattern on the name for the ARM ones (`arm`, the others are x86) and one for those not to offer (`skip`) |
 | `[defaults."<program>".<arch>]` | the option defaults per program and architecture (`{build_root}` is the site's) |
 
 The partitions the machine lists are read at each connection check and remembered for the next

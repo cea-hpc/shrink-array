@@ -13,7 +13,7 @@
 > son absence -- sauf pour les traces du §2 marquées *définie*, actives dès qu'elles sont définies
 > (même à `0`), et pour les variables dont la ligne dit ce que fait `0`. Une variable qui n'est pas
 > lue est ignorée sans message : en cas de doute, vérifier avec
-> `grep -rn '"NOM"' chunk fast_allocators examples`.
+> ``grep -rn '"NOM"' chunk fast_allocators examples``.
 >
 > **Dates de retrait.** Un interrupteur qui garde un ancien comportement, ou un choix qu'aucun build
 > ne teste, porte une date de retrait dans sa ligne ; à cette date il part, avec son chemin de
@@ -57,7 +57,7 @@ active tous, et avec eux les compteurs de l'arène et d'OMPT, qui coûtent un pe
 
 | réglage | ce qu'il affiche |
 |---|---|
-| `CHUNK_LOG=rechunk=info` | les décisions du décideur (`decide <tableau>: re-chunk S=.. -> S'=.. ... [APPLIED]`, ou `[dry-run] would re-chunk`) |
+| `CHUNK_LOG=rechunk=info` | les décisions du décideur (``decide <tableau>: re-chunk S=.. -> S'=.. ... [APPLIED]``, ou `[dry-run] would re-chunk`) |
 | `CHUNK_LOG=rechunk=debug` (autrefois `CHUNK_RECHUNK_TRACE`, et `CHUNK_RECHUNK_CHURN` pour le churn) | en plus, les verdicts d'attente, pour chaque rechunk la durée des phases et des tranches, et à chaque passage, par tableau analysé, les matérialisations depuis le passage précédent et une estimation du coût passager qu'elles impliquent (ligne `churn`) ; pour zero_any (et pattern), une ligne `teardown split` découpe la phase `tmp teardown` de chaque rechunk en ses étapes (vidage, candidats, passe terminale, région de rangement, libération du registre, tables de métadonnées, vidage de la clé, retrait du registre, libération de `chunk_list_`, reste) |
 | `CHUNK_LOG=rechunk=trace` (autrefois `CHUNK_RECHUNK_TRACE_SLICES`) | en plus, la mémoire à chaque tranche de la reconstruction de `zero` |
 | `CHUNK_LOG=memory=info` (autrefois `CHUNK_RECHUNK_MEMTRACE`) | à chaque passage de l'advisor : mémoire exacte, dont la part résidente de l'arène des tampons |
@@ -217,7 +217,7 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--with-ledger` | ajouter `cmake-build-omp-gnu-debug-ledger` (Debug OpenMP avec `CHUNK_FORCE_LEDGER=ON`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi |
 | `--with-token-sanitizer` | ajouter `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`CHUNK_SANITIZER=token`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi ; `--no-sanitizers` l'en retire |
 | `--target=<glob>` | seulement les configurations dont le nom correspond (`omp-llvm`, ou un motif du shell entre apostrophes) ; un motif qui ne correspond à rien est une erreur |
-| `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_omp_zero_256`, ou un motif du shell entre apostrophes : `'shrink_bench_*_zero_256'` la prend quel que soit le backend) |
+| `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_omp_zero_256`, ou un motif du shell entre apostrophes : ``'shrink_bench_*_zero_256'`` la prend quel que soit le backend) |
 | `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles (par un jobserver avec ninja 1.13 ou plus, voir plus bas) |
 | `--no-hardening` | sans `CHUNK_GLIBCXX_ASSERTIONS` ni `CHUNK_UBSAN` sur les builds Debug et sanitizer |
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
@@ -255,7 +255,7 @@ relisent pas le `.ninja_log` l'une de l'autre) ; donné à la main, il l'emporte
 Le backend de threads std (`CHUNK_THREADS=std`) a ses propres builds : `std-gnu`,
 `std-gnu-check` et un build ThreadSanitizer pour `compile_all_gnu.sh`, `std-llvm`,
 `std-llvm-check` et un build ThreadSanitizer pour `compile_all.sh`. Ils allongent la
-compilation (`--target='omp-*'` les écarte, `--target='std-*'` les construit seuls). Leurs
+compilation (``--target='omp-*'`` les écarte, ``--target='std-*'`` les construit seuls). Leurs
 exécutables de banc le disent dans leur nom, `shrink_bench_std_*` (`shrink_bench_omp_*` dans les
 builds OpenMP, `shrink_bench_serial_*` dans les builds série) : aucun n'utilise OpenMP. Le banc
 TBB (`shrink_bench_tbb_*`) et `tbb_validation` demandent oneTBB dans ces builds : les scripts
