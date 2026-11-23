@@ -55,6 +55,8 @@
 #include <cstring>     // std::memcpy
 #include <type_traits> // std::is_floating_point_v, std::conditional_t
 
+#include "chunk/internal/host_device.h" // CHUNK_HD: the core layer, host and device
+
 #if __has_include(<bit>)
     #include <bit> // std::bit_cast
 #endif
@@ -66,11 +68,13 @@ namespace internal
 {
 /// @brief The unsigned integer with the object representation of @p v (float, double).
 template <typename F>
-[[nodiscard]] inline auto float_bits(F v) noexcept
+[[nodiscard]] CHUNK_HD inline auto float_bits(F v) noexcept
 {
     using U = std::conditional_t<sizeof(F) == 4, std::uint32_t, std::uint64_t>;
     static_assert(sizeof(U) == sizeof(F));
-#if defined(__cpp_lib_bit_cast)
+    // std::bit_cast is a host function to nvcc (constexpr, without --expt-relaxed-constexpr):
+    // the memcpy, which the device compilers turn into a register move, there.
+#if defined(__cpp_lib_bit_cast) && !defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)
     return std::bit_cast<U>(v);
 #else
     U u;
@@ -115,6 +119,7 @@ struct is_std_complex<std::complex<F>> : std::true_type
  *     }
  * };
  * @endcode
+ * A specialisation used in device code (CUDA, HIP) marks same() CHUNK_HD too.
  * A specialisation must be an equivalence relation that implies operator==
  * (the library still uses == nowhere for its decisions, but a value it calls
  * "the same" is read back in place of the other).
@@ -123,7 +128,7 @@ template <typename T>
 struct ValueIdentity
 {
     /// @brief Whether @p a and @p b are the same stored value (see same_value()).
-    [[nodiscard]] static bool same(const T& a, const T& b) noexcept;
+    [[nodiscard]] CHUNK_HD static bool same(const T& a, const T& b) noexcept;
 };
 
 /**
@@ -131,7 +136,7 @@ struct ValueIdentity
  *        the other. The comparison of every compression and skipped-write decision.
  */
 template <typename T>
-[[nodiscard]] inline bool same_value(const T& a, const T& b) noexcept
+[[nodiscard]] CHUNK_HD inline bool same_value(const T& a, const T& b) noexcept
 {
     return ValueIdentity<T>::same(a, b);
 }
@@ -144,7 +149,7 @@ template <typename T>
  */
 template <typename T, typename U>
     requires(!std::is_same_v<T, U>)
-[[nodiscard]] inline bool same_value(const T& a, const U& b) noexcept
+[[nodiscard]] CHUNK_HD inline bool same_value(const T& a, const U& b) noexcept
 {
     if constexpr (std::is_floating_point_v<T> || internal::is_std_complex<T>::value || internal::is_std_array<T>::value)
     {
@@ -157,7 +162,7 @@ template <typename T, typename U>
 }
 
 template <typename T>
-inline bool ValueIdentity<T>::same(const T& a, const T& b) noexcept
+CHUNK_HD inline bool ValueIdentity<T>::same(const T& a, const T& b) noexcept
 {
     if constexpr (internal::bitwise_float_v<T>)
     {
@@ -199,7 +204,7 @@ inline bool ValueIdentity<T>::same(const T& a, const T& b) noexcept
  * lexicographic.
  */
 template <typename T>
-[[nodiscard]] inline bool identity_less(const T& a, const T& b) noexcept
+[[nodiscard]] CHUNK_HD inline bool identity_less(const T& a, const T& b) noexcept
 {
     if constexpr (internal::bitwise_float_v<T>)
     {

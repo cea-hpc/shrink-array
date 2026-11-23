@@ -80,6 +80,16 @@ the tag's checksum to the recipe.
   back in full after each. A difference prints the seed and the last operations. In the grouped
   executables, static and dyn, at 1 and 8 threads.
 
+- The start of a core layer shared with a future GPU backend (docs/gpu_design.md, stage 1):
+  `CHUNK_HD` (`chunk/internal/host_device.h`) is `__host__ __device__` in a CUDA or HIP
+  translation unit and nothing otherwise. It marks `same_value`, `identity_less`,
+  `ValueIdentity::same`, `log2int`, `StaticChunkSize` and `ChunkElems`, and the uniformity test
+  of the compression scans, now the free function `internal::walk_constant`
+  (`chunk/internal/constant_walk.h`) that `ChunkBase::walk_constant` calls. CPU builds are
+  unchanged. `-DCHUNK_DEVICE_CORE_CHECK=ON` builds device_core_validation, which runs these
+  functions in a CUDA kernel and compares them with the host, signed zeros and NaN payloads
+  included (nvcc 13.3 and clang 23).
+
 ### Fixed
 
 - `swap()` between two arrays of different chunk sizes (a run-time geometry build, one of them

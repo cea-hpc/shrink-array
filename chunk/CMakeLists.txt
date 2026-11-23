@@ -358,6 +358,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/cpu_pause.h
         public/chunk/internal/crtp_support.h
         public/chunk/internal/const_slot.h
+        public/chunk/internal/constant_walk.h
         public/chunk/internal/def_force_inline.h
         public/chunk/internal/deferred_lifecycle_check.h
         public/chunk/internal/deferred_op_pool.h
@@ -366,6 +367,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/freepath_counters.h
         public/chunk/internal/pow2.h
         public/chunk/internal/global_check.h
+        public/chunk/internal/host_device.h
         public/chunk/internal/immortal.h
         public/chunk/internal/in_t.h
         public/chunk/internal/invariant_check.h

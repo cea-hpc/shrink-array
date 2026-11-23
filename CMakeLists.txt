@@ -144,6 +144,7 @@ message(STATUS "Threading backend: ${CHUNK_THREADS_BACKEND}")
 # registered there only. Off by default: no new dependency for the default
 # build.
 option(CHUNK_WITH_TBB "Build the TBB adaptor's validation (needs oneTBB; the library does not link it)" OFF)
+option(CHUNK_DEVICE_CORE_CHECK "Build device_core_validation: the CHUNK_HD core layer on a CUDA device against the host (needs a CUDA compiler)" OFF)
 if(CHUNK_WITH_TBB)
     find_package(TBB REQUIRED)
     if(CHUNK_THREADS_BACKEND STREQUAL "openmp")

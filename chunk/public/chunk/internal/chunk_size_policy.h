@@ -45,6 +45,7 @@
 
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
 #include "chunk/internal/pow2.h"              // log2int (constexpr, also usable at run time)
+#include "chunk/internal/host_device.h"       // CHUNK_HD (StaticChunkSize, ChunkElems: the core layer)
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size / static_chunk_shift / static_chunk_mask
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED (an invalid geometry)
 #include "chunk/log.h"                        // CHUNK_LOG (warn_chunk_size_refused)
@@ -239,10 +240,10 @@ class ChunkElems
     ChunkElems() = delete;
     /// @brief Wrap an element count.
     /// @param count The element count.
-    constexpr explicit ChunkElems(unsigned int count) noexcept : n_(count) {}
+    CHUNK_HD constexpr explicit ChunkElems(unsigned int count) noexcept : n_(count) {}
 
     /// @brief The element count.
-    [[nodiscard]] constexpr unsigned int count() const noexcept
+    [[nodiscard]] CHUNK_HD constexpr unsigned int count() const noexcept
     {
         return n_;
     }
@@ -257,17 +258,17 @@ struct StaticChunkSize
     static constexpr bool is_dynamic = false;
 
     /// @brief Elements per chunk (the compile-time constant).
-    static constexpr unsigned int size() noexcept
+    CHUNK_HD static constexpr unsigned int size() noexcept
     {
         return static_chunk_size;
     }
     /// @brief log2(size()): the shift that turns an element index into a chunk index.
-    static constexpr unsigned int shift() noexcept
+    CHUNK_HD static constexpr unsigned int shift() noexcept
     {
         return static_chunk_shift;
     }
     /// @brief size() - 1: the mask that turns an element index into an offset in its chunk.
-    static constexpr unsigned int modulo() noexcept
+    CHUNK_HD static constexpr unsigned int modulo() noexcept
     {
         return static_chunk_mask;
     }
@@ -275,14 +276,14 @@ struct StaticChunkSize
     /// @brief The chunk of element @p index (>= 0): index / size(). Unsigned: a signed
     ///        division would add a fix-up for negative values.
     template <typename I>
-    [[nodiscard]] static constexpr I chunk_of(I index) noexcept
+    [[nodiscard]] CHUNK_HD static constexpr I chunk_of(I index) noexcept
     {
         return static_cast<I>(static_cast<std::make_unsigned_t<I>>(index) / size());
     }
     /// @brief Element @p index's (>= 0) offset in its chunk: index % size() (a mask
     ///        for a power of two).
     template <typename I>
-    [[nodiscard]] static constexpr I offset_of(I index) noexcept
+    [[nodiscard]] CHUNK_HD static constexpr I offset_of(I index) noexcept
     {
         return static_cast<I>(static_cast<std::make_unsigned_t<I>>(index) % size());
     }

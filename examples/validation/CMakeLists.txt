@@ -925,6 +925,23 @@ if (CHUNK_OPENMP AND NOT CHUNK_STD_ALLOC)
 endif()
 
 
+# --- device_core_validation: the core layer (chunk/internal/host_device.h) compiled
+# for a CUDA device and compared with the host. Opt-in: the CPU builds need no CUDA.
+# Only the include path and the definitions of a library target, not its compile
+# options (host flags such as -march would reach the CUDA compiler).
+if (CHUNK_DEVICE_CORE_CHECK)
+  enable_language(CUDA)
+  add_executable(device_core_validation device_core_validation.cu)
+  set_target_properties(device_core_validation PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON)
+  target_include_directories(device_core_validation PRIVATE
+          $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_INCLUDE_DIRECTORIES>
+          ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+  target_compile_definitions(device_core_validation PRIVATE
+          $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_COMPILE_DEFINITIONS>)
+  add_test(NAME device_core_validation COMMAND device_core_validation)
+  set_property(TEST device_core_validation PROPERTY LABELS validation)
+endif()
+
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).
 shrink_stamp_directory_targets()
