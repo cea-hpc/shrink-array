@@ -227,8 +227,9 @@ void zero_any::ArrayImpl<Derived>::clear()
                 report_size_prediction<T>(summary, csz, array_index, "zero_any",
                                           sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
             }
-            catch (...) // the prediction is a log line only: skipped
+            catch (...) // NOSONAR(cpp:S2486, cpp:S2738): teardown, nothing may escape
             {
+                // The prediction is a log line only: skipped.
             }
         }
     }

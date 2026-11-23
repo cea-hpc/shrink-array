@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Every SonarQube Cloud issue of a branch, in one JSON or CSV file.
 
-The analysis is .github/workflows/sonar.yml's (project cea-hpc_shrink-array);
+The analysis is .github/workflows/sonar.yml's (project phil12692_shrink-array
+until cea-hpc_shrink-array exists);
 this fetches its issues through the Web API (api/issues/search), page after
 page, with the rule names, and writes them sorted by file and line. A summary
 by severity and by rule goes to stderr.
@@ -17,7 +18,8 @@ Usage: scripts/sonar_export.py [--branch develop] [--format json|csv]
               under "hotspots" (CSV: as rows of type SECURITY_HOTSPOT)
   -o FILE     where to write (default: stdout)
   --project   the project key (default: $SONAR_PROJECT_KEY, else
-              cea-hpc_shrink-array)
+              phil12692_shrink-array, the analysed one until cea-hpc's
+              organisation imports the project)
 
 Environment:
   SONAR_TOKEN  a user token (sonarcloud.io, My Account, Security). The project
@@ -41,7 +43,7 @@ import subprocess
 import sys
 import urllib.parse
 
-DEFAULT_PROJECT = os.environ.get("SONAR_PROJECT_KEY") or "cea-hpc_shrink-array"
+DEFAULT_PROJECT = os.environ.get("SONAR_PROJECT_KEY") or "phil12692_shrink-array"
 PAGE_SIZE = 500
 API_LIMIT = 10000
 
@@ -149,7 +151,7 @@ def all_hotspots(host, project, branch):
 
 
 def file_of(component):
-    """cea-hpc_shrink-array:chunk/x.h -> chunk/x.h"""
+    """phil12692_shrink-array:chunk/x.h -> chunk/x.h"""
     return component.split(":", 1)[1] if ":" in component else component
 
 
