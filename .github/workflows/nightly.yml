@@ -181,14 +181,14 @@ jobs:
           ctest --test-dir build -R '^read_reclaim_validation_' --repeat until-fail:20 --timeout 600 --output-on-failure
       # On a failure, the validation executables (the faulting pc is an offset in one of
       # them: print_module_map above), for objdump -d around it.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: asan-validation-binaries-${{ strategy.job-index }}
           path: build/examples/validation/validation_*_256
           retention-days: 14
       # The cores, for a closer look with the binary above.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: asan-core-dumps-${{ strategy.job-index }}
@@ -640,7 +640,7 @@ jobs:
             --sonarqube sonar/coverage.xml
           cat coverage/coverage.md >> "$GITHUB_STEP_SUMMARY"
           git rev-parse HEAD > sonar/commit.txt
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: coverage-html
@@ -649,7 +649,7 @@ jobs:
       # The same counters in SonarQube's generic coverage format, with the
       # commit they measure: sonar.yml's analyses take the latest one (a
       # 3-hour coverage run per push would hold every analysis that long).
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: coverage-sonarqube
