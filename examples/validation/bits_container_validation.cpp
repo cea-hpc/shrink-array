@@ -65,13 +65,13 @@
 #include "chunk/range_ops.h"             // fill_range, copy_range, and their _mt forms
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // build_config::chunk_dynamic, build_config::needs_explicit_phases
+#include "chunk/config.h"                // build_config::chunk_dynamic
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, begin_phase / end_phase
 
 namespace validation::bits_container_validation
 {
@@ -80,21 +80,6 @@ using namespace shrink_array;
 
 namespace
 {
-
-void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
 
 // A multiple of every chunk size the harness is built at: a run is whole chunks
 // (4096 * 3: every power of two up to 4096, and 192, 384, 768...).

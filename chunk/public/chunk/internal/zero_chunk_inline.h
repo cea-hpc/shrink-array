@@ -228,7 +228,7 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::create_value(this Derived& se
         thr_rank, [](T*) noexcept { /* recycled: already zero, see above */ },
         [](T* vals) noexcept { zero_fill_fresh(vals); });
 
-    if (self.compare_and_swap(values_loc))
+    if (self.compare_and_swap(values_loc)) // NOSONAR(cpp:S6004): a 3-line initialiser with two lambdas
     {
         self.Base::reclaim_value(values_loc, thr_rank);
     }
@@ -531,9 +531,8 @@ T* zero::ChunkThreadPolicy<T, Derived, Enabled>::try_mark_const_and_get_old(this
     }
 
     T* expected = old;
-    T* new_ptr  = Base::first_value_ptr();
-
-    if (!self.values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
+    if (T* new_ptr = Base::first_value_ptr();
+        !self.values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
         [[unlikely]]
     {
         return nullptr;

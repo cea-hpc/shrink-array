@@ -68,15 +68,10 @@
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every element
 // round-trips and the teardown returned.
 
-#include <type_traits> // std::conditional_t
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
@@ -84,59 +79,12 @@
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name, begin_phase / end_phase, maybe_set_second_value
 
 namespace validation::compress_roundtrip_validation
 {
 
 using namespace shrink_array;
-
-// The phase brackets, no-ops under OMPT (the callbacks do it) and serially.
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-static void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
-// set_second_value only exists on zero_or_value / zero_any; no-op elsewhere.
-template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& arr, const Val& value)
-{
-    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
-    {
-        arr.set_second_value(value);
-    }
-}
 
 // Runs of run_len elements: 0 -> first constant, 1 -> second constant, 2 -> varied.
 // run_len is a multiple of every geometry the harness is built at, so a run is a

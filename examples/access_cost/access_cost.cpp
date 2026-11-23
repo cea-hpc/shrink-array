@@ -658,7 +658,7 @@ try
             return SamplePair{sv, sa};
         };
         const auto nothing = [] {};
-        const auto pair    = [&](int c, auto&& run_vec, auto&& run_arr)
+        const auto pair    = [&](int c, const auto& run_vec, const auto& run_arr)
         { return pair_prepared(c, nothing, run_vec, nothing, run_arr); };
 
         // read-varied

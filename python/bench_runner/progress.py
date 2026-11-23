@@ -1,6 +1,7 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """The live progress line and bar shared by every phase."""
+import collections
 import time
 
 from . import events
@@ -54,10 +55,31 @@ class RunCounter:
     """Runs done so far out of the campaign's total: the progress bar and the
     ETA of the check, STL, sanitizer and perf phases."""
 
+    # The recent pace eta_s() also reads (seconds), as shrink_gui's
+    # remote_helper.eta_from_progress.
+    RECENT_S = 900
+
     def __init__(self, total):
         self._idx = 0
         self.total = total
         self.start = time.time()
+        self._marks = collections.deque()  # (time, idx) of the last RECENT_S seconds
+
+    def eta_s(self):
+        """Seconds left: the larger of the whole run's mean pace and the last
+        RECENT_S seconds' one, applied to the runs left. The mean alone said
+        "1.2 min" at 99 % of a campaign whose last runs (serial perf, 90-300 s
+        each) took an hour: thousands of runs of seconds before them."""
+        done, left = self._idx, self.total - self._idx
+        if done <= 0 or left <= 0:
+            return 0.0
+        now = time.time()
+        eta = (now - self.start) / done * left
+        if self._marks:
+            t0, i0 = self._marks[0]
+            if done > i0 and now > t0:
+                eta = max(eta, (now - t0) / (done - i0) * left)
+        return eta
 
     # The phases count with `counter.idx += 1`: the setter is where every run
     # done is seen, so it reports to events.jsonl (throttled there).
@@ -68,6 +90,10 @@ class RunCounter:
     @idx.setter
     def idx(self, value):
         self._idx = value
+        now = time.time()
+        self._marks.append((now, value))
+        while self._marks and self._marks[0][0] < now - self.RECENT_S:
+            self._marks.popleft()
         events.progress(value, self.total)
 
     def skip(self, n):

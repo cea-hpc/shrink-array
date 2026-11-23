@@ -47,31 +47,26 @@
 //
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every bit round-trips.
 
-#include <cmath>       // std::signbit, std::isnan
-#include <complex>     // std::complex
-#include <cstdint>     // std::uint64_t
-#include <cstdlib>     // std::strtol
-#include <cstring>     // std::memcmp
-#include <format>      // std::format (run_compound_on_zero)
-#include <limits>      // std::numeric_limits
-#include <type_traits> // std::conditional_t
-#include <utility>     // std::as_const
-#include <vector>      // std::vector
+#include <cmath>   // std::signbit, std::isnan
+#include <complex> // std::complex
+#include <cstdint> // std::uint64_t
+#include <cstdlib> // std::strtol
+#include <cstring> // std::memcmp
+#include <format>  // std::format (run_compound_on_zero)
+#include <limits>  // std::numeric_limits
+#include <utility> // std::as_const
+#include <vector>  // std::vector
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/range_ops.h"             // fill_range, fill_range_mt
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/internal/same_value.h"   // ValueIdentity, same_value
-#include "chunk/config.h"                // chunk_config::use_zero_or_value*, build_config::needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name, begin_phase / end_phase
 
 namespace validation::signed_zero_validation
 {
@@ -103,43 +98,6 @@ namespace validation::signed_zero_validation
 {
 
 using namespace shrink_array;
-
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-static void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 /// The values of a case for one element type: the negative zero, the
 /// positive one, and a non-zero value to materialise chunks with.

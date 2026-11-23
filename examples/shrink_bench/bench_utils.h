@@ -24,7 +24,6 @@
 #include <cstddef>     // size_t
 #include <cstdint>     // uint64_t, int64_t
 #include <format>      // std::format (bench_text)
-#include <random>      // std::mt19937
 #include <string>      // std::string
 #include <type_traits> // std::true_type, std::false_type
 #include <vector>      // std::vector
@@ -331,23 +330,6 @@ extern bool debug_flag;
 
 extern const std::vector<std::string> valid_args;
 
-/// @brief Write @p seed to @p filename; reports an error on std::cerr if the file cannot be opened.
-/// @param seed Seed to save.
-/// @param filename Destination file.
-void save_seed_to_file(unsigned seed, const std::string& filename);
-/// @brief Read a seed from @p filename.
-/// @param filename Source file.
-/// @return The seed read, or 0 when the file cannot be opened.
-unsigned load_seed_to_file(const std::string& filename);
-/// @brief Seed @p rng from @p seed_file_name; when that yields 0, draw a seed from std::random_device and save it.
-/// @param rng Generator to seed.
-/// @param seed_file_name Seed file.
-void initialize_rng(std::mt19937& rng, const std::string& seed_file_name);
-
-/// @brief Bytes to MiB (the bench's "Mo"). A pure conversion: no I/O.
-/// @param memory_value Size in bytes.
-/// @return The same size in MiB.
-double convert_memory(double memory_value);
 /// @brief Print the memory line labelled @p msg: peak and current resident size, plus the parked (and, with
 ///        CHUNK_STATS, materialised) bytes in shrink builds.
 /// @param msg Label of the line.

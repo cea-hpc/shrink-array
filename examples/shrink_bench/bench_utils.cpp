@@ -17,9 +17,8 @@
 #include <algorithm>      // std::min, std::max
 #include <cmath>          // sqrt, pow
 #include <cstdlib>        // std::getenv, std::atoi
-#include <fstream>        // std::ifstream, std::ofstream
+#include <fstream>        // std::ifstream
 #include <limits>         // std::numeric_limits
-#include <random>         // std::mt19937 / std::random_device (initialize_rng)
 #include <string>         // std::string
 #include <sys/resource.h> // getrusage
 #include <unistd.h>       // sysconf
@@ -28,6 +27,7 @@
 #include <print>          // std::println, std::print
 
 #include "bench_utils.h"              // the declarations defined here
+#include "example_utils.h"            // bytes_to_mib, write_memory_mo
 #include "chunk/internal/env_parse.h" // env_flag
 #include "chunk/internal/exact_rss.h" // exact current and peak memory
 
@@ -55,68 +55,8 @@ const std::vector<std::string> valid_args = {
     "--force_rechunk_toggle"};
 
 // -----------------------------------------------------------------------------
-// Seed persistence.
-// -----------------------------------------------------------------------------
-void save_seed_to_file(unsigned seed, const std::string& filename)
-{
-    std::println("\nSave seed in file");
-
-    std::ofstream file(filename);
-    if (file.is_open())
-    {
-        file << seed;
-        file.close();
-    }
-    else
-    {
-        std::println(stderr, "Unable to open file for saving seed.");
-    }
-}
-
-unsigned load_seed_to_file(const std::string& filename)
-{
-    unsigned seed = 0;
-    if (std::ifstream file(filename); file.is_open())
-    {
-        file >> seed;
-        file.close();
-    }
-    else
-    {
-        std::println(stderr, "Unable to open file for loading seed. --> create new one");
-    }
-    std::println("\nLoad seed in file");
-
-    return seed;
-}
-
-void initialize_rng(std::mt19937& rng, const std::string& seed_file_name)
-{
-    unsigned seed = load_seed_to_file(seed_file_name);
-    if (seed == 0)
-    {
-        // If loading failed, generate a new seed
-        std::random_device rd;
-        seed = rd();
-        save_seed_to_file(seed, seed_file_name);
-    }
-    rng.seed(seed);
-}
-
-// -----------------------------------------------------------------------------
 // Memory report.
 // -----------------------------------------------------------------------------
-double convert_memory(double memory_value)
-{
-    constexpr double byte_to_kb = 1.0 / 1024;
-    constexpr double kb_to_mb   = 1.0 / 1024;
-
-    // A conversion, nothing else: no file I/O inside --mode perf's timed
-    // loop. memory_consumption("end") writes memory_mo.txt, with the peak.
-    const double kilobytes = memory_value * byte_to_kb;
-    return kilobytes * kb_to_mb;
-}
-
 /// @brief The exact-peak sampler of the bench: started with the program
 ///        (static initialisation) when SHRINK_BENCH_RSS_SAMPLE_MS=<ms> asks
 ///        for it; OFF by default (each sample walks the page tables).
@@ -215,20 +155,14 @@ void memory_consumption(const std::string& msg)
         // stdout instead).
         if (msg == "end")
         {
-            if (std::ofstream out_file("memory_mo.txt"); out_file.is_open())
-            {
-                out_file << convert_memory(static_cast<double>(rss) * 1024.0);
-            }
-            else
-            {
-                std::println(stderr, "Error : can't open memory_mo.txt.");
-            }
+            example_utils::write_memory_mo(example_utils::bytes_to_mib(static_cast<double>(rss) * 1024.0));
         }
 
-        std::print("Memory consumption {} : {:.3f} Mo (peak)", msg, convert_memory(static_cast<double>(rss) * 1024.0));
+        std::print("Memory consumption {} : {:.3f} Mo (peak)", msg,
+                   example_utils::bytes_to_mib(static_cast<double>(rss) * 1024.0));
         if (cur_kb > 0)
         {
-            std::print(", {:.3f} Mo (current)", convert_memory(static_cast<double>(cur_kb) * 1024.0));
+            std::print(", {:.3f} Mo (current)", example_utils::bytes_to_mib(static_cast<double>(cur_kb) * 1024.0));
         }
         // Where the resident memory is, at this moment, as far as the library
         // knows: the buffers parked in the per-rank reuse pools (blocks a
@@ -241,7 +175,7 @@ void memory_consumption(const std::string& msg)
         {
             const std::size_t parked =
                 shrink_array::Singleton<shrink_array::TypeStateRegistry>::get_ref().reuse_pool_bytes();
-            std::print(", parked {:.3f} Mo", convert_memory(static_cast<double>(parked)));
+            std::print(", parked {:.3f} Mo", example_utils::bytes_to_mib(static_cast<double>(parked)));
             // Preprocessor guard, not `if constexpr`: ChunkStatsThr and
             // reduce_chunk_stats() only exist in a CHUNK_STATS build, and a
             // discarded branch of a non-template function still looks its
@@ -256,8 +190,8 @@ void memory_consumption(const std::string& msg)
                     live_bytes += t.bytes_alloc + t.bytes_reused - t.bytes_freed;
                     live_chunks += t.create - t.compress - t.released;
                 }
-                std::print(", materialised {:.3f} Mo ({} chunks)", convert_memory(static_cast<double>(live_bytes)),
-                           live_chunks);
+                std::print(", materialised {:.3f} Mo ({} chunks)",
+                           example_utils::bytes_to_mib(static_cast<double>(live_bytes)), live_chunks);
             }
 #endif
         }

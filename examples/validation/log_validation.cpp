@@ -780,7 +780,8 @@ int check_debuggers(const char* self, std::string_view gdb, std::string_view str
 #else
         false;
 #endif
-    if (!linux_proc || gdb.empty() || std::system((gdb_q + " -nx -batch -ex quit > /dev/null 2>&1").c_str()) != 0)
+    if (!linux_proc || gdb.empty() || // NOSONAR(cpp:S6004): linux_proc is set by #if
+        std::system((gdb_q + " -nx -batch -ex quit > /dev/null 2>&1").c_str()) != 0)
     {
         println("SKIP: not Linux, or no gdb to run");
         return 77;

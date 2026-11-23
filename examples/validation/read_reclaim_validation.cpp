@@ -118,21 +118,17 @@
 #include <cstdint>     // std::uint64_t
 #include <cstdlib>     // std::getenv, std::atol
 #include <string_view> // std::string_view
-#include <type_traits> // std::conditional_t
 #include <omp.h>       // omp_get_thread_num, omp_get_max_threads
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::use_openmp / needs_explicit_phases
-#include "chunk/phases.h" // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/test_hooks.h" // test_hooks::read_delay_* / pass_delay_*
-#include "chunk/print.h"               // shrink_array::println
+#include "chunk/config.h"                // chunk_config::use_zero_or_value*, build_config::use_openmp
+#include "chunk/internal/test_hooks.h"   // test_hooks::read_delay_* / pass_delay_*
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name, begin_phase / end_phase, maybe_set_second_value
 
 namespace validation::read_reclaim_validation
 {
@@ -144,46 +140,8 @@ namespace
 
 static_assert(build_config::use_openmp, "read_reclaim_validation needs an OpenMP build");
 
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
 using Arr   = Array<double>;
 using Index = Arr::IndexType;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
-void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-
-void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
 
 // Victims per writer: twice the largest in-region trigger floor (zero_or_value:
 // 2000), so a single sweep crosses it on every variant.

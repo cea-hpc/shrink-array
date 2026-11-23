@@ -40,7 +40,7 @@
 #include "chunk/internal/chunk_stats.h"                 // inc_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/type_state.h"                  // TypeState: per-size free lists, candidate filter
-#include "chunk/internal/pmp_chunk.h"                   // CHUNK_PMP_*, get_size_max_array_omp, pmp loops
+#include "chunk/internal/pmp_chunk.h"                   // CHUNK_PMP_*, pmp loops
 #include "chunk/internal/singleton.h"                   // Singleton<TypeStateRegistry>::get_ref
 #include "chunk/internal/type_name.h"                   // type_name<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
@@ -54,6 +54,7 @@
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* (check builds)
 #include "chunk/internal/cold_path_lock.h"              // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/teardown_probe.h"              // teardown_probe (rechunk=debug: the tmp teardown split)
+#include "chunk/internal/teardown_park.h"               // park_live_chunks (the park step)
 #include "chunk/internal/same_value.h"                  // same_value
 
 namespace shrink_array
@@ -222,8 +223,9 @@ void zero_any::ArrayImpl<Derived>::clear()
                 report_size_prediction<T>(summary, csz, array_index, "zero_any",
                                           sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
             }
-            catch (...) // the prediction is a log line only: skipped
+            catch (...) // NOSONAR(cpp:S2486, cpp:S2738): teardown, nothing may escape
             {
+                // The prediction is a log line only: skipped.
             }
         }
     }
@@ -462,58 +464,15 @@ void zero_any::ArrayImpl<Derived>::clear_core()
             pmp::Options{},
             [&](pmp::Team& team, auto& acc)
             {
-                const int chunk_count0 = get_size_max_array_omp(chunk_count_);
+                // Neutralised to first_value: every compress path short-circuits
+                // (the CAS reads values == first_value and returns nullptr). Mirrors
+                // the non-OMP clear_st path.
+                internal::park_live_chunks<T>(
+                    team, chunk_list_, chunk_count_, this->size_policy_.size(),
+                    [](const ChunkType& chunk) { return chunk.written_test(); },
+                    [](ChunkType& chunk) { chunk.values_store(ChunkBase<T, ChunkType>::first_value_ptr()); });
 
-                std::vector<ChunkType*> ll_chunk_loc;
-                ll_chunk_loc.reserve(chunk_count0);
-
-                team.for_static<int>(
-                    0, chunk_count_,
-                    [&](int j)
-                    {
-                        if (chunk_list_[j].written_test())
-                        {
-                            if constexpr (chunk_config::stats)
-                            {
-                                inc_chunk_teardown_clear<ChunkType>();
-                                // Released below without a compression: out of the live figures.
-                                add_chunk_released<ChunkType>(1, static_cast<long>(sizeof(T)) *
-                                                                     static_cast<long>(this->size_policy_.size()));
-                            }
-                            ll_chunk_loc.push_back(&chunk_list_[j]);
-                        }
-                    },
-                    pmp::nowait);
-
-                const int thr_rank = CHUNK_PMP_THREAD_RANK;
-
-                if (const auto n = static_cast<int>(ll_chunk_loc.size()); n > 0)
-                {
-                    // Park into the reuse list of THIS array's geometry, not the ambient
-                    // t_active (may be another size mid-rechunk): a size-A buffer filed
-                    // under list[B] would be memset at B by a later pop and overflow.
-                    const unsigned int my_sz = this->size_policy_.size();
-                    auto&              lbf   = Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
-
-                    for (int k = 0; k < n; ++k)
-                    {
-                        T* values_loc = ll_chunk_loc[k]->values_;
-                        // Ledger: LIVE -> parked, or a later pop of this block from the
-                        // free-list is an ILLEGAL b_pop (state=LIVE, expected parked).
-                        CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
-                        lbf.push_back(values_loc);
-
-                        // Neutralise the chunk NOW that its buffer is parked: a residual
-                        // compression candidate (one that slipped the removals above, or
-                        // the terminal sweep) would otherwise free_block_to_pool the SAME
-                        // buffer again (double-free). With first_value stored, every compress
-                        // path short-circuits (the CAS reads values == first_value and
-                        // returns nullptr). Mirrors the non-OMP clear_st path.
-                        ll_chunk_loc[k]->values_store(ChunkBase<T, ChunkType>::first_value_ptr());
-                    }
-                }
-
-                // BARRIER REQUIRED: the loop above is a for_static(..., nowait), so other threads may
+                // BARRIER REQUIRED: park_live_chunks() ends on a for_static(..., nowait), so other threads may
                 // still be in it writing values_, whose slow path (make_block_compression ->
                 // find_or_register_second_value) SCANS the shared segment list. clear() below tears
                 // that list down (head.exchange(nullptr) + delete of every Segment); without
@@ -556,16 +515,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     chunk_count_ = 0;
     probe.mark(internal::TeardownStep::tables);
 
-    // An array with its own slab affinity gives its memory back NOW: every
-    // buffer parked above (own rank) or by another rank (foreign, under this
-    // array's key) goes home to its allocator set, whose slabs hold nothing
-    // else and so empty -- and the sweep madvises them away.
-    // Sequential point (destructor / rechunk_to); the drain opens its own
-    // region. Key 0 (shared pool): nothing to give back per array.
-    if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        Manager::drain_reuse_list_for_size(this->size_policy_.size());
-    }
+    this->drain_own_reuse_list(); // an array with its own allocator set: its memory goes back now
     probe.mark(internal::TeardownStep::key_drain);
 }
 
@@ -794,27 +744,8 @@ void zero_any::ArrayImpl<Derived>::resize(this Derived& self, IntType newsz)
                                               ProxyType::BaseSpec::set(array_id, chunk_index, T{});
                                           });
 
-    // std::vector semantics for the regrown range [old_size, newsz): it reads
-    // T{}. The chunks added above are fresh, but the one holding the OLD end
-    // keeps its tail (after a shrink, the old values would come back on
-    // growth). Reset that tail through the normal write path, after the
-    // reallocations. Serial: at most one chunk, and inside a region an
-    // `omp for` would cover 1/N of it.
-    if (newsz > old_size)
-    {
-        const auto csz = static_cast<IntType>(self.chunk_size());
-        // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
-        // the last element, so when old_size falls on a chunk boundary that
-        // spare chunk holds stale values too.
-        // In long long: old_chunk_count * csz may pass IndexType's range near its top.
-        const long long cover_ll  = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
-        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
-        for (IntType i = old_size; i < stale_end; ++i)
-        {
-            self[i] = T{};
-        }
-    }
+    // The regrown range [old_size, newsz) reads T{}, as std::vector's.
+    self.reset_regrown_tail(old_size, newsz, old_chunk_count);
 }
 
 // ---------------------------------------------------------------------------

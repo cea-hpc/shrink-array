@@ -68,6 +68,7 @@ static_assert(shrink_array::build_config::use_openmp, "OpenMP builds only: the r
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // variant_name
 
 namespace validation::chunk_array_new_validation
 {
@@ -82,22 +83,6 @@ using Ch = std::conditional_t<
     chunk_config::use_zero_any,
     zero_any::Chunk<double>,
     std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Chunk<double>, zero::Chunk<double>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 /// @brief How many of the @p count chunks hold a buffer (none should).
 /// @note A TEMPLATE, so that the branch `if constexpr` discards is not

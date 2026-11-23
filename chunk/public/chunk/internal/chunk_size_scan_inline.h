@@ -342,8 +342,8 @@ void ChunkSizeScan<Arr>::merge_parts()
     Run open = {0, 0, kind_none, nullptr};
     for (int64_t p = 0; p < n_parts_; ++p)
     {
-        const Run& first = part_first_[static_cast<std::size_t>(p)];
-        if (open.kind == first.kind && open.key == first.key && open.end == first.start)
+        if (const Run& first = part_first_[static_cast<std::size_t>(p)];
+            open.kind == first.kind && open.key == first.key && open.end == first.start)
         {
             open.end = first.end;
         }
@@ -387,8 +387,8 @@ void ChunkSizeScan<Arr>::pick_part(int64_t part)
     auto&   mine = part_picks_[static_cast<std::size_t>(part)];
     for (int64_t j = j0; j < j1; ++j)
     {
-        const void* key = nullptr;
-        if (classify(array_.chunk_list_[j], key) != kind_mat) // skip first value / second value (only mat has data)
+        // skip first value / second value (only mat has data)
+        if (const void* key = nullptr; classify(array_.chunk_list_[j], key) != kind_mat)
         {
             continue;
         }
@@ -598,8 +598,7 @@ bool ChunkSizeScan<Arr>::part_value(int64_t          cc,
 {
     const auto& ch  = array_.chunk_list_[cc];
     const void* key = nullptr;
-    const int   kc  = classify(ch, key);
-    if (kc != kind_mat && kc != kind_motif)
+    if (const int kc = classify(ch, key); kc != kind_mat && kc != kind_motif)
     {
         part = ch.read_value_scan(0); // the constant (a scan read: no app stats)
         return true;

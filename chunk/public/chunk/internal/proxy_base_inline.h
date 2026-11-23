@@ -1443,8 +1443,7 @@ template <typename Derived, typename T, typename ChunkT>
         // the chunk still points at that motif; else the chunk as it is now (F5).
         if (ChunkT::is_motif_ptr(vals)) [[unlikely]]
         {
-            T off{};
-            if (chunk_.motif_offset(vals, self.motif_offset_slot(), off)) [[likely]]
+            if (T off{}; chunk_.motif_offset(vals, self.motif_offset_slot(), off)) [[likely]]
             {
                 return ChunkT::motif_value(vals, elem_offset_, off);
             }
@@ -1479,7 +1478,7 @@ Derived ProxyBase<Derived, T, ChunkT>::operator^=(this auto&& self, const U& ope
 {
     if (static_cast<bool>(operand))
     {
-        const bool cur = static_cast<bool>(self.read_pure()); // synchronised read, as operator bool()
+        const auto cur = static_cast<bool>(self.read_pure()); // synchronised read, as operator bool()
         self           = !cur;
     }
     return self;

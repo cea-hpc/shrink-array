@@ -617,3 +617,24 @@ def test_stop_marks_a_batch_run_only_once_cancelled(site):
     assert not (site.runs / "long" / "stopped").exists() and _status(site, "long")["status"] == "en cours"
     assert site.helper("stop", "~/shrink_runs", "long", BATCH_ARG)["ok"]
     assert site.wait(lambda: _status(site, "long")["status"] == "arrêté")
+
+
+def test_eta_follows_a_slower_end_of_campaign():
+    """2000 runs of 2 s, then serial perf runs of 300 s: at 1990 / 2000 the
+    whole run's mean says ~20 s left, the recent pace ~50 min; the larger wins.
+    A uniform campaign keeps the mean's estimate."""
+    from shrink_gui import remote_helper as rh
+    start = {"kind": "start", "t": 0.0}
+    progs = [{"kind": "progress", "t": 2.0 * i, "done": i, "total": 2000} for i in range(1, 1981)]
+    t = progs[-1]["t"]
+    for i in range(1981, 1991):
+        t += 300.0
+        progs.append({"kind": "progress", "t": t, "done": i, "total": 2000})
+    eta = rh.eta_from_progress(progs, start)
+    assert 9 * 300 <= eta <= 11 * 300
+    mean_only = (progs[-1]["t"] - start["t"]) / 1990 * 10
+    assert eta > 10 * mean_only
+    uniform = [{"kind": "progress", "t": 2.0 * i, "done": i, "total": 2000} for i in range(1, 1001)]
+    assert rh.eta_from_progress(uniform, start) == pytest.approx(2.0 * 1000)
+    ev = [dict(start, total_runs=2000)] + progs
+    assert rh.progress_from_events(ev)[2] == pytest.approx(eta)

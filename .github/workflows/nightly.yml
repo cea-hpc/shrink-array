@@ -9,7 +9,7 @@
 #     std::jthread team, the thread-rank registry and the TBB adaptor, seen by
 #     TSan on the weak memory model (ci.yml runs the same on x86);
 #   - the OpenMP _dyn build (run-time chunk sizes, 256 static next to it): the
-#     re-chunk paths, which the per-push builds leave out (CHUNK_BUILD_DYN=OFF).
+#     re-chunk paths under threads (ci.yml builds _dyn serial only, on x86).
 # On x86 (ubuntu-24.04): OpenMP under AddressSanitizer and under
 # UndefinedBehaviorSanitizer, clang 23 with OpenMP and the OMPT tool, the
 # oldest compilers supported (gcc 13, clang 18), the serial _dyn build, the
@@ -84,8 +84,8 @@ jobs:
         run: cmake --build build --target check
 
   # The _dyn build under OpenMP on AArch64: the re-chunk paths
-  # (rechunk_validation_*_dyn and the other _dyn harnesses), which the per-push
-  # builds leave out.
+  # (rechunk_validation_*_dyn and the other _dyn harnesses) under threads; the
+  # per-push CI builds _dyn serial only, on x86.
   arm-openmp-dyn:
     name: AArch64, OpenMP, _dyn
     runs-on: ubuntu-24.04-arm

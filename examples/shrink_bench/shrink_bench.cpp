@@ -42,7 +42,8 @@
 
 // Utility templates and function declarations (checksums, correlations,
 // seed I/O, help/suggest, memory report).
-#include "bench_utils.h" // initialize_rng, memory_consumption
+#include "bench_utils.h"   // memory_consumption
+#include "example_utils.h" // initialize_rng
 
 // The phases extracted from main() and their shared context: the array type,
 // the second_value_* constants, the BenchArrays handle, and the OMPT phase
@@ -649,7 +650,7 @@ try
     const std::string str            = std::to_string(iter_max);
     const std::string seed_file_name = "seed" + str + ".txt"; // File to store the seed
     std::mt19937      rng;                                    // Random number generator
-    initialize_rng(rng, seed_file_name);
+    example_utils::initialize_rng(rng, seed_file_name);
 
     // Create a uniform distribution for interval sizes
     std::uniform_int_distribution<Int> size_distribution(1, interval);
@@ -662,8 +663,8 @@ try
 
     std::vector<Int> array_size(iter_max);
     std::vector<Int> array_start(iter_max);
-    std::vector<Int> array_nba1(iter_max);
-    std::vector<Int> array_nba2(iter_max);
+    std::vector<Int> array_threshold1(iter_max);
+    std::vector<Int> array_threshold2(iter_max);
 
     // no parallel in OpenMP
     for (Int k = 0; k < iter_max; ++k)
@@ -675,8 +676,8 @@ try
         array_start[k]   = start0;
 
         std::uniform_int_distribution uni1(start0, end0);
-        array_nba1[k] = uni1(rng);
-        array_nba2[k] = uni1(rng);
+        array_threshold1[k] = uni1(rng);
+        array_threshold2[k] = uni1(rng);
     }
 
     end             = std::chrono::steady_clock::now();
@@ -992,10 +993,10 @@ try
         else
         {
             // Compute loop: bench_phase_compute.cpp (see bench_phases.h).
-            bench_phase_compute(bench_arrays, k, start0, end0, array_nba1, array_nba2, val_sum, long_val_sum, v_real,
-                                v_im);
+            bench_phase_compute(bench_arrays, k, start0, end0, array_threshold1, array_threshold2, val_sum,
+                                long_val_sum, v_real, v_im);
             // The struct arrays' window, its own region (bench_phase_struct.cpp).
-            bench_phase_struct_compute(bench_arrays, k, start0, end0, array_nba1, array_nba2, point_sum);
+            bench_phase_struct_compute(bench_arrays, k, start0, end0, array_threshold1, array_threshold2, point_sum);
             // array_mask's update, its own region (bench_phase_mask.cpp).
             bench_phase_mask_compute(bench_arrays, k, mask_count);
             // array_conn's renumbering, its own region (bench_phase_conn.cpp).
