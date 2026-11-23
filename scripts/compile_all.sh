@@ -132,6 +132,7 @@ NO_HARDENING=false       # --no-hardening: skip CHUNK_GLIBCXX_ASSERTIONS / CHUNK
 WITH_LEDGER=false        # --with-ledger: also build the gnu debug ledger config (forwarded)
 WITH_TOKEN=false         # --with-token-sanitizer: also build the llvm token (alloc-token) sanitizer config
 LTO=false                # --lto: link-time optimisation on the optimised builds (forwarded)
+PGO=""                   # --pgo=generate|use: profile-guided optimisation, two passes (forwarded)
 
 # Parse command-line arguments
 usage() {
@@ -211,6 +212,16 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    each build dir's cache: give an LTO run its own
                    CHUNK_BUILD_ROOT to keep the non-LTO builds for comparison
                    (switching a dir rebuilds it in full).
+  --pgo=<pass>     Profile-guided optimisation, in two passes on the same
+                   build dirs (the optimised builds, as --lto): generate
+                   instruments them; run their executables (a shrink_bench
+                   run with --iter_max 200 is enough: an instrumented run is
+                   several times slower in parallel), which write the
+                   profiles into <build dir>/pgo-profile; then use recompiles
+                   with them. Forwarded to compile_all_gnu.sh. Without it the
+                   builds are configured with CHUNK_PGO=OFF. As for --lto,
+                   give these runs their own CHUNK_BUILD_ROOT to keep the
+                   plain builds.
   --llvm-cs=<N>    Also build an llvm RelWithDebInfo variant with CHUNK_SIZE=N (power of two).
   --pool=<id>      Share the configurations with the other runs given the same
                    <id> (one batch job per node; shrink_gui's "Nodes" field):
@@ -284,6 +295,13 @@ for arg in "$@"; do
         --with-ledger)   WITH_LEDGER=true;        shift ;;
         --with-token-sanitizer) WITH_TOKEN=true;  shift ;;
         --lto)           LTO=true;                shift ;;
+        --pgo=*)
+            PGO="${arg#*=}"
+            case "$PGO" in
+                generate|use) ;;
+                *) echo "ERROR: --pgo=$PGO (expected generate or use)" >&2; exit 2 ;;
+            esac
+            shift ;;
         --jobs=*)
             # How many build DIRS may compile at once (see functions_for_compile.sh).
             export CHUNK_MAX_JOBS="${arg#*=}"
@@ -472,6 +490,15 @@ else
     export CHUNK_LTO=off
 fi
 
+# PGO pass, read by pgo_opts_for (functions_for_compile.sh), inherited by
+# compile_all_gnu.sh.
+if [ -n "$PGO" ]; then
+    export CHUNK_PGO="$PGO"
+    echo "compile_all.sh: --pgo=$PGO → CHUNK_PGO=$(printf '%s' "$PGO" | tr '[:lower:]' '[:upper:]') on the optimised builds (not Debug, sanitizers, nvhpc)"
+else
+    export CHUNK_PGO=off
+fi
+
 build_root="$CHUNK_BUILD_ROOT"
 run_cmd "echo $build_root"
 
@@ -491,6 +518,7 @@ gnu_args=""
 [ "$NO_HARDENING" = true ] && gnu_args="$gnu_args --no-hardening"
 [ "$WITH_LEDGER" = true ] && gnu_args="$gnu_args --with-ledger"
 [ "$LTO" = true ] && gnu_args="$gnu_args --lto"
+[ -n "$PGO" ] && gnu_args="$gnu_args --pgo=$PGO"
 [ -n "${CHUNK_MAX_JOBS:-}" ] && gnu_args="$gnu_args --jobs=$CHUNK_MAX_JOBS"
 # CHUNK_SLOT_DIR is exported by __slot_dir(): passing it down makes the gnu
 # script share THIS run's slot pool instead of opening a second one, which is

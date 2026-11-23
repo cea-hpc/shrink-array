@@ -32,6 +32,7 @@ NO_IPA_ICF=false
 NO_HARDENING=false # --no-hardening: skip CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN on Debug+sanitizer builds
 WITH_LEDGER=false  # --with-ledger: also build cmake-build-omp-gnu-debug-ledger (off by default)
 LTO=false          # --lto: link-time optimisation on the optimised builds (functions_for_compile.sh)
+PGO=""             # --pgo=generate|use: profile-guided optimisation (functions_for_compile.sh)
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -63,6 +64,16 @@ while [[ $# -gt 0 ]]; do
             # Link-time optimisation on the optimised builds (rule in
             # functions_for_compile.sh::lto_opts_for).
             LTO=true
+            shift
+            ;;
+        --pgo=*)
+            # Profile-guided optimisation, generate then use (rule in
+            # functions_for_compile.sh::pgo_opts_for).
+            PGO="${1#*=}"
+            case "$PGO" in
+                generate|use) ;;
+                *) echo "ERROR: --pgo=$PGO (expected generate or use)" >&2; exit 2 ;;
+            esac
             shift
             ;;
         --jobs=*)
@@ -107,7 +118,7 @@ while [[ $# -gt 0 ]]; do
         *)
             # Previously swallowed silently — a --debug_only (underscore) went
             # unnoticed and the intended flag was never applied.
-            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--lto|--jobs=<N>|--target=<glob>|--exec=<ninja-target>|--pool=<id>)" >&2
+            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--lto|--pgo=<generate|use>|--jobs=<N>|--target=<glob>|--exec=<ninja-target>|--pool=<id>)" >&2
             exit 2
             ;;
     esac
@@ -144,6 +155,15 @@ if [ "$LTO" = true ]; then
     echo "compile_all_gnu.sh: --lto → CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON on the optimised builds"
 else
     export CHUNK_LTO="${CHUNK_LTO:-off}"
+fi
+
+# PGO pass, read by pgo_opts_for (functions_for_compile.sh). Default off;
+# --pgo=<pass> (or an inherited CHUNK_PGO from compile_all.sh) sets it.
+if [ -n "$PGO" ]; then
+    export CHUNK_PGO="$PGO"
+    echo "compile_all_gnu.sh: --pgo=$PGO → CHUNK_PGO on the optimised builds"
+else
+    export CHUNK_PGO="${CHUNK_PGO:-off}"
 fi
 
 source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"

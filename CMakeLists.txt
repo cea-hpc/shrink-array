@@ -583,6 +583,83 @@ else ()
         "need the toolchain module loaded at runtime (LD_LIBRARY_PATH).")
 endif ()
 
+# ── Profile-guided optimisation (compile_all.sh --pgo=generate|use) ────────
+# Two passes in the same build directory. GENERATE instruments the C++ code;
+# running its executables (a shrink_bench run, a few hundred iterations are
+# enough) writes the profiles into CHUNK_PGO_DIR. USE recompiles with them.
+# The same directory for both, so that the profile of each object is found
+# under its own name (GCC names a .gcda after the object's path), and two
+# configurations never mix theirs.
+#   GCC        -fprofile-generate=<dir> -fprofile-update=prefer-atomic (the
+#              counters are shared by the threads: exact, but an instrumented
+#              run is several times slower in parallel), then -fprofile-use
+#              -fprofile-partial-training: what the training did not run keeps
+#              its normal optimisation. A source changed since the profiles is
+#              a warning (coverage-mismatch), not an error: its stale profile
+#              is dropped, the build goes on.
+#   Clang, IntelLLVM  -fprofile-generate=<dir> writes .profraw files; USE merges
+#              them with llvm-profdata (from the compiler's directory first) into
+#              <dir>/merged.profdata at configure time, then -fprofile-use.
+# C (formal/) is left out, as for LTO. Debug or sanitizer builds: compile_all.sh
+# passes OFF.
+set(CHUNK_PGO "OFF" CACHE STRING "Profile-guided optimisation: OFF, GENERATE, USE (two passes, same build dir)")
+set_property(CACHE CHUNK_PGO PROPERTY STRINGS OFF GENERATE USE)
+set(CHUNK_PGO_DIR "${CMAKE_BINARY_DIR}/pgo-profile" CACHE PATH "Where CHUNK_PGO=GENERATE writes the profiles, and USE reads them")
+string(TOUPPER "${CHUNK_PGO}" _chunk_pgo)
+if(_chunk_pgo STREQUAL "GENERATE" OR _chunk_pgo STREQUAL "USE")
+    set(_pgo_opts "")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        if(_chunk_pgo STREQUAL "GENERATE")
+            set(_pgo_opts "-fprofile-generate=${CHUNK_PGO_DIR}" "-fprofile-update=prefer-atomic")
+        else()
+            file(GLOB_RECURSE _pgo_found "${CHUNK_PGO_DIR}/*.gcda")
+            if(NOT _pgo_found)
+                message(WARNING "CHUNK_PGO=USE: no .gcda in ${CHUNK_PGO_DIR} -- build with GENERATE and "
+                                "run its executables first; the build is optimised as without PGO")
+            endif()
+            set(_pgo_opts "-fprofile-use=${CHUNK_PGO_DIR}" "-fprofile-partial-training"
+                          "-Wno-missing-profile" "-Wno-error=coverage-mismatch")
+        endif()
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|IntelLLVM")
+        if(_chunk_pgo STREQUAL "GENERATE")
+            set(_pgo_opts "-fprofile-generate=${CHUNK_PGO_DIR}" "-fprofile-update=atomic")
+        else()
+            get_filename_component(_cxx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+            find_program(CHUNK_LLVM_PROFDATA llvm-profdata HINTS "${_cxx_dir}" "${_cxx_dir}/compiler")
+            file(GLOB _pgo_raw "${CHUNK_PGO_DIR}/*.profraw")
+            set(_pgo_data "${CHUNK_PGO_DIR}/merged.profdata")
+            if(_pgo_raw AND CHUNK_LLVM_PROFDATA)
+                execute_process(COMMAND "${CHUNK_LLVM_PROFDATA}" merge -o "${_pgo_data}" ${_pgo_raw}
+                                RESULT_VARIABLE _pgo_rc ERROR_VARIABLE _pgo_err)
+                if(NOT _pgo_rc EQUAL 0)
+                    message(WARNING "CHUNK_PGO=USE: llvm-profdata merge failed: ${_pgo_err}")
+                endif()
+            elseif(NOT CHUNK_LLVM_PROFDATA)
+                message(WARNING "CHUNK_PGO=USE: llvm-profdata not found next to ${CMAKE_CXX_COMPILER}")
+            endif()
+            if(EXISTS "${_pgo_data}")
+                set(_pgo_opts "-fprofile-use=${_pgo_data}" "-Wno-profile-instr-unprofiled"
+                              "-Wno-profile-instr-out-of-date" "-Wno-backend-plugin")
+            else()
+                message(WARNING "CHUNK_PGO=USE: no profile in ${CHUNK_PGO_DIR} -- build with GENERATE "
+                                "and run its executables first; the build is optimised as without PGO")
+            endif()
+        endif()
+    else()
+        message(WARNING "CHUNK_PGO=${CHUNK_PGO}: not supported with ${CMAKE_CXX_COMPILER_ID}, ignored")
+    endif()
+    if(_pgo_opts)
+        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:${_pgo_opts}>")
+        if(_chunk_pgo STREQUAL "GENERATE")
+            add_link_options("$<$<LINK_LANGUAGE:CXX>:${_pgo_opts}>")
+        endif()
+        string(JOIN " " _pgo_text ${_pgo_opts})
+        message(STATUS "PGO: ${_chunk_pgo} -- ${_pgo_text}")
+    endif()
+elseif(NOT _chunk_pgo STREQUAL "OFF")
+    message(FATAL_ERROR "CHUNK_PGO=${CHUNK_PGO}: expected OFF, GENERATE or USE")
+endif()
+
 # ── Linker: use mold when available ──────────────────────────────────────────
 # This tree relinks ~15 executables per debug iteration across ~20 build dirs;
 # mold cuts each link from seconds to tenths. AUTO = use it if found and the

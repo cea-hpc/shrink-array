@@ -157,13 +157,31 @@ lto_opts_for() {  # <cmake-args or cmd-string> → echo the IPO -D flag
     printf '%s' "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF"
 }
 
-# Insert the hardening and LTO flags into a full `... cmake -S ... -B ... [|| fallback]`
+# --pgo=generate|use (CHUNK_PGO): profile-guided optimisation, the CMake
+# option CHUNK_PGO (top-level CMakeLists.txt): GENERATE instruments, USE
+# recompiles with the profiles the instrumented executables wrote into their
+# build dir (pgo-profile/). The same optimised builds as --lto; OFF elsewhere,
+# and on every build of a run without --pgo.
+pgo_opts_for() {  # <cmake-args or cmd-string> → echo the CHUNK_PGO -D flag
+    local args=$1
+    case "$args" in *-DCHUNK_PGO=*) return 0 ;; esac
+    case "${CHUNK_PGO:-off}" in
+        generate|use)
+            case "$args" in
+                *-DCMAKE_BUILD_TYPE=Debug*|*-DCHUNK_SANITIZER=*|*nvc++*|*nvcxx*) ;;
+                *) printf '%s' "-DCHUNK_PGO=$(printf '%s' "$CHUNK_PGO" | tr '[:lower:]' '[:upper:]')"; return 0 ;;
+            esac ;;
+    esac
+    printf '%s' "-DCHUNK_PGO=OFF"
+}
+
+# Insert the hardening, LTO and PGO flags into a full `... cmake -S ... -B ... [|| fallback]`
 # command string (compile_all.sh style). Flags go before any trailing `||` so
 # the fallback branch is preserved; cmake does not care about -D ordering.
 __with_hardening() {  # <cmd-string> → echo rewritten command
     local cmd=$1 extra
     extra=$(hardening_opts_for "$cmd")
-    extra="${extra:+$extra }$(lto_opts_for "$cmd")"
+    extra="${extra:+$extra }$(lto_opts_for "$cmd") $(pgo_opts_for "$cmd")"
     [ -z "$extra" ] && { printf '%s' "$cmd"; return 0; }
     case "$cmd" in
         *" || "*) printf '%s %s || %s' "${cmd%% || *}" "$extra" "${cmd#* || }" ;;
@@ -1718,7 +1736,7 @@ compile_with_cmake() {
     local _hard
     _hard=$(hardening_opts_for "$cmake_args")
     [ -n "$_hard" ] && cmake_args="$cmake_args $_hard"
-    cmake_args="$cmake_args $(lto_opts_for "$cmake_args")$(__ninja_opt)"
+    cmake_args="$cmake_args $(lto_opts_for "$cmake_args") $(pgo_opts_for "$cmake_args")$(__ninja_opt)"
 
     if [ "$DRYRUN" = true ]; then
         if [ "$BUILD_ONLY" = false ]; then

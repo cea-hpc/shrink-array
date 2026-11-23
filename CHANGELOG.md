@@ -56,6 +56,11 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `scripts/compile_all.sh --pgo=generate|use` (and `compile_all_gnu.sh`), CMake option `CHUNK_PGO`
+  (`OFF`, `GENERATE`, `USE`) and `CHUNK_PGO_DIR`: profile-guided optimisation of the C++ code, in two
+  passes on the same build directories (the optimised ones, as `--lto`). GCC, Clang and IntelLLVM
+  (whose `.profraw` files are merged by `llvm-profdata` at configure time). On the development
+  machine, shrink_bench zero_any trained on another size: 15 to 20 % off the total time.
 - `scripts/compile_all.sh --lto` (and `compile_all_gnu.sh --lto`): link-time optimisation
   (`CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`) on the optimised builds, not on the Debug, sanitizer
   and nvhpc ones; every other configure gets it OFF. With a Clang-based compiler and LTO, the
