@@ -80,7 +80,7 @@ avertissement CMake le dit.
 cmake_minimum_required(VERSION 3.20)
 project(mon_appli LANGUAGES CXX)
 
-find_package(shrink_array 0.3 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(shrink_array 0.4 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 
 add_executable(mon_appli main.cpp)
 target_link_libraries(mon_appli PRIVATE shrink_array::zero_any)

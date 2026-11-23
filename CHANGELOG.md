@@ -58,6 +58,11 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.4.0 -- 2026-11-23
+
+A breaking release: every compatibility path for a former name is gone (see Removed).
+fast_allocators is 2.5.0.
+
 ### Changed
 
 - `ParamChunk::set_decalage_chunk()` is `set_chunk_shift()` (a no-op kept for old call sites, as
@@ -92,7 +97,7 @@ the tag's checksum to the recipe.
 - `CHUNK_CST_VAL2_ID_LIMIT` and `CHUNK_CST2_RECLAIM`, the names these two settings had before
   0.3.0, as 0.3.0 announced: `CHUNK_SECOND_VALUE_ID_LIMIT` and `CHUNK_SECOND_VALUE_RECLAIM`
   above.
-- **Every compatibility path for a former name** (breaking: the next release is 0.4.0). The
+- **Every compatibility path for a former name** (breaking, hence 0.4.0). The
   names deprecated in 0.3.0 and those kept "until 1.0" since 0.1.3 / 0.2.0 are gone; a former
   name no longer compiles, configures or is read:
   - the headers `chunk/manage_ompt.h`, `chunk/param_chunk.h`, `chunk/array_chunk_bits.h`,

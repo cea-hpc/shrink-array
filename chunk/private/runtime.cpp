@@ -32,6 +32,7 @@
 #include <cstddef>   // std::size_t (CHUNK_STATS report only: the retention)
 #include <mutex>     // std::scoped_lock (CHUNK_STATS report only: the size distribution)
 #include <print>     // std::println (the CHUNK_STATS report)
+#include <string>    // std::to_string (CHUNK_STATS report only: the size distribution)
 #include <utility>   // std::cmp_greater
 
 #include "chunk/config.h"                              // build_config::chunk_dynamic, threaded
@@ -471,7 +472,8 @@ void Runtime::chunk_stats()
                     std::println("  size dist      arrays at each chunk size, at their own teardown:");
                     for (const auto& [size, count] : dist)
                     {
-                        std::println("    S={}          = {}", size, count);
+                        // "S=<size>" padded so that "=" lines up with the counters above.
+                        std::println("    {:<13}= {}", "S=" + std::to_string(size), count);
                     }
                 }
             }
