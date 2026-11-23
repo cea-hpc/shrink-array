@@ -100,6 +100,27 @@ the tag's checksum to the recipe.
   runtime does not call it, builds without the tool (`CHUNK_OPT_OMPT` 0, `shrink_array_OMPT`
   OFF) with a warning. The verdict is cached in `CHUNK_OMPT_TOOL_LOADS`, which can also be set
   to skip the probe; it is not run when cross-compiling without an emulator.
+- OMPT builds, a region opened inside a parallel region of one thread (`OMP_NUM_THREADS=1`, an
+  inactive region: `omp_in_parallel()` is false there) -- the teardown census of an array
+  destroyed under `omp single` -- passed for the end of a phase: its compression pass emptied the
+  other arrays' candidate lists in the middle of the region. A region now ends the phase only if
+  it began at the top level; the one-thread region itself still ends it. multi_mat's own OMPT
+  tool had the same test and is fixed alike. `zero_or_value_shared_state_validation`
+  (bool-construct, 1 thread) and `nested_region_validation` cover it.
+- `zero_or_value`, the other arrays of a type when one array goes (destroyed, cleared, copy- or
+  move-assigned, swapped):
+  - the record of each second value (its constant block's index) was a pointer to the array
+    that declared the value last. Once that array was destroyed, or took another value, the
+    other arrays declaring the value were no longer drained by the passes -- or a pass followed
+    a dangling pointer. The type now keeps its own copy of each record;
+  - the pass that `clear()` runs at a sequential point emptied the other arrays' candidate lists
+    without compressing them, so a temporary destroyed between two phases left their chunks
+    materialised. It now compresses them, and runs only outside any region, an inactive
+    one-thread region included.
+  The new `bystander_validation` (every variant, 1 and 8 threads) checks that copy/move-assign,
+  swap, `clear()` and `shrink_to_fit()` of one array leave two bystander arrays -- one compressed,
+  one materialised -- as they were; `zero_or_value_shared_state_validation` gains the destroyed,
+  cleared, assigned and swapped owner cases.
 - `zero_or_value`: `set_second_value(T{})` on an array that had another second value took the
   new-value path (T{}'s sentinel index reads as "not registered"): it gave T{} a block of its
   own and replaced the T{} key every array without a second value is drained under. Called at
