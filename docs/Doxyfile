@@ -328,6 +328,10 @@ EXTENSION_MAPPING      =
 
 MARKDOWN_SUPPORT       = YES
 
+# GitHub's heading anchors (#in-numbers), the ones README.md and the docs link to.
+
+MARKDOWN_ID_STYLE      = GITHUB
+
 # When the TOC_INCLUDE_HEADINGS tag is set to a non-zero value, all headings up
 # to that level are automatically included in the table of contents, even if
 # they do not have an id attribute.
@@ -335,7 +339,7 @@ MARKDOWN_SUPPORT       = YES
 # Minimum value: 0, maximum value: 99, default value: 5.
 # This tag requires that the tag MARKDOWN_SUPPORT is set to YES.
 
-TOC_INCLUDE_HEADINGS   = 0
+TOC_INCLUDE_HEADINGS   = 5
 
 # When enabled doxygen tries to link words that correspond to documented
 # classes, or namespaces to their corresponding documentation. Such a link can
@@ -823,6 +827,7 @@ WARN_LOGFILE           = doxygen-warnings.log
 # Note: If this tag is empty the current directory is searched.
 
 INPUT                  = ../README.md \
+                         ../README_fr.md \
                          ../CHANGELOG.md \
                          ../CONTRIBUTING.md \
                          ../third_party/README.md \

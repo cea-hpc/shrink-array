@@ -839,7 +839,7 @@ fast_allocators is 2.5.0.
   builds, for a binary that must not depend on the machine (`docs/developer_settings.md`). The
   nightly's ASan job sets `x86-64-v3`: with `-march=native` on Zen 5, GCC 14 aligns slots of the
   frame on 64 bytes, ASan's fake stack can leave them 32 bytes off, and an aligned `vmovdqa64`
-  faults (#GP). The two SEGV of 2026-11-02 in `read_reclaim_validation` of `zero_one_value`
+  faults (\#GP). The two SEGV of 2026-11-02 in `read_reclaim_validation` of `zero_one_value`
   were this, not the library: on EPYC 9V45 the same commit fails 3 times of 3 at `native` and
   passes 2 times of 2 at `x86-64-v3`.
 
@@ -1147,7 +1147,7 @@ fast_allocators is 2.5.0.
   TotalView and DDT do not stop; without a debugger nothing changes. `0` never stops, `1` always
   (`docs/environment_variables.md`). `log_break_on_failure` checks it under gdb and strace.
 - shrink_gui 0.15: the partition list also offers the partitions the machine lists at the
-  connection check (`[batch] partition_info`: `ccc_mpinfo` on inti, `sinfo -o '%P %c %D %a'` in
+  connection check (`[batch] partition_info`: `ccc_mpinfo` on inti, ``sinfo -o '%P %c %D %a'`` in
   `slurm_example.toml`), beside the site file's `[partitions]`, which win for a name in both. Their
   directives, launcher and detached options come from the site's new `[discovered]` templates
   (`{name}`, `{cores}` per node), their architecture from a pattern on the name (`arm`); `skip`
@@ -1219,7 +1219,7 @@ fast_allocators is 2.5.0.
   as TBB tasks.
 - The test tooling runs the std backend and the TBB bench. `compile_all.sh` builds
   `std-llvm`, `std-llvm-check` and a ThreadSanitizer build, next to the `std-gnu*` builds of
-  `compile_all_gnu.sh` (the builds take longer; `--target='omp-*'` leaves them out), and says at
+  `compile_all_gnu.sh` (the builds take longer; ``--target='omp-*'`` leaves them out), and says at
   the start whether oneTBB is used. `bench_and_test.py` runs the std builds by default and the
   TBB bench as the variants `tbb_chunk`, `tbb_chunk2`, `tbb_chunk2a`. `multi_launch_stress.py`
   runs `tbb_chunk2` next to `chunk2` by default, the six variants with `--all_exec`, and its
@@ -1284,7 +1284,7 @@ fast_allocators is 2.5.0.
   `bench_runner/settings.py`'s `bench_exe_names`), never for the old ones, which a build
   directory rebuilt since still holds, stale. Rebuild to get the new names. shrink_gui still
   reads the old names in the results of past runs. `compile_all.sh --exec=` matches the real
-  target names: `--exec='shrink_bench_*_zero_256'` for every backend.
+  target names: ``--exec='shrink_bench_*_zero_256'`` for every backend.
 - shrink_gui: the options form lists the options in alphabetical order (dashes and case aside)
   rather than in the script's declaration order; the positional arguments stay first, in the
   script's order, since the command line keeps them in it.
@@ -1333,8 +1333,8 @@ fast_allocators is 2.5.0.
   icpx) and hid every other phase -- what looked like a regression of the bench.
 - The re-chunks are on screen again by default: the `rechunk` log channel
   starts at `info` (`CHUNK_LOG` unset means `warn,rechunk=info`), so each
-  re-chunk the decider applies writes its `decide <array>: re-chunk S=..
-  -> S'=.. [APPLIED]` line, as `[RECHUNK-DECIDE]` did before the log. Since
+  re-chunk the decider applies writes its ``decide <array>: re-chunk S=..
+  -> S'=.. [APPLIED]`` line, as `[RECHUNK-DECIDE]` did before the log. Since
   the log, the channel started at `warn` with the others and nothing was
   shown. `CHUNK_LOG=warn` (a bare level sets every channel) hides it.
 - Fast allocator: the value slabs are no longer floored at sixteen pages. The floor capped the
@@ -1697,8 +1697,8 @@ fast_allocators is 2.5.0.
   each re-chunk step, census; `CHUNK_RECHUNK_TRACE_MEM`). The former variables
   still work, with a deprecation warning; `0` now means unset for them too.
 - The re-chunk decider's lines are no longer written by default:
-  `rechunk=info` writes its moves (`decide <array>: re-chunk S=.. -> S'=..
-  ... [APPLIED]`), `rechunk=debug` its waits too. `CHUNK_RECHUNK_DRY_RUN`,
+  `rechunk=info` writes its moves (``decide <array>: re-chunk S=.. -> S'=..
+  ... [APPLIED]``), `rechunk=debug` its waits too. `CHUNK_RECHUNK_DRY_RUN`,
   `CHUNK_RECHUNK_CHURN` and `CHUNK_FORCE_RECHUNK` switch `rechunk=info` on.
   python/bench_runner and multi_launch_stress.py set
   `CHUNK_LOG=warn,rechunk=info` unless it is set; their parser,

@@ -1229,6 +1229,9 @@ template <typename T>
     return ret;
 }
 
+// Out of Doxygen: it ties this definition to the bool ChunkSpec<T> specialisation, which has
+// no such member; the documentation is on the declaration (zero_or_value_chunk.h).
+/// @cond
 template <typename T>
 [[nodiscard]] bool zero_or_value::ChunkSpec<T>::is_any_second_value(const T* vals) noexcept
 {
@@ -1242,6 +1245,7 @@ template <typename T>
     }
     return false;
 }
+/// @endcond
 
 template <typename T>
     requires is_bool_like_v<T>

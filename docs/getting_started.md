@@ -35,7 +35,7 @@ matter. [variants.md](variants.md) compares them on a real workload.
 
 ## 2. Install
 
-With Spack, the recipe is in the repository: see [the README](../README.md#with-spack)
+With Spack, the recipe is in the repository: see [the README](../README.md#install)
 (`spack install shrink-array`). From the sources, with a C++23 compiler (this `cpp23` branch:
 GCC 14 or later, Clang 18 or later, oneAPI; NVHPC and AOCC 5 have no usable C++23. `develop`
 stays in C++20, from GCC 13; the `cpp26` branch needs GCC 16) and CMake ≥ 3.20:
