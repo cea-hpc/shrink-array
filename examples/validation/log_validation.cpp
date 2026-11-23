@@ -19,10 +19,10 @@
 // no variant.
 // ============================================================================
 //
-//   1. the environment: CHUNK_LOG, a legacy switch and CHUNK_LOG_FILE, set
-//      before the first message, are read at it -- the levels apply, the
-//      switch raises its channel and is warned about, the file receives the
-//      lines, and an item not understood is reported there;
+//   1. the environment: CHUNK_LOG and CHUNK_LOG_FILE, set before the first
+//      message, are read at it -- the levels apply, the switches of before
+//      the log (gone in 0.4) raise nothing, the file receives the lines, and
+//      an item not understood is reported there;
 //   2. parse_spec: bare levels, channel=level, left to right, spaces, empty
 //      items, the items not understood;
 //   3. filtering through configure(): what gets through per channel and
@@ -65,7 +65,7 @@
 //
 // Exit status 0 when every check passes.
 
-#include <algorithm>    // std::ranges::find
+#include <algorithm>    // std::min (check 9)
 #include <array>        // std::array
 #include <atomic>       // std::atomic
 #include <complex>      // std::complex (checks 7 and 9)
@@ -247,31 +247,19 @@ void check_environment()
     check(!logging::enabled(rechunk, Level::trace), "env: rechunk stops at debug");
     check(logging::enabled(pool, Level::warn), "env: the bare level warn applies to pool");
     check(!logging::enabled(pool, Level::info), "env: pool stops at warn");
-    check(logging::enabled(alloc, Level::trace), "env: FAST_ALLOC_TRACE=1 raises alloc to trace");
-    const auto& switches = logging::detail::legacy_switches;
-    const auto  trace =
-        std::ranges::find(switches, std::string_view{"FAST_ALLOC_TRACE"}, &logging::detail::LegacySwitch::name);
-    check(trace != switches.end() && logging::detail::is_set(*trace), "env: FAST_ALLOC_TRACE=1 is set");
-    check(std::ranges::find(switches, std::string_view{"CHUNK_RECHUNK_CHURN"}, &logging::detail::LegacySwitch::name) ==
-              switches.end(),
-          "env: CHUNK_RECHUNK_CHURN is no longer a switch (CHUNK_LOG=rechunk=debug)");
-    check(logging::enabled(ledger, Level::info), "env: CHUNK_LEDGER_REPORT=1 raises ledger to info");
-    check(!logging::enabled(arena, Level::info), "env: arena stays at warn (CHUNK_ARENA_REPORT unset)");
+    check(!logging::enabled(alloc, Level::info), "env: alloc stays at warn (FAST_ALLOC_TRACE=1 is no longer read)");
+    check(!logging::enabled(ledger, Level::info),
+          "env: ledger stays at warn (CHUNK_LEDGER_REPORT=1 is no longer read)");
 
     CHUNK_LOG(warn, general, "first line through the default sink");
     const auto lines             = read_lines(g_log_path);
     bool       bad_item_reported = false;
     bool       first_line        = false;
-    bool       deprecated        = false;
-    bool       report_deprecated = false;
+    bool       former_switch     = false;
     for (const auto& line : lines)
     {
-        deprecated |=
-            line.starts_with("[shrink_array][env][W][") &&
-            line.ends_with("] FAST_ALLOC_TRACE is deprecated: it means CHUNK_LOG=alloc=trace, which it now sets");
-        report_deprecated |=
-            line.starts_with("[shrink_array][env][W][") &&
-            line.ends_with("] CHUNK_LEDGER_REPORT is deprecated: it means CHUNK_LOG=ledger=info, which it now sets");
+        former_switch |=
+            line.find("FAST_ALLOC_TRACE") != std::string::npos || line.find("CHUNK_LEDGER_REPORT") != std::string::npos;
         bad_item_reported |=
             line.starts_with("[shrink_array][env][W][") && line.find("\"verbose\"") != std::string::npos;
         first_line |=
@@ -279,8 +267,7 @@ void check_environment()
     }
     check(bad_item_reported, "env: CHUNK_LOG item \"verbose\" reported in CHUNK_LOG_FILE");
     check(first_line, "env: a message reaches CHUNK_LOG_FILE with its prefix");
-    check(deprecated, "env: a deprecated switch is warned about");
-    check(report_deprecated, "env: a former report switch is warned about");
+    check(!former_switch, "env: the former switches are not mentioned in CHUNK_LOG_FILE");
 }
 
 // --- 2 ----------------------------------------------------------------------
@@ -718,9 +705,9 @@ void check_fatal(const char* self)
           "fatal: the record reaches the program's sink, after the block");
 
     run = run_child(self, 3);
-    // The first record the sink sees is the deprecation warning of
-    // FAST_ALLOC_TRACE (inherited from main), written while the
-    // configuration is read: the failure must not wait on that read.
+    // The first record the sink sees is the report of CHUNK_LOG's item
+    // "verbose" (inherited from main), written while the configuration is
+    // read: the failure must not wait on that read.
     check(run.status == abort_status && run.out.find("failure inside the sink, on \"") != std::string::npos,
           "fatal: a failure inside the sink stops, even during the configuration (no deadlock: timeout 60 s)");
 
@@ -991,10 +978,8 @@ int main(int argc, char** argv)
     g_log_path = private_temp_dir() + "/shrink_log_validation." + std::to_string(::getpid()) + ".log";
     std::remove(g_log_path.c_str());
     setenv("CHUNK_LOG", "warn, rechunk=debug, verbose", 1);
-    setenv("FAST_ALLOC_TRACE", "1", 1);    // a deprecated legacy switch: raises alloc to trace
-    setenv("CHUNK_LEDGER_REPORT", "1", 1); // a former report switch: raises ledger to info
-    unsetenv("CHUNK_ARENA_REPORT");
-    setenv("CHUNK_RECHUNK_CHURN", "1", 1); // no longer read: CHUNK_LOG=rechunk=debug
+    setenv("FAST_ALLOC_TRACE", "1", 1);    // gone in 0.4 (CHUNK_LOG=alloc=trace): no longer read
+    setenv("CHUNK_LEDGER_REPORT", "1", 1); // gone in 0.4 (CHUNK_LOG=ledger=info): no longer read
     setenv("CHUNK_LOG_FILE", (private_temp_dir() + "/shrink_log_validation.%p.log").c_str(), 1); // %p: g_log_path
 
     check_environment();

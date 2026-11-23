@@ -119,9 +119,6 @@ inline constexpr bool has_ompt = CHUNK_OPT_OMPT != 0;
 // For call-site readability.
 inline constexpr bool needs_explicit_phases = !has_ompt;
 
-/// @brief Former name of needs_explicit_phases.
-[[deprecated("renamed build_config::needs_explicit_phases")]] inline constexpr bool has_not_ompt = !has_ompt;
-
 /// Every written value checked for NaN (CMake: CHUNK_DO_CHECK).
 inline constexpr bool do_check = CHUNK_OPT_DO_CHECK != 0;
 
@@ -237,20 +234,12 @@ inline constexpr bool use_zero = true;
 inline constexpr bool use_zero = false;
 #endif
 
-// The macro's former name (0.2), for a program that selects the variant itself.
-#if defined(CHUNK_VARIANT_ZERO_ONE_VALUE) && !defined(CHUNK_VARIANT_ZERO_OR_VALUE)
-    #define CHUNK_VARIANT_ZERO_OR_VALUE CHUNK_VARIANT_ZERO_ONE_VALUE
-#endif
-
 /// True with CHUNK_VARIANT_ZERO_OR_VALUE: zero_or_value::Array is the selected array type.
 #ifdef CHUNK_VARIANT_ZERO_OR_VALUE
 inline constexpr bool use_zero_or_value = true;
 #else
 inline constexpr bool use_zero_or_value = false;
 #endif
-
-/// @brief Former name of use_zero_or_value.
-[[deprecated("renamed chunk_config::use_zero_or_value")]] inline constexpr bool use_zero_one_value = use_zero_or_value;
 
 /// True with CHUNK_VARIANT_ZERO_ANY: zero_any::Array is the selected array type.
 #ifdef CHUNK_VARIANT_ZERO_ANY
@@ -544,6 +533,8 @@ class CheckNaN<true>
         check_nan = state;
     }
     /// @brief global_check_nan(@p val, @p index, @p in_array) if the switch is on.
+    /// @param val      the value written
+    /// @param index    where it is written (see @p in_array)
     /// @param in_array true: @p index is the index in the array; false: the
     ///                 position in the chunk (the array index is not known).
     static void maybe(auto val, long index, bool in_array = true) noexcept

@@ -7,7 +7,7 @@ build target (Grace, Milan, or this machine), whatever runs the threads: OpenMP
 by full name). The executables carry their backend in their name:
 shrink_bench_omp_*, shrink_bench_std_*, shrink_bench_serial_*. The thread count is OMP_NUM_THREADS, which the std backend and
 the TBB bench read too (CHUNK_NUM_THREADS, which they would read first, is taken
-out of the runs' environment). Formerly omp_speedup.py, which still runs this one.
+out of the runs' environment). Formerly omp_speedup.py.
 
 For each executable and each thread count from --min-threads to --max-threads
 (powers of two, plus the max), --reps runs of
@@ -63,8 +63,8 @@ scales, not how fast the library is. It runs in the oracle directory that
 bench_and_test.py generated for the target (--oracle-dir, default
 <bench_results>/<arch>/oracle/cmake-build-<target>), at the size the oracle
 was made: --multiply 1, no --no_io. The build root is --build-root, else
-$CHUNK_BUILD_ROOT, else $CHUNK_BUILD_REP (scripts/site_env.sh), else the
-repository; the executable is looked up under
+$CHUNK_BUILD_ROOT (scripts/site_env.sh), else the repository; the
+executable is looked up under
 <root>/cmake-build-<target>/<dir ending with this machine's arch, this system's first>/examples/shrink_bench/.
 
 --pool ID (shrink_gui's "Nœuds" field: one batch job per node, the same
@@ -235,7 +235,7 @@ def default_oracle_dir(target):
 
 
 def build_root(arg):
-    for v in (arg, os.environ.get("CHUNK_BUILD_ROOT"), os.environ.get("CHUNK_BUILD_REP")):
+    for v in (arg, os.environ.get("CHUNK_BUILD_ROOT")):
         if v and v != ".":
             return os.path.abspath(os.path.expanduser(os.path.expandvars(v)))
     return REPO
@@ -845,8 +845,7 @@ def parse_args(argv=None):
                         "off (default): first touch, as the scalability guard")
     p.add_argument("--timeout", type=float, default=0, help="seconds per run, 0 = none (default)")
     p.add_argument("--build-root", default=None,
-                   help="holds cmake-build-<target>/ (default $CHUNK_BUILD_ROOT, $CHUNK_BUILD_REP, "
-                        "the repository)")
+                   help="holds cmake-build-<target>/ (default $CHUNK_BUILD_ROOT, the repository)")
     p.add_argument("--out", default=None, help="output directory (default <CCC work or ~>/thread_speedup/speedup_<target>_<host>_<date>)")
     p.add_argument("--pool", default=None, metavar="ID",
                    help="share the executables with the other runs given the same ID (one batch job per node, "

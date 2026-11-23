@@ -58,6 +58,11 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.4.0 -- 2026-11-23
+
+A breaking release: every compatibility path for a former name is gone (see Removed).
+fast_allocators is 2.5.0.
+
 ### Changed
 
 - cpp26: the deleted copy / move members added under `chunk/` since 0.2.1 (the re-chunk refill,
@@ -65,7 +70,7 @@ the tag's checksum to the recipe.
   (`= delete("...")`), and so do the examples' (`multi_mat`, `shrink_bench`). `fast_allocators`
   is built as C++23 and its headers stay usable from C++23: its deletes keep the plain form.
 - `ParamChunk::set_decalage_chunk()` is `set_chunk_shift()` (a no-op kept for old call sites, as
-  before); the former name stays, deprecated. Internally ChunkSizePolicy's decalage() is
+  before); the former name is not kept (see Removed). Internally ChunkSizePolicy's decalage() is
   `shift()`, and `print_info_chunk()` prints "chunk shift" instead of "decalage chunk".
 - `shrink_gui` 0.18, "cette machine": the launcher defaults to
   `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` where `systemd-run --user`
@@ -84,7 +89,7 @@ the tag's checksum to the recipe.
   (all internal). The developer settings follow: `CHUNK_SECOND_VALUE_ID_LIMIT`,
   `CHUNK_SECOND_VALUE_RECLAIM`, and the compile-time `CHUNK_SECOND_VALUE_REGION_BYTES`,
   `CHUNK_SECOND_VALUE_MAX_IDS`, `CHUNK_SECOND_VALUE_LOOKUP_LOG2`; their `CHUNK_CONST_VAL2_*` /
-  `CHUNK_CONST2_RECLAIM` names are still read until 1.0. The harnesses
+  `CHUNK_CONST2_RECLAIM` names are no longer read (see Removed). The harnesses
   `const2_registry_validation` and `const2_reclaim_validation` are
   `second_value_registry_validation` and `second_value_reclaim_validation`, the
   `rechunk_validation` cases `val2-*` are `second-value-*`.
@@ -96,6 +101,36 @@ the tag's checksum to the recipe.
 - `CHUNK_CST_VAL2_ID_LIMIT` and `CHUNK_CST2_RECLAIM`, the names these two settings had before
   0.3.0, as 0.3.0 announced: `CHUNK_SECOND_VALUE_ID_LIMIT` and `CHUNK_SECOND_VALUE_RECLAIM`
   above.
+- **Every compatibility path for a former name** (breaking, hence 0.4.0). The
+  names deprecated in 0.3.0 and those kept "until 1.0" since 0.1.3 / 0.2.0 are gone; a former
+  name no longer compiles, configures or is read:
+  - the headers `chunk/manage_ompt.h`, `chunk/param_chunk.h`, `chunk/array_chunk_bits.h`,
+    `chunk/array_chunk_range_ops.h`, `chunk/zero_one_value_array.h` (include `chunk/phases.h`,
+    `chunk/runtime.h`, `chunk/bit_array.h`, `chunk/range_ops.h`, `chunk/zero_or_value_array.h`);
+  - the `[[deprecated]]` names `ParamChunk`, `Runtime::init_indexes()` (both forms),
+    `Runtime::set_decalage_chunk()`, `destroy_block_chunk()`, `ArrayChunkBits`,
+    `build_config::has_not_ompt`, `chunk_config::use_zero_one_value`, the namespace
+    `zero_one_value`, `get_second_value()`, `get_nb_chunk_written()` (use `Runtime`,
+    `Runtime::init()`, `set_chunk_shift()`, `Runtime::shutdown()`, `BitArray`,
+    `build_config::needs_explicit_phases`, `chunk_config::use_zero_or_value`, `zero_or_value`,
+    `second_value()`, `written_chunk_count()`), and the macro `CHUNK_VARIANT_ZERO_ONE_VALUE`
+    (`CHUNK_VARIANT_ZERO_OR_VALUE`); `docs/api.md` keeps the table of the 0.3 renames;
+  - the CMake option names without `CHUNK_` (`OMP`, `SANITIZER`, `CHECK_OPTIM`, `USE_LIBCXX`,
+    ...: 0.3.0 lists them), no longer read at the top level; the `CHUNK_VARIANTS` spelling
+    `zero_one_value`, now refused with the new name as `chunk`, `chunk2`, `chunk2a` are; the
+    targets `chunk::chunk_zero_one_value*`, `chunk_zero_one_value*` and
+    `shrink_array::zero_one_value*` (link `shrink_array::zero_or_value*`);
+  - the compile-time `CHUNK_CONST_VAL2_REGION_BYTES`, `CHUNK_CONST_VAL2_MAX_IDS`,
+    `CHUNK_CONST_VAL2_INDEX_LOG2` and the variables `CHUNK_CONST_VAL2_ID_LIMIT`,
+    `CHUNK_CONST2_RECLAIM` (the `CHUNK_SECOND_VALUE_*` names above);
+  - the switches of before `CHUNK_LOG`: `FAST_ALLOC_TRACE`, `CHUNK_ARENA_REPORT`,
+    `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS`, `CHUNK_CST2_PROBE` (`CHUNK_LOG=alloc=trace`,
+    `arena=info`, `ledger=info`, `ompt=info`, `compress=info`). fast_allocators is 2.5.0
+    (`CHUNK_FAST_ALLOCATORS_VERSION` follows);
+  - in the scripts, `CHUNK_BUILD_REP` (`CHUNK_BUILD_ROOT`) and `python/omp_speedup.py`
+    (`python/thread_speedup.py`). The data recorded under old names (variant labels in perf
+    databases and summaries, `shrink_gui` runs of `omp_speedup.py`) are still read.
+  `find_package(chunk)` stays, deprecated: `find_package(shrink_array)` loads it.
 
 ### Fixed
 
@@ -818,7 +853,7 @@ the tag's checksum to the recipe.
   builds, for a binary that must not depend on the machine (`docs/developer_settings.md`). The
   nightly's ASan job sets `x86-64-v3`: with `-march=native` on Zen 5, GCC 14 aligns slots of the
   frame on 64 bytes, ASan's fake stack can leave them 32 bytes off, and an aligned `vmovdqa64`
-  faults (#GP). The two SEGV of 2026-11-02 in `read_reclaim_validation` of `zero_one_value`
+  faults (\#GP). The two SEGV of 2026-11-02 in `read_reclaim_validation` of `zero_one_value`
   were this, not the library: on EPYC 9V45 the same commit fails 3 times of 3 at `native` and
   passes 2 times of 2 at `x86-64-v3`.
 
@@ -1280,7 +1315,7 @@ the tag's checksum to the recipe.
   TotalView and DDT do not stop; without a debugger nothing changes. `0` never stops, `1` always
   (`docs/environment_variables.md`). `log_break_on_failure` checks it under gdb and strace.
 - shrink_gui 0.15: the partition list also offers the partitions the machine lists at the
-  connection check (`[batch] partition_info`: `ccc_mpinfo` on inti, `sinfo -o '%P %c %D %a'` in
+  connection check (`[batch] partition_info`: `ccc_mpinfo` on inti, ``sinfo -o '%P %c %D %a'`` in
   `slurm_example.toml`), beside the site file's `[partitions]`, which win for a name in both. Their
   directives, launcher and detached options come from the site's new `[discovered]` templates
   (`{name}`, `{cores}` per node), their architecture from a pattern on the name (`arm`); `skip`
@@ -1352,7 +1387,7 @@ the tag's checksum to the recipe.
   as TBB tasks.
 - The test tooling runs the std backend and the TBB bench. `compile_all.sh` builds
   `std-llvm`, `std-llvm-check` and a ThreadSanitizer build, next to the `std-gnu*` builds of
-  `compile_all_gnu.sh` (the builds take longer; `--target='omp-*'` leaves them out), and says at
+  `compile_all_gnu.sh` (the builds take longer; ``--target='omp-*'`` leaves them out), and says at
   the start whether oneTBB is used. `bench_and_test.py` runs the std builds by default and the
   TBB bench as the variants `tbb_chunk`, `tbb_chunk2`, `tbb_chunk2a`. `multi_launch_stress.py`
   runs `tbb_chunk2` next to `chunk2` by default, the six variants with `--all_exec`, and its
@@ -1417,7 +1452,7 @@ the tag's checksum to the recipe.
   `bench_runner/settings.py`'s `bench_exe_names`), never for the old ones, which a build
   directory rebuilt since still holds, stale. Rebuild to get the new names. shrink_gui still
   reads the old names in the results of past runs. `compile_all.sh --exec=` matches the real
-  target names: `--exec='shrink_bench_*_zero_256'` for every backend.
+  target names: ``--exec='shrink_bench_*_zero_256'`` for every backend.
 - shrink_gui: the options form lists the options in alphabetical order (dashes and case aside)
   rather than in the script's declaration order; the positional arguments stay first, in the
   script's order, since the command line keeps them in it.
@@ -1466,8 +1501,8 @@ the tag's checksum to the recipe.
   icpx) and hid every other phase -- what looked like a regression of the bench.
 - The re-chunks are on screen again by default: the `rechunk` log channel
   starts at `info` (`CHUNK_LOG` unset means `warn,rechunk=info`), so each
-  re-chunk the decider applies writes its `decide <array>: re-chunk S=..
-  -> S'=.. [APPLIED]` line, as `[RECHUNK-DECIDE]` did before the log. Since
+  re-chunk the decider applies writes its ``decide <array>: re-chunk S=..
+  -> S'=.. [APPLIED]`` line, as `[RECHUNK-DECIDE]` did before the log. Since
   the log, the channel started at `warn` with the others and nothing was
   shown. `CHUNK_LOG=warn` (a bare level sets every channel) hides it.
 - Fast allocator: the value slabs are no longer floored at sixteen pages. The floor capped the
@@ -1830,8 +1865,8 @@ the tag's checksum to the recipe.
   each re-chunk step, census; `CHUNK_RECHUNK_TRACE_MEM`). The former variables
   still work, with a deprecation warning; `0` now means unset for them too.
 - The re-chunk decider's lines are no longer written by default:
-  `rechunk=info` writes its moves (`decide <array>: re-chunk S=.. -> S'=..
-  ... [APPLIED]`), `rechunk=debug` its waits too. `CHUNK_RECHUNK_DRY_RUN`,
+  `rechunk=info` writes its moves (``decide <array>: re-chunk S=.. -> S'=..
+  ... [APPLIED]``), `rechunk=debug` its waits too. `CHUNK_RECHUNK_DRY_RUN`,
   `CHUNK_RECHUNK_CHURN` and `CHUNK_FORCE_RECHUNK` switch `rechunk=info` on.
   python/bench_runner and multi_launch_stress.py set
   `CHUNK_LOG=warn,rechunk=info` unless it is set; their parser,

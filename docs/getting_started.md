@@ -35,11 +35,10 @@ matter. [variants.md](variants.md) compares them on a real workload.
 
 ## 2. Install
 
-With Spack, the recipe is in the repository: see [the README](../README.md#with-spack)
-(`spack install shrink-array`). From the sources, with a C++20 compiler (tested with GCC 13
-and 14 and Clang 18; the build scripts also cover oneAPI, AOCC and NVHPC; the `cpp23`
-branch needs C++23, GCC 14 or later; the `cpp26` branch, GCC 16 and no other compiler) and
-CMake ≥ 3.20:
+With Spack, the recipe is in the repository: see [the README](../README.md#install)
+(`spack install shrink-array`). From the sources, with a C++26 compiler (this `cpp26` branch:
+**GCC 16 only**: no other compiler has C++26 static reflection and contracts yet. `develop`
+stays in C++20, from GCC 13; the `cpp23` branch needs GCC 14 or Clang 18) and CMake ≥ 3.20:
 
 ```sh
 cmake -S shrink-array -B build -G Ninja \
@@ -76,7 +75,7 @@ library's tool, which the executable carries; a runtime that does not (Ubuntu 24
 cmake_minimum_required(VERSION 3.20)
 project(my_app LANGUAGES CXX)
 
-find_package(shrink_array 0.3 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(shrink_array 0.4 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE shrink_array::zero_any)
@@ -105,7 +104,7 @@ Macros do not cross an import: a program that needs `CHUNK_LOG` still includes `
 
 The library you link **chooses the variant and the chunk size**. The headers are the same
 for all of them, and the library brings the compile definitions that select its own
-(`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++20,
+(`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++26,
 `-fopenmp` when it was built with OpenMP, and its dependencies. The other options it was built
 with are in the installed `chunk/build_options.h`, which the headers read: a program compiles them
 as the library did.

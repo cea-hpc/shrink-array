@@ -29,18 +29,6 @@ foreach(_shrink_array_target IN ITEMS @_chunk_install_targets@)
   endif()
 endforeach()
 unset(_shrink_array_target)
-
-# zero_or_value was zero_one_value until 0.3: the former names of its targets,
-# each linking the new one, with a message when a project links it.
-foreach(_shrink_array_former IN ITEMS "" "_dyn" _@_chunk_static_suffixes@)
-  if(TARGET shrink_array::zero_or_value${_shrink_array_former} AND NOT TARGET shrink_array::zero_one_value${_shrink_array_former})
-    add_library(shrink_array::zero_one_value${_shrink_array_former} INTERFACE IMPORTED)
-    set_target_properties(shrink_array::zero_one_value${_shrink_array_former} PROPERTIES
-                          INTERFACE_LINK_LIBRARIES shrink_array::zero_or_value${_shrink_array_former}
-                          DEPRECATION "renamed shrink_array::zero_or_value${_shrink_array_former}")
-  endif()
-endforeach()
-unset(_shrink_array_former)
 unset(_shrink_array_name)
 
 # With the modules (CHUNK_MODULES): the program's import std module is built

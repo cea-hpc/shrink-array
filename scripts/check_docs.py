@@ -185,6 +185,17 @@ ALLOWED = {
     "scripts/diag_zero_rechunk_slowdown.py",
     # removed with the four phase fences it switched off (CHANGELOG.md, Unreleased)
     "CHUNK_PHASE_FENCES",
+    # the former names removed in 0.4 (CHANGELOG.md, Unreleased, Removed), which CHANGELOG.md and
+    # the migration table of docs/api.md cite: the 0.2 headers and C++ names deprecated in 0.3,
+    # the second-value settings' CHUNK_CONST_VAL2_* names, the switches of before CHUNK_LOG, the
+    # option names without CHUNK_, CHUNK_BUILD_REP, omp_speedup.py (shrink_gui reads its old runs)
+    "chunk/manage_ompt.h", "chunk/param_chunk.h", "chunk/array_chunk_bits.h", "chunk/array_chunk_range_ops.h",
+    "array_chunk_range_ops.h", "ParamChunk", "ParamChunk::init_indexes()", "init_indexes",
+    "ParamChunk::set_decalage_chunk()", "set_decalage_chunk", "build_config::has_not_ompt",
+    "ArrayChunkBits", "get_nb_chunk_written()", "CHUNK_CONST_VAL2_ID_LIMIT", "CHUNK_CONST2_RECLAIM",
+    "CHUNK_CONST_VAL2_MAX_IDS", "CHUNK_CONST_VAL2_REGION_BYTES", "CHUNK_CONST_VAL2_INDEX_LOG2",
+    "FAST_ALLOC_TRACE", "CHUNK_ARENA_REPORT", "CHUNK_LEDGER_REPORT", "CHUNK_OMPT_STATS", "CHUNK_CST2_PROBE",
+    "USE_LIBCXX", "CHUNK_BUILD_REP", "python/omp_speedup.py", "omp_speedup.py",
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)

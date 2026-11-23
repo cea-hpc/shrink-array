@@ -151,17 +151,18 @@ enum class Op
 
 const char* op_name(Op op)
 {
+    using enum Op;
     switch (op)
     {
-        case Op::copy_assign:
+        case copy_assign:
             return "a = b";
-        case Op::move_assign:
+        case move_assign:
             return "a = std::move(b)";
-        case Op::swap:
+        case swap:
             return "a.swap(b)";
-        case Op::clear:
+        case clear:
             return "a.clear()";
-        case Op::shrink_to_fit:
+        case shrink_to_fit:
             return "a.shrink_to_fit()";
     }
     return "?";
@@ -205,24 +206,25 @@ int run_case(Op op)
     long   b_count  = count;
     double a_after  = wa;
     bool   b_is_old = false; ///< `b` holds `a`'s old content (swap)
+    using enum Op;
     switch (op)
     {
-        case Op::copy_assign:
+        case copy_assign:
             a = b;
             break;
-        case Op::move_assign:
+        case move_assign:
             a       = std::move(b);
             b_count = static_cast<long>(b.size()); // valid, unspecified: whatever it reads now
             break;
-        case Op::swap:
+        case swap:
             a.swap(b);
             b_is_old = true;
             break;
-        case Op::clear:
+        case clear:
             a.clear();
             a_count = 0;
             break;
-        case Op::shrink_to_fit:
+        case shrink_to_fit:
             a.shrink_to_fit();
             break;
     }
@@ -231,7 +233,7 @@ int run_case(Op op)
         rewrite(a, wa);
     }
     // After the move `b` is not rewritten (its content is unspecified).
-    const bool b_rewritten = op != Op::move_assign && op != Op::swap;
+    const bool b_rewritten = op != move_assign && op != swap;
     if (b_rewritten)
     {
         rewrite(b, wb);
@@ -361,10 +363,11 @@ int run_queued(Queue q)
 
 int run(int /*argc*/, char** /*argv*/)
 {
+    using enum Op;
     Runtime::init(true);
     println("=== bystander_validation ({}) ===", variant_name());
     int fails = 0;
-    for (Op op : {Op::copy_assign, Op::move_assign, Op::swap, Op::clear, Op::shrink_to_fit})
+    for (Op op : {copy_assign, move_assign, swap, clear, shrink_to_fit})
     {
         fails += run_case(op);
     }

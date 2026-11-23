@@ -58,8 +58,4 @@ namespace shrink_array
 SHRINK_ARRAY_EXPORT template <typename IntType = int>
 using BitArray = zero_or_value::Array<Bit, IntType>;
 
-/// @brief Former name of BitArray.
-SHRINK_ARRAY_EXPORT template <typename IntType = int>
-using ArrayChunkBits [[deprecated("renamed BitArray (chunk/bit_array.h)")]] = BitArray<IntType>;
-
 } // namespace shrink_array

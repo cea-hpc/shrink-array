@@ -154,6 +154,7 @@ class CompressCandidates
      *
      * @param lo first address of the array's chunk_list_ span
      * @param hi one past its last address
+     * @param own_rank_only walk the calling thread's list only (removal_ranks()).
      * @note In plain fast-block-compression builds (GNU, no OMPT) this cleanup is
      *       the ONLY one: the built-in vec_tup.clear() runs only under OMPT.
      */
@@ -164,6 +165,7 @@ class CompressCandidates
      * @brief Drop every queued zero_any candidate of array @p array_id, in every
      *        rank's list (zero_any::Array::clear_core and rechunk_to).
      * @param array_id array index whose candidates are removed
+     * @param own_rank_only walk the calling thread's list only (removal_ranks()).
      * @note Keeps other arrays' candidates. At teardown prefer
      *       remove_from_zero_any_candidates_by_ptr_range() (see why there).
      */
@@ -177,6 +179,7 @@ class CompressCandidates
      *          so no zero_or_value::Chunk* of a torn-down or re-chunked array dangles there.
      *
      * @param array_id array index whose candidates are removed
+     * @param own_rank_only walk the calling thread's list only (removal_ranks()).
      * @note OpenMP builds only: a serial build queues no zero_or_value candidate (fast
      *       block compression is OpenMP-only), so there is nothing to drop.
      */

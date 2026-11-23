@@ -384,6 +384,9 @@ class Team
      *          a compute kernel). Not for loops through the arrays' proxies:
      *          there `simd` fails (-Wpass-failed) and can leave the sibling
      *          loops of the same outlined region unvectorised too.
+     * @param first first index
+     * @param last  one past the last index
+     * @param body  called as body(i), once per index
      * @param wait_mode WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
@@ -399,6 +402,9 @@ class Team
      *          The chunk is a local of this function: clang 19 and 20 crash
      *          (EmitOMPWorksharingLoop) on a chunk that is a capture of the
      *          region's lambda.
+     * @param first first index
+     * @param last  one past the last index
+     * @param body  called as body(i), once per index
      * @param chunk the block size (below 1 means 1)
      * @param wait_mode     WaitMode::nowait: no barrier at the end.
      */
@@ -413,6 +419,9 @@ class Team
      * @brief for_static_chunks() as `omp for simd schedule(static, chunk)`:
      *        the same blocks (no `simd:` modifier, which would round them),
      *        the loop vectorised. Serial build: for_static_chunks().
+     * @param first first index
+     * @param last  one past the last index
+     * @param body  called as body(i), once per index
      * @param chunk the block size (below 1 means 1)
      * @param wait_mode     WaitMode::nowait: no barrier at the end.
      */

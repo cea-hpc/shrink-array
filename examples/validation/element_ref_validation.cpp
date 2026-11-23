@@ -140,7 +140,7 @@ int usage()
     expect("int %, ~, <<=", ints[2] + ints[3] + ints[4], 1 - 8 + 8);
 
     // Copy-list-initialisation, as for a std::vector: the constructor is not explicit.
-    Array<double> listed = {1.0, 2.5, 4.0};
+    Array<double> listed = {1.0, 2.5, 4.0}; // NOSONAR(cpp:S6012): Array is a std::conditional_t alias, no CTAD
     expect("a = {1, 2.5, 4}: size", listed.size(), 3);
     expect("a = {1, 2.5, 4}: a[1]", static_cast<double>(listed[1]), 2.5);
 

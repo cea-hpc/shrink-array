@@ -72,15 +72,16 @@ enum class Op
 template <Op op>
 constexpr auto operand_of()
 {
-    if constexpr (op == Op::mul)
+    using enum Op;
+    if constexpr (op == mul)
     {
         return 1.5;
     }
-    else if constexpr (op == Op::div)
+    else if constexpr (op == div)
     {
         return 2.5;
     }
-    else if constexpr (op == Op::add || op == Op::sub)
+    else if constexpr (op == add || op == sub)
     {
         return 0.5;
     }
@@ -94,19 +95,20 @@ constexpr auto operand_of()
 template <Op op, typename L, typename R>
 void apply(L&& lhs, const R& rhs)
 {
-    if constexpr (op == Op::mul)
+    using enum Op;
+    if constexpr (op == mul)
     {
         std::forward<L>(lhs) *= rhs;
     }
-    else if constexpr (op == Op::div)
+    else if constexpr (op == div)
     {
         std::forward<L>(lhs) /= rhs;
     }
-    else if constexpr (op == Op::add)
+    else if constexpr (op == add)
     {
         std::forward<L>(lhs) += rhs;
     }
-    else if constexpr (op == Op::sub)
+    else if constexpr (op == sub)
     {
         std::forward<L>(lhs) -= rhs;
     }
@@ -120,21 +122,22 @@ void apply(L&& lhs, const R& rhs)
 template <Op op>
 constexpr bool has_op()
 {
+    using enum Op;
     using A          = Array<int>;
     constexpr auto u = operand_of<op>();
-    if constexpr (op == Op::mul)
+    if constexpr (op == mul)
     {
         return requires { std::declval<A&>()[0] *= u; };
     }
-    else if constexpr (op == Op::div)
+    else if constexpr (op == div)
     {
         return requires { std::declval<A&>()[0] /= u; };
     }
-    else if constexpr (op == Op::add)
+    else if constexpr (op == add)
     {
         return requires { std::declval<A&>()[0] += u; };
     }
-    else if constexpr (op == Op::sub)
+    else if constexpr (op == sub)
     {
         return requires { std::declval<A&>()[0] -= u; };
     }
@@ -189,26 +192,27 @@ int run_case(const char* label, const char* mode, int start)
 /// @brief Every case the variant's proxy offers.
 long run_cases(const char* mode)
 {
+    using enum Op;
     long fails = 0;
-    if constexpr (has_op<Op::mul>())
+    if constexpr (has_op<mul>())
     {
-        fails += run_case<Op::mul>("2 *= 1.5", mode, 2);
+        fails += run_case<mul>("2 *= 1.5", mode, 2);
     }
-    if constexpr (has_op<Op::div>())
+    if constexpr (has_op<div>())
     {
-        fails += run_case<Op::div>("7 /= 2.5", mode, 7);
+        fails += run_case<div>("7 /= 2.5", mode, 7);
     }
-    if constexpr (has_op<Op::add>())
+    if constexpr (has_op<add>())
     {
-        fails += run_case<Op::add>("-1 += 0.5", mode, -1);
+        fails += run_case<add>("-1 += 0.5", mode, -1);
     }
-    if constexpr (has_op<Op::sub>())
+    if constexpr (has_op<sub>())
     {
-        fails += run_case<Op::sub>("1 -= 0.5", mode, 1);
+        fails += run_case<sub>("1 -= 0.5", mode, 1);
     }
-    if constexpr (has_op<Op::mod>())
+    if constexpr (has_op<mod>())
     {
-        fails += run_case<Op::mod>("10 %= 2^32 + 3", mode, 10);
+        fails += run_case<mod>("10 %= 2^32 + 3", mode, 10);
     }
     return fails;
 }

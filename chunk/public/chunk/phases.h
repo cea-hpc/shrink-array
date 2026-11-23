@@ -23,8 +23,7 @@
  *        (begin_parallel_phase(), finalize_parallel_phase(), ...) and their
  *        contract (docs/threading_backends.md, section 2).
  *
- * No header of the library includes this one (they include phase_hooks.h;
- * the deprecated chunk/manage_ompt.h aside):
+ * No header of the library includes this one (they include phase_hooks.h):
  * the module reads it in its purview and exports parallel_phase() by its own
  * declarations (chunk/internal/module_export.h).
  */

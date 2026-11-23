@@ -452,12 +452,6 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      */
     [[nodiscard]] int written_chunk_count(this const Derived& self);
 
-    /// @brief Former name of written_chunk_count().
-    [[deprecated("renamed written_chunk_count()")]] [[nodiscard]] int get_nb_chunk_written(this const Derived& self)
-    {
-        return self.written_chunk_count();
-    }
-
     /**
      * @brief Calculate the filling rate of written chunks.
      * @return Percentage of modified chunks.

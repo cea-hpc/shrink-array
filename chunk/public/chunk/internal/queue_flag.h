@@ -150,6 +150,8 @@ inline void hand_back(std::atomic<char>& flag) noexcept
  *          erased): reported in check builds, skipped otherwise.
  *
  * @tparam List vector of tuples (chunk pointer or null, chunk number, array number, ...)
+ * @param list the pass's candidate list
+ * @param sz   how many of its first entries the pass took
  * @param flag_of (array_id, chunk_index) -> the candidate's flag
  * @param reset (array_id, chunk_index): clears the flag of an entry with no pass
  *        protocol (serial build, null chunk). A callable and not one function:

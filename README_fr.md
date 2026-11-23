@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/cea-hpc/shrink-array/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C.svg)](docs/getting_started_fr.md)
+[![C++26](https://img.shields.io/badge/C%2B%2B-26-00599C.svg)](docs/getting_started_fr.md)
 [![Spack](https://img.shields.io/badge/Spack-package-0f6cbd.svg)](docs/getting_started_fr.md)
 [![Checked with GenMC](https://img.shields.io/badge/checked%20with-GenMC-8a2be2.svg)](docs/formal_models_fr.md)
 
@@ -23,7 +23,7 @@ moins de mémoire, sans toucher aux boucles.
   copiable : `double`, `std::complex`, vos structures.
 - **Fait pour beaucoup de threads** : aucun verrou à l'écriture, des tableaux de 10⁹ éléments,
   quelques centaines de threads -- ceux d'OpenMP, ou, avec le backend std, les `std::thread` et
-  les tâches TBB du programme lui-même (`CHUNK_THREADS=std`, sans OpenMP). C++23, Linux, CMake, Spack.
+  les tâches TBB du programme lui-même (`CHUNK_THREADS=std`, sans OpenMP). C++26 (GCC 16), Linux, CMake, Spack.
 
 *Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ et le paquet
 CMake sont `shrink_array` (`find_package(shrink_array)`, cibles `shrink_array::…`).*
@@ -164,7 +164,7 @@ dans le corps prend `sa::tbb::phase_body(inner)`. L'en-tête est fourni avec la 
 ne dépend pas de TBB : c'est au programme de se lier à TBB.
 
 ```cmake
-find_package(shrink_array 0.3 REQUIRED)
+find_package(shrink_array 0.4 REQUIRED)
 find_package(TBB REQUIRED)
 target_link_libraries(my_app PRIVATE shrink_array::zero_any TBB::tbb)
 ```
@@ -342,9 +342,9 @@ peuvent mieux convenir : [docs/alternatives_fr.md](docs/alternatives_fr.md) les 
 
 ## Installer
 
-Prérequis : **Linux** (x86-64 ou aarch64), un compilateur **C++23** (GCC 14 ou plus, Clang 18
-ou plus, oneAPI ; NVHPC et AOCC 5 n'ont pas de C++23 utilisable), **CMake 3.20**, et en option
-**OpenMP**.
+Prérequis : **Linux** (x86-64 ou aarch64), un compilateur **C++26** -- sur cette branche
+`cpp26`, **GCC 16 seulement** (aucun autre compilateur n'a encore la réflexion statique et les
+contrats du C++26) --, **CMake 3.20**, et en option **OpenMP**.
 
 Avec `-DCHUNK_MODULES=ON` (expérimental, désactivé par défaut), le module `shrink_array`
 (`import shrink_array;`) est construit aussi, via `import std` : **GCC 16**, **CMake 4.2** et le
@@ -360,7 +360,7 @@ cmake --install build
 Puis, dans votre projet :
 
 ```cmake
-find_package(shrink_array 0.3 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(shrink_array 0.4 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
@@ -474,15 +474,18 @@ changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 
 ## État du projet et contributions
 
-shrink-array en est à la version 0.3 : avant la 1.0, une version mineure peut changer
+shrink-array en est à la version 0.4 : avant la 1.0, une version mineure peut changer
 l'interface ([politique de versions](CHANGELOG.md)). Chaque push lance les vérifications des
 sources, les builds GCC 14 (OpenMP, série et threads std avec oneTBB), les tests de validation, le backend std
 sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AArch64, un projet qui
 consomme la bibliothèque par `FetchContent` ([CI](.github/workflows/ci.yml)) ; chaque nuit, les
 builds AArch64 trop longs pour un push -- le backend std sous ThreadSanitizer, le build `_dyn` --
 et, sur x86-64, AddressSanitizer, UndefinedBehaviorSanitizer, Clang 23, les plus anciens
-compilateurs pris en charge (GCC 13, Clang 18) et la recette Spack installée depuis le dépôt
-([nightly](.github/workflows/nightly.yml)).
+compilateurs que `develop` prend en charge (GCC 13, Clang 18) et la recette Spack installée depuis
+le dépôt ([nightly](.github/workflows/nightly.yml)). C'est la CI de `develop`, et le nightly tourne
+sur `develop`. Sur cette branche, `cpp26`, un push lance les vérifications des sources et des
+builds GCC 16 seulement : OpenMP, série à la géométrie d'exécution ([CI](.github/workflows/ci.yml))
+et le module ([modules](.github/workflows/modules.yml)).
 
 Le retour le plus utile est un essai sur vos données : si la bibliothèque économise de
 la mémoire dans votre code -- ou n'en économise pas --

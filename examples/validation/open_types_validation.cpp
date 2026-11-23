@@ -344,7 +344,7 @@ int run(int argc, char** argv)
         cp[3] = Point3{-1., -1., -1.};
         check(std::as_const(pts)[3] == Point3{3., 0.5, 0.} && std::as_const(cp)[3] == Point3{-1., -1., -1.},
               "deep copy: a write in the copy leaves the source alone");
-        Array<Pair16> cells{Pair16{1, 5}, Pair16{2, 6}, Pair16{}};
+        Array<Pair16> cells{Pair16{1, 5}, Pair16{2, 6}, Pair16{}}; // NOSONAR(cpp:S6012): a conditional_t alias, no CTAD
         check(cells.size() == 3 && std::as_const(cells)[1] == Pair16{2, 6} && std::as_const(cells)[2] == Pair16{},
               "initializer-list constructor");
         std::vector   src(500, Pair16{7, 1});

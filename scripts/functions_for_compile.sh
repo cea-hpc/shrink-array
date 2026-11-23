@@ -21,10 +21,12 @@ maybe_wipe_cache() {  # <build-dir>
 }
 
 # ─── 64-bit-index bench executables (SHRINK_BENCH_INT64) ─────────────────────
-# Added to the configure line of the release OpenMP (perf) configurations only:
-# shrink_bench_omp_<variant>_int64_<1024|dyn> and shrink_bench_omp_vector_int64_perf
-# (examples/shrink_bench/CMakeLists.txt). Perf instruments -- no check mode, so
-# the debug, check, stats, sanitizer, std-alloc and serial builds do without.
+# Added to the configure line of the release OpenMP (perf) configurations and of
+# the four stats ones (omp-gnu-stats, gnu-stats, omp-llvm-stats, llvm-stats: a
+# stats run past INT_MAX elements, and bench_runner's scaling phase, need them):
+# shrink_bench_<backend>_<variant>_int64_<1024|dyn> and the vector_int64_perf
+# baseline (examples/shrink_bench/CMakeLists.txt). Perf instruments first, so
+# the debug, check, sanitizer and plain serial builds do without.
 # Opt-out: INT64_OPT= ./compile_all.sh (or -DSHRINK_BENCH_INT64=OFF).
 INT64_OPT=${INT64_OPT--DSHRINK_BENCH_INT64=ON}
 

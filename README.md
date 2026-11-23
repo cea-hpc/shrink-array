@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/cea-hpc/shrink-array/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C.svg)](docs/getting_started.md)
+[![C++26](https://img.shields.io/badge/C%2B%2B-26-00599C.svg)](docs/getting_started.md)
 [![Spack](https://img.shields.io/badge/Spack-package-0f6cbd.svg)](docs/getting_started.md)
 [![Checked with GenMC](https://img.shields.io/badge/checked%20with-GenMC-8a2be2.svg)](docs/formal_models.md)
 
@@ -22,7 +22,7 @@ On the reference benchmark, a billion-element workload that needs **125.9 GB** w
   `std::complex`, your own structures.
 - **Built for many threads**: no lock on the write path, arrays of 10⁹ elements, a few hundred
   threads -- OpenMP's, or the program's own `std::thread`s and TBB tasks with the std backend
-  (`CHUNK_THREADS=std`, no OpenMP needed). C++23, Linux, CMake, Spack.
+  (`CHUNK_THREADS=std`, no OpenMP needed). C++26 (GCC 16), Linux, CMake, Spack.
 
 *The project is `shrink-array` (repository, Spack package); the C++ namespace and the CMake
 package are `shrink_array` (`find_package(shrink_array)`, targets `shrink_array::…`).*
@@ -161,7 +161,7 @@ Partitioners and `task_arena`s work as with TBB itself; an arena wider than the 
 the program links it.
 
 ```cmake
-find_package(shrink_array 0.3 REQUIRED)
+find_package(shrink_array 0.4 REQUIRED)
 find_package(TBB REQUIRED)
 target_link_libraries(my_app PRIVATE shrink_array::zero_any TBB::tbb)
 ```
@@ -331,9 +331,9 @@ formats, hash tables, zfp / Blosc2 or OpenVDB may fit better:
 
 ## Install
 
-Requirements: **Linux** (x86-64 or aarch64), a **C++23** compiler (GCC 14 or later, Clang 18
-or later, oneAPI; NVHPC and AOCC 5 have no usable C++23), **CMake 3.20**, and optionally
-**OpenMP**.
+Requirements: **Linux** (x86-64 or aarch64), a **C++26** compiler -- on this `cpp26` branch,
+**GCC 16 only** (no other compiler has C++26 static reflection and contracts yet) --,
+**CMake 3.20**, and optionally **OpenMP**.
 
 With `-DCHUNK_MODULES=ON` (experimental, off by default) the `shrink_array` module
 (`import shrink_array;`) is built too, through `import std`: **GCC 16**, **CMake 4.2** and the
@@ -349,7 +349,7 @@ cmake --install build
 Then, in your project:
 
 ```cmake
-find_package(shrink_array 0.3 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(shrink_array 0.4 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
 target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
@@ -459,15 +459,18 @@ exists in French ([docs/README.md](docs/README.md)); the changes from one versio
 
 ## Status and contributing
 
-shrink-array is at version 0.3: before 1.0, a minor release may change the interface
+shrink-array is at version 0.4: before 1.0, a minor release may change the interface
 ([versioning policy](CHANGELOG.md)). Every push runs the source checks, the GCC 14 builds
 (OpenMP, serial and std threads with oneTBB), the validation harnesses, the std backend under
 ThreadSanitizer and the GenMC models, the OpenMP build on x86-64 and on AArch64, a project that
 consumes the library with `FetchContent` ([CI](.github/workflows/ci.yml)); every night, the
 AArch64 builds too slow for a push -- the std backend under ThreadSanitizer, the `_dyn` build --
 and, on x86-64, AddressSanitizer, UndefinedBehaviorSanitizer, Clang 23, the oldest compilers
-supported (GCC 13, Clang 18) and the Spack recipe installed from the checkout
-([nightly](.github/workflows/nightly.yml)).
+develop supports (GCC 13, Clang 18) and the Spack recipe installed from the checkout
+([nightly](.github/workflows/nightly.yml)). That is `develop`'s CI, and the nightly runs
+on `develop`. On this branch, `cpp26`, a push runs the source checks and GCC 16 builds only:
+OpenMP, serial at the run-time geometry ([CI](.github/workflows/ci.yml)) and the module
+([modules](.github/workflows/modules.yml)).
 
 Trying it on your own data is the most useful feedback: if it saves memory in your code -- or
 does not -- [open an issue](https://github.com/cea-hpc/shrink-array/issues) with the type, the

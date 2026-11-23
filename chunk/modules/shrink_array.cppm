@@ -145,20 +145,20 @@ extern "C++"
     #include "chunk/pattern_array.h"  // pattern::Array, over zero_any's library
 #elif defined(CHUNK_VARIANT_ZERO_OR_VALUE)
     #include "chunk/zero_or_value_array.h" // zero_or_value::Array
-    #include "chunk/bit_array.h"     // BitArray: zero_or_value::Array<Bit>
+    #include "chunk/bit_array.h"           // BitArray: zero_or_value::Array<Bit>
 #else
     // CHUNK_VARIANT_ZERO, or no variant: chunk_vector, the std::vector mode
     // (chunk_config::use_zero false), whose programs still name zero::Array.
     #include "chunk/zero_array.h" // zero::Array
 #endif
-#include "chunk/runtime.h"                // Runtime
+#include "chunk/runtime.h"                    // Runtime
 #include "chunk/config.h"                     // build_config, chunk_config: the options the library was built with
 #include "chunk/internal/pmp_chunk.h"         // pmp: the loops, the teams, max_threads, team_size, thread_rank
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/print.h"                      // print, println
-#include "chunk/threads.h" // max_threads, team_size, thread_rank (and under pmp::)
-#include "chunk/phases.h"                // parallel_phase
-#include "chunk/internal/pool_release.h" // release_chunk_pools (and the deprecated destroy_block_chunk)
+#include "chunk/threads.h"                    // max_threads, team_size, thread_rank (and under pmp::)
+#include "chunk/phases.h"                     // parallel_phase
+#include "chunk/internal/pool_release.h"      // release_chunk_pools
 #include "chunk/chunk_exchange.h"             // export_chunk, import_chunk, export_array, import_array, ChunkState, ...
 #include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor, ChunkSizeReport, ChunkSizeEstimate
 #include "chunk/rechunk_decider.h"            // RechunkDecider, RechunkPolicy

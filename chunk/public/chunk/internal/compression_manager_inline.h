@@ -642,7 +642,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     // With the per-chunk marks the window is "no writer on a chunk this pass MARKED" (other
     // chunks' writers are neither waited for nor steered away); without them, "no writer
     // anywhere".
-    const auto window_shut = [max_thr]
+    const auto window_shut = [max_thr] // NOSONAR(cpp:S1481): a run-time bound in threaded builds
     {
         if constexpr (chunk_config::use_chunk_steal_mark)
         {

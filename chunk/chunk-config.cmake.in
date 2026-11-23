@@ -40,16 +40,4 @@ set(chunk_STD_ALLOC "@CHUNK_STD_ALLOC@")
 
 include("${CMAKE_CURRENT_LIST_DIR}/chunk-targets.cmake")
 
-# zero_or_value was zero_one_value until 0.3: the former names of its targets,
-# each linking the new one, with a message when a project links it.
-foreach(_chunk_former IN ITEMS "" "_dyn" _@_chunk_static_suffixes@)
-  if(TARGET chunk::chunk_zero_or_value${_chunk_former} AND NOT TARGET chunk::chunk_zero_one_value${_chunk_former})
-    add_library(chunk::chunk_zero_one_value${_chunk_former} INTERFACE IMPORTED)
-    set_target_properties(chunk::chunk_zero_one_value${_chunk_former} PROPERTIES
-                          INTERFACE_LINK_LIBRARIES chunk::chunk_zero_or_value${_chunk_former}
-                          DEPRECATION "renamed chunk::chunk_zero_or_value${_chunk_former}")
-  endif()
-endforeach()
-unset(_chunk_former)
-
 check_required_components(chunk)
