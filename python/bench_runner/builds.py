@@ -52,7 +52,7 @@ def int64_variant(var):
     """The int64 declination of a --variants entry, spelled for resolve_exe:
     "zero_any@1024" -> "zero_any_int64@1024" (shrink_bench_<backend>_zero_any_int64_1024),
     "vector" -> "vector_int64" (with stage perf: shrink_bench_<backend>_vector_int64_perf).
-    Built on the release OpenMP configs only, for 1024 and dyn (see
+    Built on the release OpenMP and the stats configs, for 1024 and dyn (see
     examples/shrink_bench/CMakeLists.txt, SHRINK_BENCH_INT64)."""
     if "@" in var:
         base, size = var.split("@", 1)

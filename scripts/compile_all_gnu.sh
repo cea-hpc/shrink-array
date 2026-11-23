@@ -291,7 +291,7 @@ if skip_release; then
     echo "[debug-only] skipping gnu openmp with stats"
 else
     compile_with_cmake "$build_root/cmake-build-omp-gnu-stats${ICF_SUFFIX}/$arch" \
-      "-DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+      "-DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT" \
       "gnu openmp with stats"
 fi
 
@@ -365,7 +365,7 @@ if skip_release; then
     echo "[debug-only] skipping gnu with stats (no openmp)"
 else
     compile_with_cmake "$build_root/cmake-build-gnu-stats${ICF_SUFFIX}/$arch" \
-      "-DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+      "-DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT" \
       "gnu with stats (no openmp)"
 fi
 
