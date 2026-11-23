@@ -121,6 +121,48 @@ __global__ void write_ranges(A a, const Range* ranges, long n_ranges)
     }
 }
 
+/// @brief write_ramp's values, for the chunk-aligned loop (DeviceArray::parallel_for_chunks).
+struct Ramp
+{
+    double base;
+
+    __device__ double operator()(long i) const noexcept
+    {
+        return base + 0.5 * static_cast<double>(i & 1023);
+    }
+};
+
+/// @brief write_ranges' values for one range.
+struct RangeValue
+{
+    long start;
+    int  kind;
+
+    __device__ double operator()(long i) const noexcept
+    {
+        return kind == 0 ? 0.0 : kind == 1 ? 3.0 : 1.0 + static_cast<double>(i & 255);
+    }
+};
+
+/// @brief write_ranges by the chunk-aligned path: each block takes a range and goes over
+///        its chunks with block_write (two ranges may share a chunk).
+template <int BLOCK, int S>
+__global__ void __launch_bounds__(BLOCK) write_ranges_chunked(sa::View<double, S> a, const Range* ranges, long n_ranges)
+{
+    for (long r = blockIdx.x; r < n_ranges; r += gridDim.x)
+    {
+        const Range      g   = ranges[r];
+        const long       end = g.start + g.length;
+        const RangeValue f{g.start, g.kind};
+        for (long c = g.start / S; c * S < end; ++c)
+        {
+            const long lo = c * S > g.start ? c * S : g.start;
+            const long hi = (c + 1) * S < end ? (c + 1) * S : end;
+            a.template block_write<BLOCK>(c, lo, hi, f);
+        }
+    }
+}
+
 /// @brief Median time in ms of @p reps runs of @p launch (one warm-up first).
 template <typename F>
 float time_ms(int reps, F&& launch)
@@ -208,24 +250,45 @@ void bench(long n, int reps)
                 static_cast<double>(n) * sizeof(double) / (flat_write * 1e6));
 
     // 0. The first write over the whole array (every chunk compressed before): it
-    //    materialises every chunk, S/32 warps reaching each chunk at once.
+    //    materialises every chunk. Grid-stride assign() puts S/32 warps on each chunk at
+    //    once (race: they all pre-fill; claim: one pre-fills, the others wait); the
+    //    chunk-aligned loop gives each chunk to one block.
+    const char* mode_name[] = {"race", "claim", "chunk-aligned"};
+    for (int mode = 0; mode < 3; ++mode)
     {
+        a.set_coordination(mode == 1 ? sa::Coordination::claim : sa::Coordination::race);
         std::vector<float> t;
-        unsigned long long lost_before = 0, lost = 0;
+        sa::Stats          before{}, after{};
         for (int r = 0; r < reps; ++r)
         {
             write_value<<<grid, block>>>(a.view(), n, 0.0);
             a.finalize();
-            lost_before = a.stats().cas_lost;
-            t.push_back(time_once([&] { write_ramp<<<grid, block>>>(a.view(), n, 1.0); }));
-            lost = a.stats().cas_lost - lost_before;
+            before = a.stats();
+            t.push_back(time_once(
+                [&]
+                {
+                    if (mode == 2)
+                    {
+                        a.parallel_for_chunks(0, n, Ramp{1.0});
+                    }
+                    else
+                    {
+                        write_ramp<<<grid, block>>>(a.view(), n, 1.0);
+                    }
+                }));
+            after = a.stats();
         }
-        line("first write (materialises every chunk)", median(t), flat_write, "");
-        std::printf("  %-44s %llu lost CAS for %ld chunks (%.1f per chunk)\n", "", lost, n_chunks,
-                    static_cast<double>(lost) / static_cast<double>(n_chunks));
+        char what[64];
+        std::snprintf(what, sizeof what, "first write, %s", mode_name[mode]);
+        line(what, median(t), flat_write, "");
+        std::printf("  %-44s lost CAS %.2f, claim waits %.2f per chunk; %llu given up, %llu arena failures\n", "",
+                    static_cast<double>(after.cas_lost - before.cas_lost) / static_cast<double>(n_chunks),
+                    static_cast<double>(after.claim_wait - before.claim_wait) / static_cast<double>(n_chunks),
+                    after.claim_spin - before.claim_spin, after.arena_fail - before.arena_fail);
         write_value<<<grid, block>>>(a.view(), n, 0.0);
         a.finalize();
     }
+    a.set_coordination(sa::Coordination::race);
 
     // 1. Read, every chunk compressed (descriptors only), then every chunk materialised.
     const float read_compressed = time_ms(reps, [&] { read_sum<<<grid, block>>>(a.view(), n, d_sum); });
@@ -238,6 +301,8 @@ void bench(long n, int reps)
     // 2. Write into materialised chunks (the hot path: acquire load + store).
     const float write_materialised = time_ms(reps, [&] { write_ramp<<<grid, block>>>(a.view(), n, 2.0); });
     line("write into materialised chunks", write_materialised, flat_write, "(criterion <= 2x)");
+    const float write_materialised_chunked = time_ms(reps, [&] { a.parallel_for_chunks(0, n, Ramp{2.0}); });
+    line("write into materialised chunks, chunk-aligned", write_materialised_chunked, flat_write, "");
 
     // 3. Random range rewrites, as shrink_bench's phases: lengths up to 4 chunks, a third of
     //    the ranges zeros, a third one constant, a third varying; then compress().
@@ -270,8 +335,9 @@ void bench(long n, int reps)
     const auto  n_kept   = static_cast<long>(kept.size());
     const float flat_rng = time_ms(reps, [&] { write_ranges<<<grid, block>>>(flat, d_ranges, n_kept); });
     // The array starts half materialised (every other chunk at a varying ramp) for each rep.
-    float rng_write = 0, rng_compress = 0;
+    for (int mode = 0; mode < 3; ++mode)
     {
+        a.set_coordination(mode == 1 ? sa::Coordination::claim : sa::Coordination::race);
         std::vector<float> tw, tc;
         for (int r = 0; r < reps; ++r)
         {
@@ -279,20 +345,32 @@ void bench(long n, int reps)
             a.finalize();
             write_ramp<<<grid, block>>>(a.view(), n / 2, 5.0);
             a.finalize();
-            tw.push_back(time_once([&] { write_ranges<<<grid, block>>>(a.view(), d_ranges, n_kept); }));
+            tw.push_back(time_once(
+                [&]
+                {
+                    if (mode == 2)
+                    {
+                        write_ranges_chunked<block, S><<<grid, block>>>(a.view(), d_ranges, n_kept);
+                    }
+                    else
+                    {
+                        write_ranges<<<grid, block>>>(a.view(), d_ranges, n_kept);
+                    }
+                }));
             tc.push_back(time_once([&] { a.finalize(); }));
         }
-        std::sort(tw.begin(), tw.end());
-        std::sort(tc.begin(), tc.end());
-        rng_write    = tw[tw.size() / 2];
-        rng_compress = tc[tc.size() / 2];
+        const float     rng_write    = median(tw);
+        const float     rng_compress = median(tc);
+        const sa::Stats st           = a.stats();
+        std::printf("  random ranges, %s: %ld non-overlapping ranges; after compress %llu/%ld chunks "
+                    "materialised; so far %llu lost CAS, %llu claim waits, %llu given up, %llu replays\n",
+                    mode_name[mode], n_kept, st.materialised, st.n_chunks, st.cas_lost, st.claim_wait, st.claim_spin,
+                    st.replays);
+        line("  write kernel", rng_write, flat_rng, "");
+        line("  finalize() (compress)", rng_compress, flat_rng, "");
+        line("  write + finalize()", rng_write + rng_compress, flat_rng, "");
     }
-    const sa::Stats st = a.stats();
-    std::printf("  %ld non-overlapping ranges; after compress %llu/%ld chunks materialised, %llu lost CAS so far\n",
-                n_kept, st.materialised, st.n_chunks, st.cas_lost);
-    line("random ranges: write kernel", rng_write, flat_rng, "");
-    line("random ranges: finalize() (compress)", rng_compress, flat_rng, "");
-    line("random ranges: write + finalize()", rng_write + rng_compress, flat_rng, "");
+    a.set_coordination(sa::Coordination::race);
 
     // 4. compress() alone: every chunk materialised and uniform (all fold back), then every
     //    chunk materialised and not uniform (a pure scan, nothing folds back).

@@ -161,6 +161,17 @@ __device__ inline P* load_ptr_acquire(P* const* slot) noexcept
 #endif
 }
 
+/// @brief A short pause in a spin loop (the claim wait of materialise()): lets the warp
+///        being waited for run instead of hammering its descriptor.
+__device__ inline void backoff() noexcept
+{
+#if defined(__HIP_PLATFORM_AMD__)
+    __builtin_amdgcn_s_sleep(2);
+#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+    __nanosleep(64);
+#endif
+}
+
 /// @brief atomicAdd on a 64-bit counter, device scope; returns the former value.
 __device__ inline unsigned long long fetch_add(unsigned long long* counter, unsigned long long v) noexcept
 {

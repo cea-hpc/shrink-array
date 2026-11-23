@@ -39,6 +39,41 @@ __global__ void write_ops(sa::View<T, S> v, const long* index, const T* value, l
     }
 }
 
+/// @brief The values of a chunk-aligned write: element i gets v[i].
+struct FromArray
+{
+    const double* v;
+
+    __device__ double operator()(long i) const noexcept
+    {
+        return v[i];
+    }
+};
+
+/// @brief A range [lo, hi) of a chunk-aligned round.
+struct Span
+{
+    long lo;
+    long hi;
+};
+
+/// @brief Several ranges in one kernel, each by one block over its chunks (block_write): two
+///        ranges may share a chunk, so two blocks may race for its publication.
+template <int BLOCK, int S>
+__global__ void write_spans(sa::View<double, S> v, const Span* spans, long n_spans, FromArray f)
+{
+    for (long r = blockIdx.x; r < n_spans; r += gridDim.x)
+    {
+        const Span g = spans[r];
+        for (long c = g.lo / S; c * S < g.hi; ++c)
+        {
+            const long lo = c * S > g.lo ? c * S : g.lo;
+            const long hi = (c + 1) * S < g.hi ? (c + 1) * S : g.hi;
+            v.template block_write<BLOCK>(c, lo, hi, f);
+        }
+    }
+}
+
 /// @brief One round of writes: copies the ops to the device, one thread per op.
 template <typename T, int S>
 void run_ops(sa::DeviceArray<T, S>& a, const std::vector<long>& index, const std::vector<T>& value)
@@ -111,13 +146,16 @@ void random_rounds(unsigned           seed,
                    long               n,
                    unsigned long long arena_chunks,
                    unsigned long long append_capacity,
-                   const char*        label)
+                   const char*        label,
+                   sa::Coordination   coord = sa::Coordination::race)
 {
-    std::printf("[%s] S=%d n=%ld arena=%llu chunks append=%llu\n", label, S, n, arena_chunks, append_capacity);
+    std::printf("[%s, %s] S=%d n=%ld arena=%llu chunks append=%llu\n", label,
+                coord == sa::Coordination::claim ? "claim" : "race", S, n, arena_chunks, append_capacity);
     sa::DeviceArray<double, S> a(n, arena_chunks, append_capacity);
-    std::vector<double>        mirror(static_cast<std::size_t>(n), 0.0);
-    std::mt19937_64            rng(seed);
-    const double               palette[] = {0.0, -0.0, 1.5, 2.5};
+    a.set_coordination(coord);
+    std::vector<double> mirror(static_cast<std::size_t>(n), 0.0);
+    std::mt19937_64     rng(seed);
+    const double        palette[] = {0.0, -0.0, 1.5, 2.5};
 
     for (int round = 0; round < 6; ++round)
     {
@@ -179,6 +217,91 @@ void random_rounds(unsigned           seed,
     a.finalize();
     check_state(a, mirror, "all back to 0");
     const sa::Stats st = a.stats();
+    std::printf("  stats: arena %llu buffers, %llu lost CAS, %llu arena failures, %llu replays, %llu claim waits, "
+                "%llu given up\n",
+                st.arena_buffers, st.cas_lost, st.arena_fail, st.replays, st.claim_wait, st.claim_spin);
+    if (coord == sa::Coordination::claim)
+    {
+        expect(st.cas_lost == 0, "claim: no pre-fill lost");
+    }
+}
+
+/// @brief Chunk-aligned rounds (block_write): random non-overlapping spans in one kernel,
+///        whole-array writes by parallel_for_chunks, spans of the constant (no buffer).
+template <int S>
+void chunk_rounds(unsigned           seed,
+                  long               n,
+                  unsigned long long arena_chunks,
+                  unsigned long long append_capacity,
+                  const char*        label)
+{
+    constexpr int BLOCK = 256;
+    std::printf("[%s, chunk-aligned] S=%d n=%ld arena=%llu chunks append=%llu\n", label, S, n, arena_chunks,
+                append_capacity);
+    sa::DeviceArray<double, S> a(n, arena_chunks, append_capacity);
+    std::vector<double>        mirror(static_cast<std::size_t>(n), 0.0);
+    std::vector<double>        target(mirror.size());
+    std::mt19937_64            rng(seed);
+    const double               palette[] = {0.0, -0.0, 1.5, 2.5};
+    double*                    d_target  = nullptr;
+    SA_GPU(gpuMalloc(&d_target, sizeof(double) * mirror.size()));
+    const FromArray f{d_target};
+
+    for (int round = 0; round < 6; ++round)
+    {
+        for (auto& x : target)
+        {
+            const auto r = rng() % 8;
+            x            = r < 4 ? palette[r] : static_cast<double>(rng() % 1000) / 7.0;
+        }
+        if (round == 2)
+        {
+            std::fill(target.begin(), target.end(), 0.0); // the constant everywhere: votes only
+        }
+        if (round == 4)
+        {
+            // Some chunks one value (fold back), the others varying.
+            for (long c = 0; c * S < n; c += 2)
+            {
+                std::fill(target.begin() + c * S, target.begin() + std::min<long>((c + 1) * S, n), 2.5);
+            }
+        }
+        SA_GPU(gpuMemcpy(d_target, target.data(), sizeof(double) * target.size(), gpuMemcpyHostToDevice));
+        if (round % 2 == 0)
+        {
+            a.template parallel_for_chunks<BLOCK>(0, n, f);
+            mirror = target;
+        }
+        else
+        {
+            std::vector<Span> spans;
+            for (long lo = 0; lo < n;)
+            {
+                const long len = 1 + static_cast<long>(rng() % (3UL * S));
+                const long hi  = std::min(n, lo + len);
+                if (rng() % 3 != 0) // a third of the gaps not written
+                {
+                    spans.push_back({lo, hi});
+                    std::copy(target.begin() + lo, target.begin() + hi, mirror.begin() + lo);
+                }
+                lo = hi;
+            }
+            std::shuffle(spans.begin(), spans.end(), rng);
+            Span* d_spans = nullptr;
+            SA_GPU(gpuMalloc(&d_spans, sizeof(Span) * spans.size()));
+            SA_GPU(gpuMemcpy(d_spans, spans.data(), sizeof(Span) * spans.size(), gpuMemcpyHostToDevice));
+            write_spans<BLOCK, S><<<1024, BLOCK>>>(a.view(), d_spans, static_cast<long>(spans.size()), f);
+            SA_GPU(gpuGetLastError());
+            SA_GPU(gpuDeviceSynchronize());
+            (void)gpuFree(d_spans);
+        }
+        a.finalize();
+        char what[64];
+        std::snprintf(what, sizeof what, "round %d (%s)", round, round % 2 == 0 ? "whole array" : "spans");
+        check_state(a, mirror, what);
+    }
+    (void)gpuFree(d_target);
+    const sa::Stats st = a.stats();
     std::printf("  stats: arena %llu buffers, %llu lost CAS, %llu arena failures, %llu replays\n", st.arena_buffers,
                 st.cas_lost, st.arena_fail, st.replays);
 }
@@ -225,6 +348,12 @@ int main(int argc, char** argv)
         random_rounds<1024>(seed + 1, 1L << 20, 2L << 10, 1L << 16, "roomy arena");
         random_rounds<256>(seed + 2, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk");
         random_rounds<1024>(seed + 3, 1L << 18, 4, 1L << 18, "small arena");
+        random_rounds<256>(seed + 4, 1L << 20, 1L << 12, 1L << 16, "exact arena", sa::Coordination::claim);
+        random_rounds<1024>(seed + 5, 1L << 20, 1L << 10, 1L << 16, "exact arena", sa::Coordination::claim);
+        random_rounds<256>(seed + 6, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk", sa::Coordination::claim);
+        chunk_rounds<256>(seed + 7, 1L << 20, 1L << 12, 1L << 16, "exact arena");
+        chunk_rounds<1024>(seed + 8, (1L << 20) + 300, (1L << 10) + 1, 1L << 16, "exact arena, tail chunk");
+        chunk_rounds<256>(seed + 9, 1L << 18, 16, 1L << 18, "small arena");
         append_overflow();
     }
     catch (const std::exception& e)

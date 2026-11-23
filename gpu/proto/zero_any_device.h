@@ -15,9 +15,13 @@
  *          - Write (section 6): the constant onto its own chunk does nothing; otherwise
  *            the lanes of a warp that need the same chunk elect one lane, which takes a
  *            buffer (free stack, else bump on the arena), the group pre-fills it with
- *            the constant, and the elected lane publishes it by CAS (release). The loser
- *            does not retry: it writes into the winner's buffer and its own buffer goes
- *            to the lost list, given back by the next compress() (6.3, first form).
+ *            the constant, and the elected lane publishes it by CAS (release). Between
+ *            warps, Coordination::race lets every warp pre-fill and the CAS elect one
+ *            (the loser parks its buffer and writes into the winner's);
+ *            Coordination::claim lets the first warp claim the chunk and the others wait
+ *            for its publication (bounded, then the append-buffer).
+ *          - Chunk-aligned write (block_write, kernels::for_each_chunk): one block per
+ *            chunk votes, takes one buffer and writes values and constant in one pass.
  *          - Arena exhausted (6.4): the write goes to the append-buffer and a flag is
  *            raised; finalize() compresses, grows the arena and replays.
  *          - compress() (section 7): one block per chunk; a uniform materialised chunk
@@ -28,6 +32,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -107,8 +112,30 @@ __host__ __device__ inline bool same_bits(const T& a, const T& b) noexcept
 template <typename T>
 struct ChunkDesc
 {
-    T* buf;      ///< nullptr: compressed; otherwise a buffer of S elements
-    T  constant; ///< the compressed chunk's value (meaningless while buf is set)
+    T* buf;      ///< nullptr: compressed; busy_mark(): being claimed; otherwise a buffer of S elements
+    T  constant; ///< the compressed chunk's value (meaningful until a buffer is published)
+};
+
+/// @brief The value of `buf` while a warp holds the claim of a chunk (Coordination::claim):
+///        never a buffer address (misaligned). Only write kernels can see it: the claim
+///        ends, by a publication or a release, before the kernel does.
+template <typename T>
+__host__ __device__ inline T* busy_mark() noexcept
+{
+    return reinterpret_cast<T*>(std::uintptr_t{1});
+}
+
+/// @brief How the warps that need one compressed chunk in a write kernel coordinate.
+enum class Coordination : int
+{
+    /// Every warp pre-fills its own buffer, the CAS elects one (6.2): no wait, but S/32
+    /// warps per chunk may each pre-fill a buffer for nothing on a first write.
+    race,
+    /// The first warp claims the chunk by a CAS to busy_mark(), pre-fills and publishes;
+    /// the others wait for the publication (a bounded spin: past it, the write goes to the
+    /// append-buffer, so a wait that cannot end -- lanes of one AMD wavefront on divergent
+    /// paths -- costs a replay, not a deadlock). One pre-fill per chunk.
+    claim,
 };
 
 /// @brief The device-side counters of an array, read back by the host at a phase end.
@@ -121,6 +148,8 @@ struct ArenaCounters
     unsigned long long arena_fail;  ///< writes that found the arena exhausted
     unsigned long long cas_lost;    ///< materialisations that lost the publication CAS
     unsigned long long materialise; ///< materialisations published
+    unsigned long long claim_wait;  ///< Coordination::claim: groups that waited for another warp's claim
+    unsigned long long claim_spin;  ///< Coordination::claim: waits given up (the write was appended)
 };
 
 /**
@@ -148,6 +177,8 @@ struct View
     T*                 append_value;  ///< append-buffer: values
     unsigned long long append_capacity;
     ArenaCounters*     counters;
+    Coordination       coord;          ///< how assign() coordinates the warps of one chunk
+    unsigned           claim_spin_max; ///< Coordination::claim: backoff rounds before giving up
 
     /// @brief a(i), in a read kernel (section 5): no barrier, one descriptor per warp.
     __device__ T operator()(long i) const noexcept
@@ -159,10 +190,27 @@ struct View
     /// @brief a(i) = v, in a write kernel (section 6.1).
     __device__ void assign(long i, T v) const noexcept;
 
+    /**
+     * @brief a(i) = f(i) for every i of [@p lo, @p hi), a part of chunk @p c, called by every
+     *        thread of a block of @p BLOCK threads (the chunk-aligned loop of a facade,
+     *        section 7.3 mitigation 2): one vote, one buffer, no pre-fill of the elements
+     *        written, f evaluated once per element.
+     *
+     * @details The facade's loop gives each chunk to one block, so the publication CAS is
+     *          not raced in the common case; it stays (two adjacent ranges may share a chunk)
+     *          and the loser writes into the winner's buffer.
+     */
+    template <int BLOCK, typename F>
+    __device__ void block_write(long c, long lo, long hi, const F& f) const noexcept;
+
   private:
     __device__ T*   take_buffer() const noexcept;
     __device__ T**  spare_slot() const noexcept;
+    __device__ void park(T* lost) const noexcept;
     __device__ T*   materialise(long nc, ChunkDesc<T>& d) const noexcept;
+    __device__ T*   race_group(ChunkDesc<T>& d, LaneMask group, int leader, int lane) const noexcept;
+    __device__ T*   materialise_claim(long nc, ChunkDesc<T>& d) const noexcept;
+    __device__ void prefill(T* buf, T c, LaneMask group, int lane) const noexcept;
     __device__ void append(long i, T v) const noexcept;
 };
 
@@ -202,15 +250,221 @@ __device__ void View<T, S>::append(long i, T v) const noexcept
     }
 }
 
+/// @brief The buffer of a lost CAS: kept in this warp's spare slot for its next
+///        materialisation; a buffer already parked there (another warp's) goes to the lost
+///        list until compress().
+template <typename T, int S>
+__device__ void View<T, S>::park(T* lost) const noexcept
+{
+    T* evicted = exchange_ptr(spare_slot(), lost);
+    if (evicted != nullptr)
+    {
+        const unsigned long long k = fetch_add(&counters->lost, 1ULL);
+        if (k < list_capacity)
+        {
+            lost_list[k] = evicted;
+        }
+    }
+}
+
+/// @brief Step 3 of 6.2: the lanes of @p group fill @p buf with @p c, coalesced, then make
+///        it visible device-wide before the publication.
+template <typename T, int S>
+__device__ void View<T, S>::prefill(T* buf, T c, LaneMask group, int lane) const noexcept
+{
+    const int rank  = popcount(group & ((LaneMask{1} << lane) - 1));
+    const int width = popcount(group);
+    for (int k = rank; k < S; k += width)
+    {
+        buf[k] = c;
+    }
+    fence_device();
+    sync_lanes(group);
+}
+
 /**
- * @brief Materialise chunk @p nc for the lanes of the warp that call it (6.2): one
- *        buffer per chunk and per warp, pre-filled by the lanes that need it, published
- *        by one CAS. Returns the chunk's buffer (the winner's), or nullptr when the arena
- *        is exhausted and no other warp has published one.
+ * @brief Coordination::race for the lanes of @p group (one chunk): one buffer per warp,
+ *        pre-filled, published by one CAS; the loser parks its buffer and writes into the
+ *        winner's. Returns the chunk's buffer, or nullptr when the arena is exhausted and no
+ *        other warp has published one.
+ */
+template <typename T, int S>
+__device__ T* View<T, S>::race_group(ChunkDesc<T>& d, LaneMask group, int leader, int lane) const noexcept
+{
+    // The elected lane looks again before allocating: with scattered indices many
+    // warps reach one chunk at once, and a chunk published meanwhile costs no buffer.
+    T* existing = nullptr;
+    T* mine     = nullptr;
+    if (lane == leader)
+    {
+        existing = load_ptr_acquire(&d.buf);
+        if (existing == nullptr)
+        {
+            mine = exchange_ptr(spare_slot(), static_cast<T*>(nullptr));
+            mine = mine != nullptr ? mine : take_buffer();
+        }
+    }
+    existing = shuffle_ptr(group, existing, leader);
+    mine     = shuffle_ptr(group, mine, leader);
+    if (existing != nullptr)
+    {
+        sync_lanes(group); // the leader's acquire before the group's writes
+        return existing;
+    }
+    if (mine == nullptr)
+    {
+        // Arena exhausted: another warp may still have published this chunk.
+        T* result = load_ptr_acquire(&d.buf);
+        if (result == nullptr && lane == leader)
+        {
+            fetch_add(&counters->arena_fail, 1ULL);
+        }
+        return result;
+    }
+    prefill(mine, d.constant, group, lane);
+    T* winner = nullptr;
+    if (lane == leader)
+    {
+        T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
+        if (found == nullptr)
+        {
+            winner = mine;
+            fetch_add(&counters->materialise, 1ULL);
+        }
+        else
+        {
+            winner = found;
+            fence_device(); // acquire: the winner's pre-fill before our writes
+            fetch_add(&counters->cas_lost, 1ULL);
+            park(mine);
+        }
+    }
+    winner = shuffle_ptr(group, winner, leader);
+    sync_lanes(group);
+    return winner;
+}
+
+/**
+ * @brief Coordination::claim, for the lanes of the warp that call it: the first warp to
+ *        need a chunk claims it (CAS nullptr -> busy_mark()), pre-fills a buffer and
+ *        publishes it; the others wait for the publication. Returns the chunk's buffer, or
+ *        nullptr (arena exhausted, or the wait given up): the caller appends.
+ *
+ * @details Publish before waiting: every group of the warp first makes one attempt
+ *          without waiting (phase 1), the groups that claimed pre-fill and publish (phase
+ *          2), and only then do the others wait (phase 3), never claiming. A warp therefore
+ *          never holds a claim while one of its lanes waits: with SIMT reconvergence, a
+ *          claim holder blocked behind a waiting lane of its own warp closes a cycle with
+ *          another warp in the symmetric state (a warp over two chunks, measured: waits
+ *          that only the bound ended). The holder waits for nothing between its CAS and its
+ *          publication and is resident: the waits end. The bound covers what is left, two
+ *          assign() calls on divergent paths of one wavefront (AMD, no independent thread
+ *          scheduling).
+ *
+ *          Every lane of the warp goes through the grouping loop as many times as the
+ *          others (pending is uniform): the warp-wide shuffles use one mask, each lane
+ *          reading its own leader.
+ */
+template <typename T, int S>
+__device__ T* View<T, S>::materialise_claim(long nc, ChunkDesc<T>& d) const noexcept
+{
+    T* const       busy    = busy_mark<T>();
+    const int      lane    = lane_id();
+    const LaneMask warp    = active_lanes();
+    LaneMask       pending = warp;
+    LaneMask       group   = 0;
+    int            leader  = lane;
+    while (pending != 0)
+    {
+        const int      l   = first_lane(pending);
+        const long     lnc = shuffle(warp, nc, l);
+        const LaneMask g   = ballot(warp, ((pending >> lane) & 1) != 0 && nc == lnc);
+        if (((g >> lane) & 1) != 0)
+        {
+            group  = g;
+            leader = l;
+        }
+        pending &= ~g;
+    }
+
+    // Phase 1: one attempt per group, no wait.
+    T* found = nullptr;
+    T* mine  = nullptr;
+    if (lane == leader)
+    {
+        found = load_ptr_acquire(&d.buf);
+        if (found == nullptr)
+        {
+            found = cas_ptr(&d.buf, static_cast<T*>(nullptr), busy);
+            if (found == nullptr)
+            {
+                mine = exchange_ptr(spare_slot(), static_cast<T*>(nullptr));
+                mine = mine != nullptr ? mine : take_buffer();
+                if (mine == nullptr)
+                {
+                    exchange_ptr(&d.buf, static_cast<T*>(nullptr)); // arena exhausted: release
+                    fetch_add(&counters->arena_fail, 1ULL);
+                }
+            }
+        }
+    }
+    found = shuffle_ptr(warp, found, leader);
+    mine  = shuffle_ptr(warp, mine, leader);
+
+    // Phase 2: the claims of the warp published.
+    if (mine != nullptr)
+    {
+        prefill(mine, d.constant, group, lane);
+        if (lane == leader)
+        {
+            exchange_ptr(&d.buf, mine); // after prefill()'s fence: a release store
+            fetch_add(&counters->materialise, 1ULL);
+        }
+    }
+    sync_lanes(warp);
+    if (mine != nullptr)
+    {
+        return mine;
+    }
+
+    // Phase 3: wait for another warp's claim; a released claim (arena exhausted) is not
+    // taken over: the write is appended.
+    if (found == busy)
+    {
+        if (lane == leader)
+        {
+            unsigned spins = 0;
+            do
+            {
+                if (++spins > claim_spin_max)
+                {
+                    found = nullptr;
+                    fetch_add(&counters->claim_spin, 1ULL);
+                    break;
+                }
+                backoff();
+                found = load_ptr_acquire(&d.buf);
+            } while (found == busy);
+            fetch_add(&counters->claim_wait, 1ULL);
+        }
+        found = shuffle_ptr(group, found, leader);
+    }
+    sync_lanes(group); // the leader's acquire before the group's writes
+    return found;
+}
+
+/**
+ * @brief Materialise chunk @p nc for the lanes of the warp that call it (6.2): the lanes
+ *        that need the same chunk form a group; Coordination::race below, claim in
+ *        materialise_claim(). Returns the chunk's buffer, or nullptr: the caller appends.
  */
 template <typename T, int S>
 __device__ T* View<T, S>::materialise(long nc, ChunkDesc<T>& d) const noexcept
 {
+    if (coord == Coordination::claim)
+    {
+        return materialise_claim(nc, d);
+    }
     const int lane    = lane_id();
     LaneMask  pending = active_lanes();
     T*        result  = nullptr;
@@ -223,77 +477,7 @@ __device__ T* View<T, S>::materialise(long nc, ChunkDesc<T>& d) const noexcept
         const LaneMask group  = ballot(pending, nc == lnc);
         if (((group >> lane) & 1) != 0)
         {
-            // The elected lane looks again before allocating: with scattered indices many
-            // warps reach one chunk at once, and a chunk published meanwhile costs no buffer.
-            T* existing = nullptr;
-            T* mine     = nullptr;
-            if (lane == leader)
-            {
-                existing = load_ptr_acquire(&d.buf);
-                if (existing == nullptr)
-                {
-                    mine = exchange_ptr(spare_slot(), static_cast<T*>(nullptr));
-                    mine = mine != nullptr ? mine : take_buffer();
-                }
-            }
-            existing = shuffle_ptr(group, existing, leader);
-            mine     = shuffle_ptr(group, mine, leader);
-            if (existing != nullptr)
-            {
-                result = existing;
-                sync_lanes(group); // the leader's acquire before the group's writes
-            }
-            else if (mine != nullptr)
-            {
-                // 3. pre-fill by the group, coalesced; 4. publish (release), the loser reads the winner.
-                const T   c     = d.constant;
-                const int rank  = popcount(group & ((LaneMask{1} << lane) - 1));
-                const int width = popcount(group);
-                for (int k = rank; k < S; k += width)
-                {
-                    mine[k] = c;
-                }
-                fence_device();
-                sync_lanes(group);
-                T* winner = nullptr;
-                if (lane == leader)
-                {
-                    T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
-                    if (found == nullptr)
-                    {
-                        winner = mine;
-                        fetch_add(&counters->materialise, 1ULL);
-                    }
-                    else
-                    {
-                        winner = found;
-                        fence_device(); // acquire: the winner's pre-fill before our writes
-                        fetch_add(&counters->cas_lost, 1ULL);
-                        // Kept for this warp's next chunk; a buffer already parked in the
-                        // slot (another warp's) goes to the lost list until compress().
-                        T* evicted = exchange_ptr(spare_slot(), mine);
-                        if (evicted != nullptr)
-                        {
-                            const unsigned long long k = fetch_add(&counters->lost, 1ULL);
-                            if (k < list_capacity)
-                            {
-                                lost_list[k] = evicted;
-                            }
-                        }
-                    }
-                }
-                result = shuffle_ptr(group, winner, leader);
-                sync_lanes(group);
-            }
-            else
-            {
-                // Arena exhausted: another warp may still have published this chunk.
-                result = load_ptr_acquire(&d.buf);
-                if (result == nullptr && lane == leader)
-                {
-                    fetch_add(&counters->arena_fail, 1ULL);
-                }
-            }
+            result = race_group(d, group, leader, lane);
         }
         pending &= ~group;
     }
@@ -306,8 +490,9 @@ __device__ void View<T, S>::assign(long i, T v) const noexcept
     const long    nc  = i >> shift;
     ChunkDesc<T>& d   = desc[nc];
     T*            buf = load_ptr_acquire(&d.buf);
-    if (buf == nullptr)
+    if (buf == nullptr || buf == busy_mark<T>())
     {
+        // While claimed, the constant still holds and the claimer pre-fills it.
         if (same_bits(v, d.constant))
         {
             return; // 1. the constant onto its own chunk: nothing
@@ -320,6 +505,128 @@ __device__ void View<T, S>::assign(long i, T v) const noexcept
         }
     }
     buf[i & mask] = v; // 3.
+}
+
+template <typename T, int S>
+template <int BLOCK, typename F>
+__device__ void View<T, S>::block_write(long c, long lo, long hi, const F& f) const noexcept
+{
+    static_assert(S % BLOCK == 0 && BLOCK % warp_size == 0, "BLOCK divides S, a multiple of the warp size");
+    constexpr int K = S / BLOCK; // elements per thread
+    __shared__ T* s_buf;
+    ChunkDesc<T>& d    = desc[c];
+    const long    base = c * S;
+    const int     t    = static_cast<int>(threadIdx.x);
+
+    __syncthreads(); // every thread has read s_buf of the previous call
+    if (t == 0)
+    {
+        s_buf = load_ptr_acquire(&d.buf);
+    }
+    __syncthreads();
+    T* buf = s_buf;
+    if (buf == busy_mark<T>())
+    {
+        // Claimed by an assign() of the same kernel (outside the facade's contract): its path.
+        for (int j = 0; j < K; ++j)
+        {
+            const long i = base + t + j * BLOCK;
+            if (i >= lo && i < hi)
+            {
+                assign(i, f(i));
+            }
+        }
+        return;
+    }
+    if (buf != nullptr)
+    {
+        for (int j = 0; j < K; ++j)
+        {
+            const long i = base + t + j * BLOCK;
+            if (i >= lo && i < hi)
+            {
+                buf[i - base] = f(i);
+            }
+        }
+        return;
+    }
+    // Compressed: one vote of the block before any buffer (the constant onto its own chunk
+    // costs nothing), then the elements written and the constant elsewhere, in one pass.
+    const T  constant = d.constant;
+    T        vals[K];
+    unsigned differs = 0; // bit j: element j written with another value than the constant
+    for (int j = 0; j < K; ++j)
+    {
+        const long i = base + t + j * BLOCK;
+        vals[j]      = constant;
+        if (i >= lo && i < hi)
+        {
+            vals[j] = f(i);
+            differs |= same_bits(vals[j], constant) ? 0U : 1U << j;
+        }
+    }
+    if (__syncthreads_or(differs != 0) == 0)
+    {
+        return;
+    }
+    if (t == 0)
+    {
+        T* m  = exchange_ptr(spare_slot(), static_cast<T*>(nullptr));
+        s_buf = m != nullptr ? m : take_buffer();
+    }
+    __syncthreads();
+    T* const mine = s_buf;
+    if (mine == nullptr)
+    {
+        if (t == 0)
+        {
+            fetch_add(&counters->arena_fail, 1ULL);
+        }
+        for (int j = 0; j < K; ++j)
+        {
+            if (((differs >> j) & 1U) != 0)
+            {
+                append(base + t + j * BLOCK, vals[j]);
+            }
+        }
+        return;
+    }
+    for (int j = 0; j < K; ++j)
+    {
+        mine[t + j * BLOCK] = vals[j];
+    }
+    fence_device();
+    __syncthreads();
+    if (t == 0)
+    {
+        T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
+        if (found == nullptr)
+        {
+            fetch_add(&counters->materialise, 1ULL);
+        }
+        else
+        {
+            // Another block published first (two ranges sharing the chunk): its buffer holds
+            // the constant where we write; ours is parked.
+            fence_device();
+            fetch_add(&counters->cas_lost, 1ULL);
+            park(mine);
+            s_buf = found;
+        }
+    }
+    __syncthreads();
+    T* const winner = s_buf;
+    if (winner != mine)
+    {
+        for (int j = 0; j < K; ++j)
+        {
+            const long i = base + t + j * BLOCK;
+            if (i >= lo && i < hi)
+            {
+                winner[i - base] = vals[j];
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -434,6 +741,24 @@ __global__ void count_materialised(const ChunkDesc<T>* desc, long n_chunks, unsi
     atomicAdd(out, mine);
 }
 
+/**
+ * @brief The chunk-aligned loop of a facade (section 7.3 mitigation 2): a(i) = f(i) for i in
+ *        [lo, hi), one block of BLOCK threads per chunk (grid-stride over the chunks), so
+ *        that each chunk has one writer and one vote. f: `T operator()(long) const`.
+ */
+template <int BLOCK, typename T, int S, typename F>
+__global__ void __launch_bounds__(BLOCK) for_each_chunk(View<T, S> v, long lo, long hi, F f)
+{
+    const long first = lo / S;
+    const long last  = (hi + S - 1) / S;
+    for (long c = first + blockIdx.x; c < last; c += gridDim.x)
+    {
+        const long clo = c * S > lo ? c * S : lo;
+        const long chi = (c + 1) * S < hi ? (c + 1) * S : hi;
+        v.template block_write<BLOCK>(c, clo, chi, f);
+    }
+}
+
 } // namespace kernels
 
 /// @brief What finalize() and stats() report.
@@ -446,6 +771,8 @@ struct Stats
     unsigned long long arena_fail;       ///< since the array's creation
     unsigned long long replays;          ///< finalize() passes that replayed an append-buffer
     unsigned long long append_overflows; ///< writes lost: the append-buffer was full (an error)
+    unsigned long long claim_wait;       ///< groups that waited for a claim (Coordination::claim)
+    unsigned long long claim_spin;       ///< waits given up, writes appended (Coordination::claim)
 };
 
 /**
@@ -465,6 +792,24 @@ class DeviceArray
     ~DeviceArray();
     DeviceArray(const DeviceArray&)            = delete;
     DeviceArray& operator=(const DeviceArray&) = delete;
+
+    /// @brief How assign() coordinates the warps of a compressed chunk (default: race).
+    void set_coordination(Coordination c) noexcept
+    {
+        view_.coord = c;
+    }
+
+    /// @brief a(i) = f(i) for i in [lo, hi), by the chunk-aligned loop (kernels::for_each_chunk).
+    template <int BLOCK = 256, typename F>
+    void parallel_for_chunks(long lo, long hi, const F& f, unsigned grid = 4096)
+    {
+        if (hi > lo)
+        {
+            const long chunks = (hi + S - 1) / S - lo / S;
+            const auto blocks = static_cast<unsigned>(chunks < grid ? chunks : grid);
+            kernels::for_each_chunk<BLOCK><<<blocks, BLOCK>>>(view_, lo, hi, f);
+        }
+    }
 
     /// @brief The view for a kernel (valid until the next finalize(), which may grow the arena).
     [[nodiscard]] View<T, S> view() const noexcept
@@ -506,7 +851,9 @@ template <typename T, int S>
 DeviceArray<T, S>::DeviceArray(long n, unsigned long long arena_chunks, unsigned long long append_capacity)
     : n_chunks_((n + S - 1) / S)
 {
-    view_.n = n;
+    view_.n              = n;
+    view_.coord          = Coordination::race;
+    view_.claim_spin_max = 1U << 16; // ~4 ms of 64 ns pauses: far beyond one pre-fill
     SA_GPU(gpuMalloc(&view_.desc, sizeof(ChunkDesc<T>) * n_chunks_));
     SA_GPU(gpuMemset(view_.desc, 0, sizeof(ChunkDesc<T>) * n_chunks_)); // {nullptr, T{}} for arithmetic T
     view_.spare_slots = 1ULL << 16; // more than the warps resident on an H100 or an MI300A
@@ -654,7 +1001,8 @@ Stats DeviceArray<T, S>::stats() const
     SA_GPU(gpuMemcpy(&materialised, d_count, sizeof(materialised), gpuMemcpyDeviceToHost));
     (void)gpuFree(d_count);
     const ArenaCounters c = read_counters();
-    return Stats{n_chunks_, materialised, total_buffers_, c.cas_lost, c.arena_fail, replays_, overflows_};
+    return Stats{n_chunks_, materialised, total_buffers_, c.cas_lost,  c.arena_fail,
+                 replays_,  overflows_,   c.claim_wait,   c.claim_spin};
 }
 
 template <typename T, int S>

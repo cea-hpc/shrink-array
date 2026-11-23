@@ -8,8 +8,8 @@ GPU future. Target applications: Kokkos and Arcane codes (the facade comes after
 |---|---|
 | `device_intrinsics.h` | the device primitives (ballot, shuffle, scoped atomics, acquire/release) mapped on CUDA and HIP |
 | `zero_any_device.h` | `ChunkDesc` (buffer or constant), `View` (read, write proxy), `DeviceArray` (arenas, free stack, append-buffer, `compress()`, `finalize()`) |
-| `proto_test.cu` | correctness against a host mirror: random writes from many warps, fold-backs, arena exhaustion and replay, append overflow |
-| `proto_bench.cu` | the stage-0 measurements against a flat array |
+| `proto_test.cu` | correctness against a host mirror, for race, claim and the chunk-aligned path: random writes from many warps, fold-backs, arena exhaustion and replay, append overflow |
+| `proto_bench.cu` | the stage-0 measurements against a flat array, for the three coordinations |
 
 ## Build and run
 
@@ -24,28 +24,33 @@ accepts>`: CUDA 12.4 takes GCC 13 at most). With clang, `-O3` matters: device co
 optimised by default (the CMakeLists sets it). `compute-sanitizer --tool synccheck` and
 `--tool memcheck` report no error on `proto_test`.
 
-## First measurements (2026-11-23, laptop RTX A1000, sm_86, 4 GB, 1 GiB of doubles)
+## Measurements (2026-11-23, laptop RTX A1000, sm_86, 4 GB, 1 GiB of doubles)
 
 | | S = 256 | S = 1024 | criterion |
 |---|---|---|---|
-| read, every chunk materialised | 1.02x flat | 1.22x flat | <= 1.5x: met |
+| read, every chunk materialised | 1.04x flat | 1.23x flat | <= 1.5x: met |
 | write into materialised chunks | 0.82x | 1.08x | <= 2x: met |
-| `compress()` of 10 GB, scaled to 3.35 TB/s (fraction of stream bandwidth) | 4.0 ms | 3.0 ms | <= 10 ms: met |
-| first write over the array (materialises every chunk) | 5.5x | 25x | -- |
-| random range rewrites, write + `compress()` | 4.4x | 4.2x | -- |
+| `compress()` of 10 GB, scaled to 3.35 TB/s (fraction of stream bandwidth) | 4.1 ms | 3.0 ms | <= 10 ms: met |
+| first write over the array, race | 5.5x | 25x | -- |
+| first write over the array, claim | 2.2x | 3.4x | -- |
+| first write over the array, chunk-aligned | 1.9x | 1.2x | -- |
+| random range rewrites, write + `finalize()`, race | 4.4x | 4.1x | -- |
+| random range rewrites, write + `finalize()`, claim | 3.7x | 2.1x | -- |
+| random range rewrites, write + `finalize()`, chunk-aligned | 4.2x | 1.9x | -- |
 
-The laptop gives ratios, not absolute times; the GH200 and the MI300A give those.
+The laptop gives ratios, not absolute times; the GH200 and the MI300A give those. The
+`compress()` line is the case where every chunk folds back (a full read); a scan where nothing
+folds back stops at the first differing element and is faster.
 
 ## What the prototype changed in the design
 
 - **A chunk spans S/32 warps** (S/64 wavefronts): warp aggregation (6.2) gives one
   materialisation per warp, not per chunk. On a grid-stride first write, 5.5 (S = 256) and 22.8
-  (S = 1024) warps per chunk lose the CAS. Each loser has pre-filled a whole buffer for nothing:
-  that is the 5.5x and 25x above.
-- **Lost buffers**: given up until `compress()` (6.3, first form), they exhausted the arena on
-  the first full write. They are now kept in a per-warp spare slot (an atomic exchange, no
-  wait, no ABA) and reused by the warp's next materialisation; `compress()` takes the spares
-  back. The memory waste is bounded by the slots; the wasted pre-fill work is not.
+  (S = 1024) warps per chunk lose the CAS, each after pre-filling a whole buffer for nothing:
+  the race line above. Hence the per-chunk coordination below.
+- **Lost buffers** (race): given up until `compress()` (6.3, first form), they exhausted the arena
+  on the first full write. They are kept in a per-warp spare slot (an atomic exchange, no wait,
+  no ABA) and reused by the warp's next materialisation; `compress()` takes the spares back.
 - **The leader looks again** at the descriptor before allocating: a chunk published meanwhile
   costs nothing (lost CAS divided by 11 on scattered writes).
 - **Writers read `buf` with acquire** (6.2 says so; 6.1's sketch had a relaxed load): without
@@ -53,16 +58,33 @@ The laptop gives ratios, not absolute times; the GH200 and the MI300A give those
 - **Arena growth** in `finalize()`: one buffer per chunk not yet materialised at most, not one
   per parked write.
 
-## Open: coordination per chunk
+## Coordination per chunk
 
-The first-write cost needs one pre-fill per chunk, not per warp. Candidates, to measure:
+`View::coord` selects how `assign()` coordinates the warps that need one compressed chunk;
+`block_write` / `DeviceArray::parallel_for_chunks` is the facade's chunk-aligned path.
 
-1. **Claim, then fill**: a CAS installs a "busy" mark; the winner allocates, pre-fills and
-   publishes; a warp that finds the mark waits for it. The waited-for warp is resident and
-   waits for nothing, so the wait ends -- but it breaks the "nobody waits in a kernel" rule of
-   section 3, to be argued.
-2. **Library-split kernels** (7.3, mitigation 2): the `parallel_for` of the Kokkos facade aligns
-   teams on chunks and votes per block before materialising: one writer per chunk, no CAS race.
-   Covers the facade's loops, not arbitrary user kernels.
-3. **Losers defer** to the append-buffer when the chunk is being claimed: no wait, but a replay
-   for most first writes.
+- **race** (6.2 as written): every warp pre-fills, the CAS elects one. No wait; S/32 pre-fills
+  per chunk on a first write, and an arena sized for the losers.
+- **claim**: the first warp's CAS installs a busy mark (`busy_mark()`, a misaligned address), it
+  pre-fills and publishes; the others wait for the publication. One pre-fill per chunk, no lost
+  buffer, an arena of exactly one buffer per materialised chunk. The wait ends because the
+  holder is resident and waits for nothing between its CAS and its publication -- provided a
+  warp **publishes before it waits**. The first version let one group of a warp hold a claim
+  while another group of the same warp waited (a warp over two chunks, on unaligned ranges):
+  with SIMT reconvergence the holder can be held back behind its waiting sibling, and two warps
+  in that state wait for each other. Measured: 591 waits that only the spin bound ended, a
+  random-range rewrite 80x slower. Now every group of the warp first makes one attempt without
+  waiting, the groups that claimed pre-fill and publish, and only then do the others wait,
+  never claiming. A bounded spin remains, then the append-buffer: two `assign()` calls on
+  divergent paths of one AMD wavefront (no independent thread scheduling) could still wait for
+  each other; that costs a replay, not a deadlock. This revises the "nobody waits in a kernel"
+  rule of section 3 into "nobody waits while holding a claim".
+- **chunk-aligned** (7.3, mitigation 2): one block per chunk votes (`__syncthreads_or`), takes
+  one buffer and writes the values and the constant in one pass: no pre-fill of the elements
+  written, f evaluated once per element. The CAS stays for two ranges that share a chunk. Best
+  at S = 1024 (1.2x on a first write); at S = 256 one 256-thread block per chunk pays four
+  barriers per 2 KiB, and claim is as good.
+
+Conclusion for the facade: the Kokkos / Arcane `parallel_for` over an array takes the
+chunk-aligned path; arbitrary user kernels go through `assign()` with claim. Race stays as the
+reference.
