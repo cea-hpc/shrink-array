@@ -122,11 +122,12 @@
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero_any, build_config::needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, begin_phase
 
 namespace validation::pattern_validation
 {
@@ -136,14 +137,6 @@ using namespace shrink_array;
 static_assert(chunk_config::use_zero_any, "pattern_validation runs in the zero_any build: link chunk_zero_any_<size>");
 
 static int fails = 0;
-
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
 
 /// @brief End a write phase. Serial zero_any has no between-region pass: run
 ///        the writers' pass of @p Arr.

@@ -1245,8 +1245,7 @@ ChunkBase<T, Derived>::element_at_unguarded(this const Derived& self, int offset
         }
         if (Derived::is_motif_ptr(vals)) [[unlikely]]
         {
-            T off{};
-            if (self.motif_offset(vals, offset_slot, off)) [[likely]]
+            if (T off{}; self.motif_offset(vals, offset_slot, off)) [[likely]]
             {
                 return Derived::motif_value(vals, offset, off);
             }

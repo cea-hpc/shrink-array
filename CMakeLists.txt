@@ -268,6 +268,16 @@ if(CHUNK_OPENMP)
             # for the targets that exist only with the OMPT tool
             # (examples/multi_mat's embedded-compression executable).
             set(CHUNK_HAVE_OMPT ON)
+
+            # The OpenMP runtime finds the tool with dlsym("ompt_start_tool") in the
+            # EXECUTABLE: its symbols must be in the dynamic symbol table, which an
+            # executable does not export by default (chunk/CMakeLists.txt gives these
+            # options to every executable linking a variant).
+            set(CHUNK_OMPT_TOOL_LINK_OPTIONS -rdynamic)
+            # Not every runtime looks there (cmake/ompt_probe.cpp): check that this
+            # one does; CHUNK_HAVE_OMPT goes OFF if not.
+            include(${PROJECT_SOURCE_DIR}/cmake/shrink_ompt_probe.cmake)
+            shrink_check_ompt_tool_loads(${CHUNK_OMPT_TOOL_LINK_OPTIONS})
         endif()
         message(STATUS "Clang/IntelLLVM compiler detected")
     else()

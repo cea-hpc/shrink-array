@@ -41,68 +41,26 @@
  *                                                      copy_range_mt
  */
 
-#include <chrono>      // std::chrono::steady_clock, std::chrono::duration
-#include <complex>     // std::complex: an element type without relaxed access
-#include <cstring>     // std::strcmp
-#include <type_traits> // std::conditional_t
-#include <vector>      // std::vector
+#include <chrono>  // std::chrono::steady_clock, std::chrono::duration
+#include <complex> // std::complex: an element type without relaxed access
+#include <cstring> // std::strcmp
+#include <vector>  // std::vector
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/range_ops.h"             // fill_range_mt
 #include "chunk/runtime.h"               // Runtime::init
-#include "chunk/config.h"                // chunk_config::use_zero_or_value*, build_config::needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h"        // Array, variant_name, begin_phase / end_phase
 
 namespace validation::fill_range_mt_validation
 {
 
 using namespace shrink_array;
-
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-static void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 constexpr long blk = 64;
 
@@ -153,8 +111,8 @@ static int run_validation(long count, int rounds)
     std::vector   ref(static_cast<std::size_t>(count), 0.0);
     std::vector   src(static_cast<std::size_t>(count), 0.0); // copy rounds
     Array<double> src_arr(count);                            // transform rounds: a chunked source
-    const long    nblk = (count + blk - 1) / blk;
-    long          bad  = 0;
+    const long    n_blocks = (count + blk - 1) / blk;
+    long          bad      = 0;
 
     for (int r = 0; r < rounds && bad == 0; ++r)
     {
@@ -186,7 +144,7 @@ static int run_validation(long count, int rounds)
         {
             begin_phase();
 #pragma omp for schedule(static, 1) nowait
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 if (!is_fill(b))
                 {
@@ -210,7 +168,7 @@ static int run_validation(long count, int rounds)
                 }
             }
 #pragma omp for schedule(static, 1) nowait
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 if (is_fill(b))
                 {
@@ -226,7 +184,7 @@ static int run_validation(long count, int rounds)
         }
         end_phase();
 
-        for (long b = 0; b < nblk; ++b)
+        for (long b = 0; b < n_blocks; ++b)
         {
             const long lo = b * blk;
             const long hi = lo + blk < count ? lo + blk : count;
@@ -348,12 +306,12 @@ constexpr long perf_blk = 32;
 static void run_perf(long count)
 {
     Array<double>       arr(count);
-    const long          nblk = (count + perf_blk - 1) / perf_blk;
-    const auto          now  = [] { return std::chrono::steady_clock::now(); };
-    double              t_el = 0;
-    double              t_mt = 0;
-    double              t_ce = 0; // copy: element loop
-    double              t_cm = 0; // copy: copy_range_mt
+    const long          n_blocks = (count + perf_blk - 1) / perf_blk;
+    const auto          now      = [] { return std::chrono::steady_clock::now(); };
+    double              t_el     = 0;
+    double              t_mt     = 0;
+    double              t_ce     = 0; // copy: element loop
+    double              t_cm     = 0; // copy: copy_range_mt
     std::vector<double> src(static_cast<std::size_t>(count));
     for (int rep = 0; rep < 6; ++rep)
     {
@@ -365,7 +323,7 @@ static void run_perf(long count)
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 const long   lo       = b * perf_blk;
                 const long   hi       = lo + perf_blk < count ? lo + perf_blk : count;
@@ -382,7 +340,7 @@ static void run_perf(long count)
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 const long lo = b * perf_blk;
                 const long hi = lo + perf_blk < count ? lo + perf_blk : count;
@@ -401,7 +359,7 @@ static void run_perf(long count)
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 const long lo = b * perf_blk;
                 const long hi = lo + perf_blk < count ? lo + perf_blk : count;
@@ -417,7 +375,7 @@ static void run_perf(long count)
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long b = 0; b < nblk; ++b)
+            for (long b = 0; b < n_blocks; ++b)
             {
                 const long lo = b * perf_blk;
                 const long hi = lo + perf_blk < count ? lo + perf_blk : count;

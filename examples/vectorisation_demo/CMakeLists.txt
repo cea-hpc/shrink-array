@@ -22,15 +22,13 @@ chunk_require_cxx_std(vectorisation_demo PRIVATE)
 # set up: SIGSEGV in create_value from the first parallel write).
 # With CHUNK_MODULES=ON it imports the module over that library.
 chunk_use_library(vectorisation_demo chunk_zero_${CHUNK_DEFAULT_SIZE})
+target_link_libraries(vectorisation_demo PRIVATE shrink_examples_common) # common/example_utils.h
 
 add_test(NAME vectorisation_demo COMMAND vectorisation_demo)
 set_property(TEST vectorisation_demo PROPERTY LABELS examples)
 # check builds it (cmake/shrink_build_stamp.cmake), as it builds the harnesses: ctest -L examples
 # finds it.
 set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS vectorisation_demo)
-
-set_property(TEST vectorisation_demo
-        PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 
 set_property(TEST vectorisation_demo
         PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)

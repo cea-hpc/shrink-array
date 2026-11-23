@@ -54,16 +54,16 @@
 
 #include <cstddef> // std::size_t
 #include <memory>  // std::make_unique (owner_run)
-#include <utility> // std::as_const, std::move
+#include <utility> // std::as_const, std::move, std::pair
 
 #include "chunk/zero_or_value_array.h" // zero_or_value::Array
 #include "chunk/runtime.h"             // Runtime::init
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"              // build_config::needs_explicit_phases, build_config::use_openmp
-#include "chunk/phases.h"              // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/config.h"              // build_config::use_openmp
 #include "chunk/print.h"               // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, begin_phase / end_phase
 
 namespace validation::zero_or_value_shared_state_validation
 {
@@ -72,22 +72,6 @@ using namespace shrink_array;
 
 namespace
 {
-
-void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-
-void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
 
 constexpr long n_chunks = 16; ///< chunks of every array below
 
@@ -128,7 +112,7 @@ int run_copy_assign()
     Arr        c;
     Arr        a;
     Arr        b;
-    const long chunk_sz = static_cast<long>(a.chunk_size());
+    const auto chunk_sz = static_cast<long>(a.chunk_size());
     const long count    = n_chunks * chunk_sz;
     c.resize(static_cast<Index>(count));
     a.resize(static_cast<Index>(count));
@@ -216,7 +200,7 @@ BoolRun bool_run(bool build_other)
     using Index = BoolArr::IndexType;
     BoolRun    out;
     BoolArr    x;
-    const long chunk_sz = static_cast<long>(x.chunk_size());
+    const auto chunk_sz = static_cast<long>(x.chunk_size());
     const long count    = n_chunks * chunk_sz;
     x.resize(static_cast<Index>(count));
 #pragma omp parallel
@@ -344,7 +328,7 @@ OwnerRun owner_run(Gone gone)
 
     OwnerRun   out;
     Arr        c;
-    const long chunk_sz = static_cast<long>(c.chunk_size());
+    const auto chunk_sz = static_cast<long>(c.chunk_size());
     const long count    = n_chunks * chunk_sz;
     c.resize(static_cast<Index>(count));
     c.set_second_value(v1);
@@ -434,6 +418,168 @@ int run_owner_gone()
     return fails;
 }
 
+// ── 4. set_second_value(T{}) after another value keeps the T{} key ──────────
+//
+// The arrays with no second value are drained under the key T{}: its record
+// in array_info_map_ (at the sentinel index) and a candidate list per rank
+// (register_no_second_value_key). `y` declares 5, then T{}: T{} is now a
+// real second value of `y`, and its registration must not replace the T{}
+// key's list -- the chunks `x` (no second value) queued there, rewritten to
+// T{} in the region, would be dropped, their dedup flags still set, and the
+// region's end would leave them materialised.
+// Twice: inside the region (outside set_second_value()'s contract, which asks
+// for a sequential point, but where the lost candidates show), and before it
+// (the documented use: nothing queued yet, but the T{} record took a real
+// index -- arrays with no second value were then drained to a block of T{}).
+
+using DblArr = zero_or_value::Array<double>;
+
+/// @brief Entries queued under key T{} (0.0), summed over the ranks.
+long queued_zero()
+{
+    long        total = 0;
+    const auto& ranks = DblArr::ManagerType::zero_or_value_candidates_map_thr;
+    for (const auto& by_value : ranks)
+    {
+        const auto it = by_value.find(0.0);
+        if (it != by_value.end() && it->second)
+        {
+            total += static_cast<long>(it->second->size());
+        }
+    }
+    return total;
+}
+
+struct ZeroKeyRun
+{
+    long queued_before = 0;    ///< T{} entries queued once `x` is rewritten
+    long queued_after  = 0;    ///< the same, after `y`'s set_second_value(5), then (T{}) (or not)
+    long compressed    = 0;    ///< chunks of `x` compressed after the region
+    long bad_y         = 0;    ///< elements of `y` not read back
+    int  zero_idx      = 0;    ///< index of the T{} record after the run (the sentinel expected)
+    bool y_back_to_t0  = true; ///< y.second_value() is T{} after the redeclaration
+};
+
+enum class Redeclare
+{
+    no,
+    in_region,
+    before_region,
+};
+
+ZeroKeyRun zero_key_run(Redeclare redeclare)
+{
+    using Index = DblArr::IndexType;
+    ZeroKeyRun out;
+    DblArr     x;
+    DblArr     y;
+    const auto chunk_sz = static_cast<long>(x.chunk_size());
+    const long count    = n_chunks * chunk_sz;
+    x.resize(static_cast<Index>(count));
+    y.resize(static_cast<Index>(count));
+    for (long i = 0; i < count; ++i)
+    {
+        x[static_cast<Index>(i)] = 1.0 + static_cast<double>(i % 7); // materialised
+    }
+    if (redeclare == Redeclare::before_region)
+    {
+        y.set_second_value(5.0, false);
+        y.set_second_value(0.0, false);
+    }
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for schedule(static)
+        for (long i = 0; i < count; ++i)
+        {
+            x[static_cast<Index>(i)] = 0.0;
+        }
+#pragma omp single
+        {
+            out.queued_before = queued_zero();
+            if (redeclare == Redeclare::in_region)
+            {
+                y.set_second_value(5.0, false);
+                y.set_second_value(0.0, false);
+            }
+            out.queued_after = queued_zero();
+        }
+    }
+    end_phase();
+    out.compressed        = compressed(std::as_const(x), chunk_sz);
+    const auto* zero_info = zero_or_value::Proxy<double>::array_registry->find_array_info(0.0);
+    out.zero_idx          = zero_info != nullptr ? zero_info->idx : chunk_config::no_second_value_index;
+    out.y_back_to_t0      = y.second_value() == 0.0;
+    for (long i = 0; i < count; ++i)
+    {
+        y[static_cast<Index>(i)] = (i % 3 == 0) ? 0.0 : 2.0;
+    }
+    for (long i = 0; i < count; ++i)
+    {
+        out.bad_y += (std::as_const(y)[static_cast<Index>(i)] != ((i % 3 == 0) ? 0.0 : 2.0)) ? 1 : 0;
+    }
+    return out;
+}
+
+int run_zero_key()
+{
+    if constexpr (!build_config::use_openmp || !chunk_config::use_fast_block_compression)
+    {
+        println("[shared-state/zero-key] skipped: no candidate lists in this build");
+        return 0;
+    }
+    const ZeroKeyRun control = zero_key_run(Redeclare::no);
+    println("[shared-state/zero-key] control: {} queued, {} after, {}/{} chunks of x compressed", control.queued_before,
+            control.queued_after, control.compressed, n_chunks);
+    int fails = 0;
+    for (const auto& [mode, where] :
+         {std::pair{Redeclare::in_region, "in the region"}, std::pair{Redeclare::before_region, "before the region"}})
+    {
+        const ZeroKeyRun tested = zero_key_run(mode);
+        println("[shared-state/zero-key] y declares 5 then T{{}} {}: {} queued, {} after, {}/{} chunks of x "
+                "compressed, {} bad element(s) of y, T{{}} record at index {}, y back to T{{}}: {}",
+                where, tested.queued_before, tested.queued_after, tested.compressed, n_chunks, tested.bad_y,
+                tested.zero_idx, tested.y_back_to_t0);
+        if (tested.queued_after < tested.queued_before)
+        {
+            println("[shared-state/zero-key] FAIL ({}): set_second_value(T{{}}) dropped {} queued T{{}} candidate(s) "
+                    "of an array without second value",
+                    where, tested.queued_before - tested.queued_after);
+            ++fails;
+        }
+        if (tested.compressed < control.compressed)
+        {
+            println("[shared-state/zero-key] FAIL ({}): {} chunk(s) of `x` left materialised that the control run "
+                    "compresses",
+                    where, control.compressed - tested.compressed);
+            ++fails;
+        }
+        if (tested.bad_y != 0)
+        {
+            println("[shared-state/zero-key] FAIL ({}): `y` (second value T{{}}) reads {} element(s) wrong", where,
+                    tested.bad_y);
+            ++fails;
+        }
+        if (tested.zero_idx != chunk_config::no_second_value_index)
+        {
+            println("[shared-state/zero-key] FAIL ({}): the T{{}} record took index {}, not the sentinel {}", where,
+                    tested.zero_idx, chunk_config::no_second_value_index);
+            ++fails;
+        }
+        if (!tested.y_back_to_t0)
+        {
+            println("[shared-state/zero-key] FAIL ({}): y.second_value() is not T{{}} after set_second_value(T{{}})",
+                    where);
+            ++fails;
+        }
+    }
+    if (fails == 0)
+    {
+        println("[shared-state/zero-key] OK");
+    }
+    return fails;
+}
+
 } // namespace
 
 int run(int /*argc*/, char** /*argv*/)
@@ -444,6 +590,7 @@ int run(int /*argc*/, char** /*argv*/)
     fails += run_copy_assign();
     fails += run_bool_construct();
     fails += run_owner_gone();
+    fails += run_zero_key();
     release_chunk_pools();
     Runtime::shutdown();
     println("\n[zero_or_value] {}", fails ? "=== SHARED STATE FAILED ===" : "=== SHARED STATE OK ===");

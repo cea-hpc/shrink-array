@@ -143,9 +143,9 @@ void neutral_sqrt_assign(Arr& arr, Int index, T value)
  * @param iter the iteration index; the workload varies its pattern with iter % 16.
  * @param start0 start of the window this iteration writes.
  * @param end0 end of that window.
- * @param array_nba1 the per-iteration thresholds main() precomputed; read at
+ * @param array_threshold1 the per-iteration thresholds main() precomputed; read at
  *        [iter], never written here.
- * @param array_nba2 see array_nba1.
+ * @param array_threshold2 see array_threshold1.
  * @param val_sum the running accumulators (val_sum, long_val_sum, v_real,
  *        v_im), ADDED TO.
  * @param long_val_sum see val_sum.
@@ -162,8 +162,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                          Int                     iter,
                          Int                     start0,
                          Int                     end0,
-                         const std::vector<Int>& array_nba1,
-                         const std::vector<Int>& array_nba2,
+                         const std::vector<Int>& array_threshold1,
+                         const std::vector<Int>& array_threshold2,
                          double&                 val_sum,
                          long&                   long_val_sum,
                          double&                 v_real,
@@ -185,8 +185,8 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                                 Int                     iter,
                                 Int                     start0,
                                 Int                     end0,
-                                const std::vector<Int>& array_nba1,
-                                const std::vector<Int>& array_nba2,
+                                const std::vector<Int>& array_threshold1,
+                                const std::vector<Int>& array_threshold2,
                                 double&                 point_sum);
 
 /// @brief The struct arrays' share of the reset sweep: [start0, end0) back to T{}.

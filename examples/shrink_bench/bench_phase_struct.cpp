@@ -104,7 +104,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
 
 // ─── Compute ─────────────────────────────────────────────────────────────────
 // On the iteration's window [start0, end0): a run of null elements up to
-// array_nba1[iter], a run of the second value up to array_nba2[iter], and the rest
+// array_threshold1[iter], a run of the second value up to array_threshold2[iter], and the rest
 // updated from its current value -- so that every iteration re-creates runs
 // the pass can take AND overwrites some it took. Then a read-only sweep of
 // the window into point_sum, twice the reads of the writes, as the other
@@ -113,8 +113,8 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                                 Int                     iter,
                                 Int                     start0,
                                 Int                     end0,
-                                const std::vector<Int>& array_nba1,
-                                const std::vector<Int>& array_nba2,
+                                const std::vector<Int>& array_threshold1,
+                                const std::vector<Int>& array_threshold2,
                                 double&                 point_sum)
 {
     if (!bench_arr.with_struct) // --no_struct
@@ -125,9 +125,9 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
     auto& array_point = bench_arr.array_point;
     auto& array_cell  = bench_arr.array_cell;
 
-    const Int  nba1 = array_nba1[iter];
-    const Int  nba2 = array_nba2[iter];
-    const auto dk   = static_cast<double>(iter % 3);
+    const Int  threshold1 = array_threshold1[iter];
+    const Int  threshold2 = array_threshold2[iter];
+    const auto dk         = static_cast<double>(iter % 3);
 
     // Shared accumulator of the region, reduced by the loop (bench_prelude.h
     // on why not a `parallel reduction`).
@@ -153,12 +153,12 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                     {
                         return;
                     }
-                    if (i < nba1)
+                    if (i < threshold1)
                     {
                         array_point[i] = Point3{};
                         array_cell[i]  = Cell{};
                     }
-                    else if (i < nba2)
+                    else if (i < threshold2)
                     {
                         array_point[i] = second_value_p;
                         array_cell[i]  = second_value_cell;

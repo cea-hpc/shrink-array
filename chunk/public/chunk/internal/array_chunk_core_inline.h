@@ -112,4 +112,13 @@ void ArrayChunkCore<ChunkT>::release_chunk_list()
     chunk_list_.clear();
 }
 
+template <typename ChunkT>
+void ArrayChunkCore<ChunkT>::drain_own_reuse_list() noexcept
+{
+    if (alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        ManagerType::drain_reuse_list_for_size(size_policy_.size());
+    }
+}
+
 } // namespace shrink_array

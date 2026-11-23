@@ -31,21 +31,18 @@
 // infinities included, which must not be reported.
 // ============================================================================
 
-#include <cstdio>      // std::fopen, std::fread, std::fclose, std::remove
-#include <cstdlib>     // std::system
-#include <format>      // std::format
-#include <limits>      // std::numeric_limits
-#include <string>      // std::string
-#include <type_traits> // std::conditional_t
-#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
+#include <cstdio>     // std::fopen, std::fread, std::fclose, std::remove
+#include <cstdlib>    // std::system
+#include <format>     // std::format
+#include <limits>     // std::numeric_limits
+#include <string>     // std::string
+#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
-#include "chunk/config.h"              // chunk_config::use_zero_any / use_zero_or_value, build_config::do_check
-#include "chunk/runtime.h"             // Runtime::init
-#include "chunk/print.h"               // shrink_array::println
-#include "chunk/zero_any_array.h"      // zero_any::Array
-#include "chunk/zero_array.h"          // zero::Array
-#include "chunk/zero_or_value_array.h" // zero_or_value::Array
-#include "validation_harness.h"        // self_command, temp_path; run() is called by validation_driver.cpp
+#include "chunk/config.h"       // build_config::do_check
+#include "chunk/runtime.h"      // Runtime::init
+#include "chunk/print.h"        // shrink_array::println
+#include "validation_harness.h" // self_command, temp_path; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name
 
 namespace validation::nan_check_validation
 {
@@ -54,28 +51,6 @@ using namespace shrink_array;
 
 namespace
 {
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 constexpr long n_chunks = 8;
 

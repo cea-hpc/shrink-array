@@ -64,6 +64,9 @@ the tag's checksum to the recipe.
   the registries' write lock, the stable table, two scope guards) give their reason again
   (`= delete("...")`), and so do the examples' (`multi_mat`, `shrink_bench`). `fast_allocators`
   is built as C++23 and its headers stay usable from C++23: its deletes keep the plain form.
+- `ParamChunk::set_decalage_chunk()` is `set_chunk_shift()` (a no-op kept for old call sites, as
+  before); the former name stays, deprecated. Internally ChunkSizePolicy's decalage() is
+  `shift()`, and `print_info_chunk()` prints "chunk shift" instead of "decalage chunk".
 - `shrink_gui` 0.18, "cette machine": the launcher defaults to
   `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` where `systemd-run --user`
   works, so that a run out of memory is killed alone instead of bringing WSL down (a launcher
@@ -96,6 +99,42 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Clang or oneAPI with an OpenMP runtime that never loads an OMPT tool defined in the
+  executable -- Ubuntu 24.04's `libomp5-18` binds its own weak `ompt_start_tool` at link time
+  and searches only the objects loaded after it, so `-rdynamic` does not help -- built the
+  library with its tool anyway: the regions ran with their phase boundaries missing (chunks
+  left materialised, the concurrent-teams invariants broken; 40 validation tests of the nightly
+  clang 18 job). The configure step now runs a probe (`cmake/ompt_probe.cpp`) and, when the
+  runtime does not call it, builds without the tool (`CHUNK_OPT_OMPT` 0, `shrink_array_OMPT`
+  OFF) with a warning. The verdict is cached in `CHUNK_OMPT_TOOL_LOADS`, which can also be set
+  to skip the probe; it is not run when cross-compiling without an emulator.
+- OMPT builds, a region opened inside a parallel region of one thread (`OMP_NUM_THREADS=1`, an
+  inactive region: `omp_in_parallel()` is false there) -- the teardown census of an array
+  destroyed under `omp single` -- passed for the end of a phase: its compression pass emptied the
+  other arrays' candidate lists in the middle of the region. A region now ends the phase only if
+  it began at the top level; the one-thread region itself still ends it. multi_mat's own OMPT
+  tool had the same test and is fixed alike. `zero_or_value_shared_state_validation`
+  (bool-construct, 1 thread) and `nested_region_validation` cover it.
+- `zero_or_value`, the other arrays of a type when one array goes (destroyed, cleared, copy- or
+  move-assigned, swapped):
+  - the record of each second value (its constant block's index) was a pointer to the array
+    that declared the value last. Once that array was destroyed, or took another value, the
+    other arrays declaring the value were no longer drained by the passes -- or a pass followed
+    a dangling pointer. The type now keeps its own copy of each record;
+  - the pass that `clear()` runs at a sequential point emptied the other arrays' candidate lists
+    without compressing them, so a temporary destroyed between two phases left their chunks
+    materialised. It now compresses them, and runs only outside any region, an inactive
+    one-thread region included.
+  The new `bystander_validation` (every variant, 1 and 8 threads) checks that copy/move-assign,
+  swap, `clear()` and `shrink_to_fit()` of one array leave two bystander arrays -- one compressed,
+  one materialised -- as they were; `zero_or_value_shared_state_validation` gains the destroyed,
+  cleared, assigned and swapped owner cases.
+- `zero_or_value`: `set_second_value(T{})` on an array that had another second value took the
+  new-value path (T{}'s sentinel index reads as "not registered"): it gave T{} a block of its
+  own and replaced the T{} key every array without a second value is drained under. Called at
+  a sequential point, the T{} record took a real index; inside a region, the T{} candidates
+  other arrays had queued were dropped, their chunks left materialised. The call now puts the
+  array back to "no second value". `zero_or_value_shared_state_validation` (zero-key case).
 - Smaller findings of the rescan of 2026-11-20:
   - `RechunkDecider`: with `max_coarsen_factor` at 1 or 0 ("no cap", `--rechunk_max_coarsen`),
     an array banned from coarsening went on being coarsened;

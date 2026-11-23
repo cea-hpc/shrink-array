@@ -36,7 +36,7 @@ template <typename I>
     // rarely, so this branch is always predicted.
     if (pow2_) [[likely]]
     {
-        return static_cast<I>(static_cast<std::make_unsigned_t<I>>(index) >> decalage_);
+        return static_cast<I>(static_cast<std::make_unsigned_t<I>>(index) >> shift_);
     }
     if constexpr (sizeof(I) <= 4)
     {
@@ -84,9 +84,9 @@ inline void DynamicChunkSize::set_size(unsigned int size) noexcept
                                    size);
         }
     }
-    size_     = size;
-    decalage_ = static_cast<unsigned int>(log2int(static_cast<std::size_t>(size)));
-    modulo_   = size - 1u;
+    size_   = size;
+    shift_  = static_cast<unsigned int>(log2int(static_cast<std::size_t>(size)));
+    modulo_ = size - 1u;
     set_divider(size);
     g_active_chunk_size = size; // keep the allocator-facing runtime size in sync
 }

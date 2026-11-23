@@ -66,7 +66,8 @@ CMAKE_NAME_LISTS = {
     "examples/validation/CMakeLists.txt": (CMAKE_HARNESS, ".cpp", "harness"),
     "formal/CMakeLists.txt": (CMAKE_MODELS, ".c", "model"),
 }
-INCLUDE_ROOTS = ("chunk/public", "fast_allocators/public", "third_party")
+# examples/common: the include directory of shrink_examples_common (examples/CMakeLists.txt).
+INCLUDE_ROOTS = ("chunk/public", "fast_allocators/public", "third_party", "examples/common")
 CXX_DIRS = ("chunk", "fast_allocators", "examples")
 CXX_SUFFIXES = (".h", ".hpp", ".cpp", ".in")
 

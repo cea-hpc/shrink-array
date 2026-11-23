@@ -73,6 +73,7 @@
 #include "chunk/print.h"                      // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name
 
 namespace validation::alloc_chunk_validation
 {
@@ -87,22 +88,6 @@ using Arr =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
                        std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 template <typename T>
 constexpr const char* type_name()
@@ -167,7 +152,7 @@ void declare_second_value(Arr<T>& arr, T value)
 template <typename T>
 void prealloc_in_region(Arr<T>& arr, int first, int last)
 {
-    const int chunk_size = static_cast<int>(arr.chunk_size());
+    const auto chunk_size = static_cast<int>(arr.chunk_size());
     parallel_phase(
         [&]
         {
@@ -191,7 +176,7 @@ void prealloc_in_region(Arr<T>& arr, int first, int last)
 template <typename T>
 void proxy_fill(Arr<T>& arr, int first, int last, T value, bool use_ramp)
 {
-    const int chunk_size = static_cast<int>(arr.chunk_size());
+    const auto chunk_size = static_cast<int>(arr.chunk_size());
     parallel_phase(
         [&]
         {
@@ -227,9 +212,9 @@ int mismatches(const Arr<T>& arr, const std::vector<T>& ref)
 template <typename T>
 void count_written(const Arr<T>& arr, int n_chunks, int first, int last, int& inside, int& outside)
 {
-    const int chunk_size = static_cast<int>(arr.chunk_size());
-    inside               = 0;
-    outside              = 0;
+    const auto chunk_size = static_cast<int>(arr.chunk_size());
+    inside                = 0;
+    outside               = 0;
     for (int chunk = 0; chunk < n_chunks; ++chunk)
     {
         if (arr.written(chunk * chunk_size))
@@ -253,7 +238,7 @@ int case_window()
     constexpr int first    = 4;
     constexpr int last     = 8;
     Arr<T>        arr(0);
-    const int     chunk_size = static_cast<int>(arr.chunk_size());
+    const auto    chunk_size = static_cast<int>(arr.chunk_size());
     const int     count      = n_chunks * chunk_size;
     arr.resize(count);
     std::vector<T> ref(static_cast<std::size_t>(count), T{});
@@ -318,7 +303,7 @@ int case_from_constant(const char* what, T constant)
     constexpr int first    = 2; // chunks 2..5 are folded to the constant,
     constexpr int last     = 6; // 3 and 4 preallocated, 3 filled raw
     Arr<T>        arr(0);
-    const int     chunk_size = static_cast<int>(arr.chunk_size());
+    const auto    chunk_size = static_cast<int>(arr.chunk_size());
     const int     count      = n_chunks * chunk_size;
     arr.resize(count);
     declare_second_value<T>(arr, second_value<T>());
@@ -412,8 +397,8 @@ int case_geometry()
         }
         Arr<T> wide(0);
         wide.set_chunk_size(2U * small_size);
-        const int chunk_size = static_cast<int>(wide.chunk_size());
-        const int count      = n_chunks * chunk_size;
+        const auto chunk_size = static_cast<int>(wide.chunk_size());
+        const int  count      = n_chunks * chunk_size;
         wide.resize(count);
         small.resize(4 * static_cast<int>(small_size));
         std::vector<T> ref(static_cast<std::size_t>(count), T{});

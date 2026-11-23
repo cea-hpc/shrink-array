@@ -663,7 +663,7 @@ ArrayChunkBase<Derived>::operator[](this const Derived& self, IndexType index) n
     // Lets the compiler drop bounds/sign checks (0 <= elem_offset <= modulo by construction).
     // modulo() is read into a local first: clang ignores an assumption that
     // calls a function it cannot prove side-effect free (-Wassume).
-    [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
+    [[maybe_unused]] const auto chunk_mod = static_cast<int>(self.size_policy_.modulo());
     CHUNK_ASSUME(chunk_index >= 0);
     CHUNK_ASSUME(elem_offset >= 0 && elem_offset <= chunk_mod);
     const auto& chunk_t = self.chunk_list_[chunk_index];
@@ -864,6 +864,29 @@ CHUNK_FORCE_INLINE void ArrayChunkBase<Derived>::sync_chunk(this const Derived& 
                 chunk_t.wait_for_availability(offset);
             }
         }
+    }
+}
+
+
+template <typename Derived>
+void ArrayChunkBase<Derived>::reset_regrown_tail(this Derived& self,
+                                                 IndexType     old_size,
+                                                 IndexType     new_size,
+                                                 int           old_chunk_count)
+{
+    if (new_size <= old_size)
+    {
+        return;
+    }
+    const auto csz = static_cast<IndexType>(self.chunk_size());
+    // In long long: old_chunk_count * csz may pass IndexType's range near its top.
+    const long long cover_ll = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
+    const IndexType old_cover =
+        cover_ll < static_cast<long long>(new_size) ? static_cast<IndexType>(cover_ll) : new_size;
+    const IndexType stale_end = new_size < old_cover ? new_size : old_cover;
+    for (IndexType i = old_size; i < stale_end; ++i)
+    {
+        self[i] = T{};
     }
 }
 

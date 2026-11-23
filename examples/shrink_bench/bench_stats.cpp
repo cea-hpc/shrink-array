@@ -67,21 +67,21 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         const Int ssz = arr.size();
 
         // `omp parallel for schedule(static) reduction(+ : ...)` with OpenMP.
-        const auto census = shrink_array::pmp::parallel_sum<Int, 3>(Int{0}, ssz, shrink_array::pmp::Options{},
-                                                                    [&](Int k, auto& acc)
-                                                                    {
-                                                                        auto& nbz = acc[0];
-                                                                        auto& nbv = acc[1];
-                                                                        auto& n   = acc[2];
+        const auto census   = shrink_array::pmp::parallel_sum<Int, 3>(Int{0}, ssz, shrink_array::pmp::Options{},
+                                                                      [&](Int k, auto& acc)
+                                                                      {
+                                                                        auto& n_zero   = acc[0];
+                                                                        auto& n_values = acc[1];
+                                                                        auto& n        = acc[2];
                                                                         if constexpr (is_complex)
                                                                         {
                                                                             if (arr[k] == zero_complex)
                                                                             {
-                                                                                nbz++;
+                                                                                n_zero++;
                                                                             }
                                                                             else if (arr[k] == sec_val)
                                                                             {
-                                                                                nbv++;
+                                                                                n_values++;
                                                                             }
                                                                             else
                                                                             {
@@ -95,11 +95,11 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                             // have no conversion from Int.
                                                                             if (arr[k] == value_type{})
                                                                             {
-                                                                                nbz++;
+                                                                                n_zero++;
                                                                             }
                                                                             else if (arr[k] == sec_val)
                                                                             {
-                                                                                nbv++;
+                                                                                n_values++;
                                                                             }
                                                                             else
                                                                             {
@@ -110,23 +110,23 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                         {
                                                                             if (arr[k] == 0)
                                                                             {
-                                                                                nbz++;
+                                                                                n_zero++;
                                                                             }
                                                                             else
                                                                             {
-                                                                                nbv++;
+                                                                                n_values++;
                                                                             }
                                                                         }
-                                                                    });
-        const Int  nbz    = census[0];
-        const Int  nbv    = census[1];
-        const Int  n      = census[2];
+                                                                      });
+        const Int  n_zero   = census[0];
+        const Int  n_values = census[1];
+        const Int  n        = census[2];
 
         // Over the array's own size: array_float and array_char hold 2 * sz
         // elements, array_short sz / 2, array_mask mask_scale * sz, array_conn whole rows.
         const double pc  = double(n) / double(ssz);
-        const double pcz = double(nbz) / double(ssz);
-        const double pcv = double(nbv) / double(ssz);
+        const double pcz = double(n_zero) / double(ssz);
+        const double pcv = double(n_values) / double(ssz);
 
         // int, not Int: a display width handed to the format string, never an
         // array index -- Int widens to 64 bits under BENCH_INT64.
@@ -148,11 +148,11 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         // First output line: label "Numbers of 0"
         const std::string label0 = "Numbers of 0";
         // The colon right after the padded label: always in the same position.
-        std::println("{:<{}}:{:>{}}{:>{}.2f} %", label0, label_width, nbz, value_width, pcz * 100, value_width);
+        std::println("{:<{}}:{:>{}}{:>{}.2f} %", label0, label_width, n_zero, value_width, pcz * 100, value_width);
 
         // Second output line: the label names the second value.
         const std::string label = "Numbers of " + bench_text(sec_val);
-        std::println("{:<{}}:{:>{}}{:>{}.2f} %", label, label_width, nbv, value_width, pcv * 100, value_width);
+        std::println("{:<{}}:{:>{}}{:>{}.2f} %", label, label_width, n_values, value_width, pcv * 100, value_width);
     };
 
     if constexpr (chunk_config::is_shrink_enabled)
@@ -166,16 +166,16 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     {
         const Int ssz = arr.size();
 
-        // `omp parallel for schedule(static) reduction(+ : nbz)` with OpenMP.
-        const Int nbz = shrink_array::pmp::parallel_sum<Int, 1>(Int{0}, ssz, shrink_array::pmp::Options{},
-                                                                [&](Int k, auto& acc)
-                                                                {
-                                                                    if (arr[k] == 0.0)
-                                                                    {
-                                                                        acc[0]++;
-                                                                    }
-                                                                })[0];
-        const Int n   = ssz - nbz;
+        // `omp parallel for schedule(static) reduction(+ : n_zero)` with OpenMP.
+        const Int n_zero = shrink_array::pmp::parallel_sum<Int, 1>(Int{0}, ssz, shrink_array::pmp::Options{},
+                                                                   [&](Int k, auto& acc)
+                                                                   {
+                                                                       if (arr[k] == 0.0)
+                                                                       {
+                                                                           acc[0]++;
+                                                                       }
+                                                                   })[0];
+        const Int n      = ssz - n_zero;
 
         constexpr int name_width   = 20;
         const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
@@ -185,8 +185,8 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
         constexpr int label_width = 22;
         constexpr int value_width = 10;
-        std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of 0", label_width, nbz, value_width,
-                     100.0 * double(nbz) / double(ssz), value_width);
+        std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of 0", label_width, n_zero, value_width,
+                     100.0 * double(n_zero) / double(ssz), value_width);
         std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of levels != 0", label_width, n, value_width,
                      100.0 * double(n) / double(ssz), value_width);
     };

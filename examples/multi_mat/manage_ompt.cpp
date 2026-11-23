@@ -32,7 +32,10 @@
  *        before the reads that follow the barrier
  *   ompt_callback_parallel_end            -> finalize_parallel_phase()
  *        the encountering thread, the team joined: the deferred writes of
- *        every thread, the pools reset, the candidates compressed
+ *        every thread, the pools reset, the candidates compressed -- for a
+ *        top-level region only (ompt_callback_parallel_begin tags it): a
+ *        region nested in the phase, a solver's for one, ends with the
+ *        phase's other threads still writing
  *
  * finalize_parallel_phase() opens parallel regions of its own (the replay
  * is done by a team), whose end reaches this same callback: a guard makes
@@ -46,8 +49,9 @@
  * the switch the library reads in ompt_off.cpp, and has no tool.
  */
 
-#include <atomic> // std::atomic, std::memory_order
-#include <cstdio> // std::puts, std::fputs
+#include <atomic>  // std::atomic, std::memory_order
+#include <cstdint> // std::uint64_t (the top-level tag)
+#include <cstdio>  // std::puts, std::fputs
 
 #include <omp-tools.h> // ompt_* (the OMPT tool interface)
 #include <omp.h>       // omp_in_parallel, omp_get_level (on_sync_region)
@@ -69,6 +73,21 @@ namespace
 ///        regions need their rank cache like any other (a check build
 ///        asserts on a stale one).
 std::atomic<bool> in_phase_end{false};
+
+/// @brief parallel_data's value for a region opened outside any other: the
+///        only ones whose end is the phase's (as in the library's tool).
+constexpr std::uint64_t top_level_tag = 0x4d554c54U; // "MULT"
+
+void on_parallel_begin(ompt_data_t*, const ompt_frame_t*, ompt_data_t* parallel_data, unsigned int, int, const void*)
+{
+    // omp_get_level(), not omp_in_parallel(): inside a region of one thread
+    // (OMP_NUM_THREADS=1, inactive) omp_in_parallel() is false, and a region
+    // opened there would pass for a top-level one.
+    if (parallel_data != nullptr && omp_get_level() == 0)
+    {
+        parallel_data->value = top_level_tag;
+    }
+}
 
 void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int flags)
 {
@@ -124,9 +143,15 @@ void on_sync_region(ompt_sync_region_t    kind,
     }
 }
 
-void on_parallel_end(ompt_data_t*, ompt_data_t*, int, const void*)
+void on_parallel_end(ompt_data_t* parallel_data, ompt_data_t*, int, const void*)
 {
-    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0 ||
+    // A nested region (not tagged by on_parallel_begin): the phase goes on.
+    const bool top_level = parallel_data != nullptr && parallel_data->value == top_level_tag;
+    if (top_level)
+    {
+        parallel_data->value = 0;
+    }
+    if (!top_level || shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0 ||
         in_phase_end.load(std::memory_order_relaxed))
     {
         return;
@@ -144,10 +169,11 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
         std::fputs("multi_mat: ompt_set_callback not found, the embedded compression has no phases\n", stderr);
         return 0; // the tool is dropped
     }
+    set_callback(ompt_callback_parallel_begin, reinterpret_cast<ompt_callback_t>(on_parallel_begin));
     set_callback(ompt_callback_implicit_task, reinterpret_cast<ompt_callback_t>(on_implicit_task));
     set_callback(ompt_callback_sync_region, reinterpret_cast<ompt_callback_t>(on_sync_region));
     set_callback(ompt_callback_parallel_end, reinterpret_cast<ompt_callback_t>(on_parallel_end));
-    std::puts("multi_mat: OMPT tool registered (implicit_task, sync_region, parallel_end)");
+    std::puts("multi_mat: OMPT tool registered (parallel_begin, implicit_task, sync_region, parallel_end)");
     return 1;
 }
 
@@ -156,7 +182,10 @@ void ompt_finalize(ompt_data_t*) {}
 } // namespace
 
 /// @brief The entry point the OpenMP runtime looks up at start-up.
-ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
+// extern "C": the runtime finds the tool with dlsym("ompt_start_tool"). Some
+// omp-tools.h (LLVM 18) do not declare it, and a C++-mangled definition is
+// never found: the tool stays silently inert.
+extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
 {
     static ompt_start_tool_result_t result = {&ompt_initialize, &ompt_finalize, {0}};
     return &result;

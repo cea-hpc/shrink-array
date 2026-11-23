@@ -761,7 +761,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param index global element index (unchecked)
      * @return the element value, after the read gate has been honoured
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(this const Derived& self, IndexType index) noexcept;
+    CHUNK_FLATTEN T operator()(this const Derived& self, IndexType index) noexcept;
 
     /**
      * @brief Raw reference access: arr(i) = value.
@@ -770,7 +770,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] otherwise.
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(this Derived& self, IndexType index) noexcept;
+    CHUNK_FLATTEN T& operator()(this Derived& self, IndexType index) noexcept;
 
     /**
      * @brief alloc_chunk() allocates in THIS array's geometry and allocator
@@ -793,16 +793,17 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /**
      * @brief Unchecked read access (hot path).
      *
-     * @details Force-inlined: GCC otherwise leaves it out-of-line, where it costs
-     *          a large share of a many-thread profile. CHUNK_FORCE_INLINE is plain
-     *          `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
+     * @details Force-inlined (CHUNK_FORCE_INLINE on the definition, in
+     *          array_chunk_base_inline.h): GCC otherwise leaves it out-of-line,
+     *          where it costs a large share of a many-thread profile.
+     *          CHUNK_FORCE_INLINE is plain `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
      *          -DSHRINK_AGGRESSIVE_INLINE, never nvc++) pulls the whole read path in.
      *
      * @param index global element index; the caller guarantees 0 <= index < size()
      *              (the precondition, checked where contracts are enforced)
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](this const Derived& self, IndexType index) noexcept
+    CHUNK_FLATTEN T operator[](this const Derived& self, IndexType index) noexcept
         pre(index >= 0 && index < self.m_size_);
 
     /**
@@ -822,7 +823,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          the same kind of proxy. The ElementRef wrapper makes a use of
      *          `auto v = a[i];` fail to compile (internal/element_ref.h).
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](this Derived& self, IndexType index) noexcept
+    CHUNK_FLATTEN reference operator[](this Derived& self, IndexType index) noexcept
         pre(index >= 0 && index < self.m_size_);
 
     /**
@@ -832,7 +833,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the write proxy for that element, armed as operator[]'s
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(this Derived& self, IndexType index) noexcept
+    CHUNK_FLATTEN ProxyType element_proxy(this Derived& self, IndexType index) noexcept
         pre(index >= 0 && index < self.m_size_);
 
   protected:
@@ -855,6 +856,24 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param who the call, for the message ("resize", "reserve", ...)
      */
     static void check_length(IndexType count, const char* who);
+
+    /**
+     * @brief The end of a growing resize(): std::vector semantics for the
+     *        regrown range [@p old_size, @p new_size), which reads T{}.
+     * @details The chunks the resize added are fresh, but the one holding the
+     *          OLD end keeps its tail: after a shrink, the values written there
+     *          would come back on the next growth. The tail is reset through the
+     *          normal write path, after the reallocations, up to the end of the
+     *          OLD chunk count: chunks_for() keeps a chunk past the last element,
+     *          so when @p old_size falls on a chunk boundary that spare chunk
+     *          holds stale values too. Serial: at most one chunk, and inside a
+     *          region an `omp for` would cover 1/N of it. Nothing when the array
+     *          did not grow.
+     * @param old_size the element count before the resize
+     * @param new_size the element count after it
+     * @param old_chunk_count the chunk count before it
+     */
+    void reset_regrown_tail(this Derived& self, IndexType old_size, IndexType new_size, int old_chunk_count);
 
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
     /// @note Protected, not private with `friend Derived`: zero_or_value and zero_any
@@ -1054,8 +1073,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param offset Offset within the chunk.
      * @note Compiles to nothing in a serial build (`if constexpr (threaded)`).
      */
-    CHUNK_FORCE_INLINE void
-    sync_chunk(this const Derived& self, const ChunkType& chunk_t, int chunk_index, int offset) noexcept;
+    void sync_chunk(this const Derived& self, const ChunkType& chunk_t, int chunk_index, int offset) noexcept;
 
     /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).
     static void rechunk_thunk(Core& core, unsigned int new_size)

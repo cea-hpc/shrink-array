@@ -61,25 +61,22 @@
 #include <ranges>           // std::ranges::random_access_range
 #include <span>             // std::span (for_each_span)
 #include <string_view>      // std::string_view (Report::done)
-#include <type_traits>      // std::conditional_t, std::is_same_v
+#include <type_traits>      // std::is_same_v
 #include <utility>          // std::forward
 #include <vector>           // std::vector
 #include <format>           // std::format
 #include <utility>          // std::forward
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // chunk_config::use_zero*, build_config::needs_explicit_phases
+#include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/range_ops.h"             // for_each_value / for_each_span / read_range (bulk-reads step)
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name, begin_phase / end_phase, maybe_set_second_value
 
 namespace validation::iterator_validation
 {
@@ -91,12 +88,6 @@ namespace
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
               "iterator_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 using Arr   = Array<double>;
 using It    = Arr::const_iterator;
@@ -111,38 +102,6 @@ static_assert(std::ranges::random_access_range<const Arr>, "the array must be a 
 static_assert(std::random_access_iterator<Arr::const_reverse_iterator>, "reverse iterators follow");
 static_assert(!std::indirectly_writable<It, double>, "read-only by design: dereference yields a value");
 static_assert(!std::sortable<It>, "no in-place sort, by construction: an element has no address");
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
-void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-
-void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
 
 template <typename A, typename Val>
 void maybe_set_second_value(A& arr, const Val& value)

@@ -51,13 +51,9 @@
 // Compile OMP or non-OMP, dyn, check. Exit 0 = every size round-trips.
 
 #include <string_view> // std::string_view (to_string)
-#include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::register_chunk_size, init
 #include "chunk/internal/chunk_size_policy.h" // const_buffer_size, set_active_chunk_size, set_thread_chunk_size, chunk_size_error
 #include "chunk/config.h"                     // chunk_config::use_zero*
@@ -69,6 +65,7 @@ using namespace shrink_array;
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h"        // Array, variant_name, maybe_set_second_value
 
 namespace validation::dyn_geometry_validation
 {
@@ -80,40 +77,6 @@ static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk
 static_assert(build_config::chunk_dynamic,
               "dyn_geometry_validation is meaningless without CHUNK_DYNAMIC: with the "
               "static geometry there is only ever one chunk size to get right");
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
-// set_second_value only exists on zero_or_value / zero_any; no-op elsewhere. Required on
-// zero_or_value before any write (its candidate list is keyed by second_value), so it
-// is done here for the same reason rechunk_validation does it.
-template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& arr, const Val& value)
-{
-    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
-    {
-        arr.set_second_value(value);
-    }
-}
 
 // The pattern is piecewise-constant with long runs: it compresses well (so the
 // constant/materialised transitions are exercised) while making a wrong read

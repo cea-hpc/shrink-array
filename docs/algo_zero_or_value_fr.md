@@ -81,7 +81,7 @@ La taille de chunk est portée **par chaque tableau** (`size_policy_`, voir
 L'indice global `i` se décompose en deux opérations d'un cycle :
 
 ```cpp
-const int chunk_index = i >> size_policy_.decalage();   // numéro du chunk
+const int chunk_index = i >> size_policy_.shift();   // numéro du chunk
 const int elem_offset       = i &  size_policy_.modulo();     // position dans le chunk
 ```
 
@@ -141,7 +141,7 @@ L'opérateur de lecture renvoie une **valeur**, jamais une référence :
 ```cpp
 CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndexType i) const noexcept
 {
-    const int chunk_index = i >> size_policy_.decalage();
+    const int chunk_index = i >> size_policy_.shift();
     const int elem_offset       = i & size_policy_.modulo();
     const auto& chunk_t = chunk_list[chunk_index];
     sync_chunk(chunk_t, chunk_index, elem_offset);      // barrière de lecture (OpenMP)

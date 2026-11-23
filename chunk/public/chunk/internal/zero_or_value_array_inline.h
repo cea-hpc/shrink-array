@@ -50,6 +50,7 @@
 #include "chunk/internal/type_state.h"        // TypeState: per-size free lists, candidate filter
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_PARK
 #include "chunk/internal/teardown_probe.h"    // teardown_probe (rechunk=debug: the tmp teardown split)
+#include "chunk/internal/teardown_park.h"     // park_live_chunks (the park step)
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, const_buffer_size
 #include "chunk/internal/same_value.h"        // same_value
 
@@ -243,6 +244,26 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
     }
 
     auto& registry = *Proxy<T>::array_registry;
+
+    if constexpr (is_not_bool)
+    {
+        // T{} after another second value: the array goes back to having none
+        // (T{} is the first value; every write of it folds as the first one).
+        // Not a block of its own: T{}'s index is the sentinel, which
+        // find_second_value_index() also returns for an unknown value, so T{}
+        // took the new-value path below and replaced the T{} key that every
+        // array without a second value is drained under -- its record in
+        // array_info_map_ and each rank's candidate list, dropping the chunks
+        // queued there (dedup flags still set: never compressed).
+        if (same_value(sec_value, T{}))
+        {
+            registry.replace(this->registry_key(), T{}, chunk_config::no_second_value_index);
+            second_value_idx_ = chunk_config::no_second_value_index;
+            register_no_second_value_key();
+            sync_registry_mirror();
+            return;
+        }
+    }
 
     if constexpr (is_not_bool)
     {
@@ -717,71 +738,25 @@ void zero_or_value::Array<T, IntType>::clear_core()
         pmp::team(pmp::Options{},
                   [&](pmp::Team& team)
                   {
-                      const int chunk_count0 = get_size_max_array_omp(chunk_count_);
-
-                      std::vector<Chunk<T>*> ll_chunk_loc;
-                      ll_chunk_loc.reserve(chunk_count0);
-
                       // owns_live_buffer(): index-agnostic, and the bool test too (bool has
                       // one second_value marker). Not written(idx): with a single global index
                       // it misclassifies chunks compressed at other indices and parks
-                      // their (never-allocated) second_value markers.
-                      team.for_static<int>(
-                          0, chunk_count_,
-                          [&](int j)
+                      // their (never-allocated) second_value markers. Neutralised to
+                      // first_value: mirrors zero_any::Array::clear_core.
+                      internal::park_live_chunks<T>(
+                          team, chunk_list_, chunk_count_, this->size_policy_.size(),
+                          [](const Chunk<T>& chunk) { return chunk.owns_live_buffer(); },
+                          [](Chunk<T>& chunk)
                           {
-                              if (chunk_list_[j].owns_live_buffer())
-                              {
-                                  if constexpr (chunk_config::stats)
-                                  {
-                                      inc_chunk_teardown_clear<Chunk<T>>();
-                                      // Released below without a compression: out of the live figures.
-                                      add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                          static_cast<long>(this->size_policy_.size()));
-                                  }
-
-                                  ll_chunk_loc.push_back(&chunk_list_[j]);
-                              }
-                          },
-                          pmp::nowait);
-
-                      const int thr_rank = CHUNK_PMP_THREAD_RANK;
-
-                      const auto n = static_cast<int>(ll_chunk_loc.size());
-
-                      if (n > 0)
-                      {
-                          // Park into the reuse list of THIS array's geometry, not the
-                          // ambient t_active (which may be another size mid-rechunk):
-                          // a size-A buffer filed under list[B] is later popped and
-                          // memset at B, and overflows. Single-size builds have one list.
-                          const unsigned int my_sz = this->size_policy_.size();
-                          auto&              lbf   = Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
-
-                          for (int k = 0; k < n; ++k)
-                          {
-                              T* values_loc = ll_chunk_loc[k]->values_;
-                              // Ledger LIVE -> parked, or a later pop trips an ILLEGAL b_pop.
-                              CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
-                              lbf.push_back(values_loc);
-
-                              // Neutralise the chunk NOW that its buffer is parked. Otherwise
-                              // it stays materialised on the parked buffer, and a residual
-                              // compression candidate (one that slipped the removal above)
-                              // would try_mark_const_and_get_old + free_block_to_pool the SAME
-                              // buffer again: under std-alloc that frees it twice (there and
-                              // in clear_list_block_free_thr). Storing first_value makes every
-                              // compress path short-circuit. Mirrors zero_any::Array::clear_core.
                               if constexpr (is_not_bool)
                               {
-                                  ll_chunk_loc[k]->init_to_first_value();
+                                  chunk.init_to_first_value();
                               }
                               else
                               {
-                                  ll_chunk_loc[k]->init_values_const_val_bool(0);
+                                  chunk.init_values_const_val_bool(0);
                               }
-                          }
-                      }
+                          });
                   });
     }
 
@@ -793,16 +768,7 @@ void zero_or_value::Array<T, IntType>::clear_core()
     chunk_count_ = 0;
     probe.mark(internal::TeardownStep::tables);
 
-    // An array with its own slab affinity gives its memory back NOW: every
-    // buffer parked above (own rank) or by another rank (foreign, under this
-    // array's key) goes home to its allocator set, whose slabs hold nothing
-    // else and so empty -- and the sweep madvises them away.
-    // Sequential point (destructor / rechunk_to); the drain opens its own
-    // region. Key 0 (shared pool): nothing to give back per array.
-    if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        TypeState<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
-    }
+    this->drain_own_reuse_list(); // an array with its own allocator set: its memory goes back now
     probe.mark(internal::TeardownStep::key_drain);
 
     // The candidate flags (one byte per chunk): released HERE, after the
@@ -1243,27 +1209,8 @@ void zero_or_value::Array<T, IntType>::resize(const IntType newsz)
     parallel_storage_init::for_each_chunk(chunk_count_ - old_chunk_count, [this, old_chunk_count](int k)
                                           { this->construct_chunk(old_chunk_count + k).init_after_constructor(); });
 
-    // std::vector semantics for the regrown range [old_size, newsz): it reads
-    // T{}. The chunks added above are fresh, but the one holding the OLD end
-    // keeps its tail: after a shrink, the values written there would come back
-    // on the next growth. Reset that tail through the normal write path, after
-    // the reallocations. Serial: at most one chunk, and inside a region an
-    // `omp for` would cover 1/N of it.
-    if (newsz > old_size)
-    {
-        const auto csz = static_cast<IntType>(this->chunk_size());
-        // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
-        // the last element, so when old_size falls on a chunk boundary that
-        // spare chunk keeps stale values too.
-        // In long long: old_chunk_count * csz may pass IndexType's range near its top.
-        const long long cover_ll  = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
-        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
-        for (IntType i = old_size; i < stale_end; ++i)
-        {
-            (*this)[i] = T{};
-        }
-    }
+    // The regrown range [old_size, newsz) reads T{}, as std::vector's.
+    this->reset_regrown_tail(old_size, newsz, old_chunk_count);
 }
 
 // ---------------------------------------------------------------------------
@@ -1393,8 +1340,8 @@ void zero_or_value::Array<T, IntType>::register_no_second_value_key()
         {
             registry.insert(T{}, &array_info_none);
             // The between-phase pass drains only the values of THIS map: T{}
-            // must be in it, at the sentinel index (so set_second_value(T{})
-            // still sees it unregistered and builds a real block).
+            // must be in it, at the sentinel index. set_second_value(T{})
+            // never builds a block of its own: it puts the array back here.
             registry.insert_second_value_idx(T{}, chunk_config::no_second_value_index);
         }
         if constexpr (build_config::threaded)

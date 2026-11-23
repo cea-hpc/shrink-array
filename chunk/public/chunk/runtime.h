@@ -222,14 +222,14 @@ SHRINK_ARRAY_EXPORT class Runtime : public RuntimeParallelInterface<>, public Ru
         {
             const unsigned int cs = active_chunk_size();
             std::cout << "chunk size     : " << cs << " (runtime)\n";
-            std::cout << "decalage chunk : " << static_cast<unsigned int>(log2int(static_cast<std::size_t>(cs)))
+            std::cout << "chunk shift    : " << static_cast<unsigned int>(log2int(static_cast<std::size_t>(cs)))
                       << "\n";
             std::cout << "modulo chunk   : " << (cs - 1u) << "\n";
         }
         else
         {
             std::cout << "chunk size     : " << static_chunk_size << "\n";
-            std::cout << "decalage chunk : " << static_chunk_shift << "\n";
+            std::cout << "chunk shift    : " << static_chunk_shift << "\n";
             std::cout << "modulo chunk   : " << static_chunk_mask << "\n";
         }
     }
@@ -404,20 +404,26 @@ SHRINK_ARRAY_EXPORT class Runtime : public RuntimeParallelInterface<>, public Ru
      * @warning Warns when asked for a shift the binary was not built with, as
      *          set_chunk_size() does.
      */
-    static void set_decalage_chunk(unsigned int value)
+    static void set_chunk_shift(unsigned int value)
     {
         if (value != static_chunk_shift)
         {
-            CHUNK_LOG(warn, general, "set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", value,
+            CHUNK_LOG(warn, general, "set_chunk_shift({}) ignored; built with CHUNK_SIZE={} (shift {})", value,
                       static_chunk_size, static_chunk_shift);
         }
+    }
+
+    /// @brief set_chunk_shift() under its former (French) name.
+    [[deprecated("renamed set_chunk_shift()")]] static void set_decalage_chunk(unsigned int value)
+    {
+        set_chunk_shift(value);
     }
 
     /**
      * @brief No-op compatibility shim: the mask is derived from CHUNK_SIZE.
      *
      * @param value the mask the caller wanted; only compared, never applied
-     * @warning Warns rather than ignoring silently. @see set_decalage_chunk
+     * @warning Warns rather than ignoring silently. @see set_chunk_shift
      */
     static void set_modulo_chunk(int value)
     {

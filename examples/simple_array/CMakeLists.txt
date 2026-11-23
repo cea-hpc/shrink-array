@@ -18,6 +18,8 @@ chunk_require_cxx_std(simple_array_chunk PRIVATE)
 # the std::vector mode, has its module too.
 chunk_use_library(simple_array_vector chunk_vector)
 chunk_use_library(simple_array_chunk chunk_zero)
+target_link_libraries(simple_array_vector PRIVATE shrink_examples_common) # common/example_utils.h
+target_link_libraries(simple_array_chunk PRIVATE shrink_examples_common)
 
 # CHUNK_VARIANT_ZERO=1 now comes from chunk_zero (PUBLIC); the line below is kept
 # as a harmless redefinition to keep this executable self-explanatory in

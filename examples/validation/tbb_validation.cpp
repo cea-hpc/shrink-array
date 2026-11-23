@@ -68,16 +68,15 @@
 // Std and serial builds with CHUNK_WITH_TBB=ON (CMake registers it there):
 // an OpenMP build refuses the adaptor. Exit 0 = every element matches.
 
-#include <algorithm>   // std::max, std::min
-#include <atomic>      // std::atomic
-#include <climits>     // INT_MAX (past_int_max)
-#include <map>         // std::map (thread -> rank)
-#include <mutex>       // std::mutex, std::scoped_lock
-#include <stdexcept>   // std::runtime_error (the throwing body), std::invalid_argument (step 0)
-#include <thread>      // std::this_thread::get_id, std::thread (library_teams)
-#include <type_traits> // std::conditional_t
-#include <utility>     // std::as_const (past_int_max)
-#include <vector>      // std::vector (the reference)
+#include <algorithm> // std::max, std::min
+#include <atomic>    // std::atomic
+#include <climits>   // INT_MAX (past_int_max)
+#include <map>       // std::map (thread -> rank)
+#include <mutex>     // std::mutex, std::scoped_lock
+#include <stdexcept> // std::runtime_error (the throwing body), std::invalid_argument (step 0)
+#include <thread>    // std::this_thread::get_id, std::thread (library_teams)
+#include <utility>   // std::as_const (past_int_max)
+#include <vector>    // std::vector (the reference)
 
 #include <oneapi/tbb/blocked_range.h>  // oneapi::tbb::blocked_range
 #include <oneapi/tbb/global_control.h> // oneapi::tbb::global_control (max_allowed_parallelism)
@@ -85,12 +84,8 @@
 #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/pmp_chunk.h"    // pmp::*, CHUNK_PMP_* (THREAD_CAPACITY: the registry), get_thr_rank_fast
 #include "chunk/threads.h"               // shrink_array::thread_rank (each piece's rank, against the registry's)
 #include "chunk/tbb_adaptor.h"           // shrink_array::tbb::parallel_for, phase_body, use_tbb_for_library_teams
@@ -99,6 +94,7 @@
 #include "chunk/internal/test_hooks.h"   // force_defer_every (the in-phase case)
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name, maybe_set_second_value
 
 namespace validation::tbb_validation
 {
@@ -106,38 +102,7 @@ namespace validation::tbb_validation
 using namespace shrink_array;
 using oneapi::tbb::blocked_range;
 
-template <typename T, typename I = int>
-using Array = std::conditional_t<
-    chunk_config::use_zero_any,
-    zero_any::Array<T, I>,
-    std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T, I>, zero::Array<T, I>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
 constexpr bool std_build = pmp::backend == pmp::BackendKind::std_threads;
-
-template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
-{
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
-    {
-        a.set_second_value(v);
-    }
-}
 
 /// Runs of run_len elements: a whole number of chunks at every geometry built.
 constexpr long run_len = 4096;

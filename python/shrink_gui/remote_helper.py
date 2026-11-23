@@ -660,6 +660,29 @@ def read_events(d):
         pass
     return out
 
+# The recent pace the time left is also read from (seconds of progress records).
+ETA_RECENT_S = 900
+
+def eta_from_progress(progs, start):
+    """Seconds left after the last of @p progs (progress records, oldest first;
+    @p start: the start record): the larger of two paces applied to the runs
+    left -- the whole run's mean, and the last ETA_RECENT_S seconds' one. The
+    mean alone was far too optimistic: the runs differ by orders of magnitude
+    (a CHECK or an OpenMP perf run: seconds; a serial perf run at the end of
+    the campaign: 90 to 300 s), and at 99 % thousands of short runs said
+    "1.2 min" for an hour of serial runs. The recent pace catches a slower
+    stretch as soon as it starts; the mean keeps a fast stretch from promising
+    too little."""
+    last = progs[-1]
+    done, total = last["done"], last["total"]
+    left = total - done
+    eta = (last["t"] - start["t"]) / done * left
+    ref = next((e for e in progs
+                if e["t"] >= last["t"] - ETA_RECENT_S and e.get("total") == total and e["done"] < done), None)
+    if ref is not None and last["t"] > ref["t"]:
+        eta = max(eta, (last["t"] - ref["t"]) / (done - ref["done"]) * left)
+    return eta
+
 def progress_from_events(ev):
     """[done, total, eta_s, phase] from the events, or None."""
     if not ev:
@@ -673,15 +696,13 @@ def progress_from_events(ev):
             phase = None
         elif e.get("kind") == "end":
             phase = "fin"
-    prog = None
-    for e in ev:
-        if e.get("kind") == "progress":
-            prog = e
+    progs = [e for e in ev if e.get("kind") == "progress"]
+    prog = progs[-1] if progs else None
     done = prog["done"] if prog else 0
     total = prog["total"] if prog else (start or {}).get("total_runs", 0)
     eta = None
     if prog and start and done and total and phase != "fin":
-        eta = (prog["t"] - start["t"]) / done * (total - done)
+        eta = eta_from_progress(progs, start)
     if prog and prog.get("phase") and prog["phase"] != phase and phase != "fin":
         phase = prog["phase"]
     return [done, total, eta, phase]

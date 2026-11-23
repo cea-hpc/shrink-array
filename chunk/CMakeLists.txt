@@ -505,6 +505,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/stable_table_inline.h
         public/chunk/internal/second_value_registry_inline.h
         public/chunk/internal/array_users.h
+        public/chunk/internal/teardown_park.h
         public/chunk/internal/teardown_probe.h
         public/chunk/internal/test_hooks.h
         public/chunk/internal/value_less.h
@@ -618,11 +619,9 @@ function(chunk_add_variant target_name variant_define size is_dyn)
 
   # The OMPT tool (chunk/build_options.h, CHUNK_OPT_OMPT).
   if (CHUNK_HAVE_OMPT)
-    # The OpenMP runtime finds the tool with dlsym("ompt_start_tool") in the
-    # EXECUTABLE: its symbols must be in the dynamic symbol table, which an
-    # executable does not export by default. Without this the runtime silently
-    # runs without the tool (phases.h's warning says so at start-up).
-    target_link_options(${target_name} INTERFACE -rdynamic)
+    # The options that let the runtime find the tool in the executable (the
+    # top-level CMakeLists.txt, "OMPT detection"; its probe links with them too).
+    target_link_options(${target_name} INTERFACE ${CHUNK_OMPT_TOOL_LINK_OPTIONS})
   endif()
 
   # Per-declination geometry: dynamic (runtime size) vs fixed compile-time size.

@@ -491,10 +491,10 @@ inline int get_size_max_array_omp(int nn, [[maybe_unused]] int n_static)
 
         if (nn > max_thr && max_thr > 1)
         {
-            int       pp  = nn / max_thr;
-            const int nbs = pp / n_static;
+            int       pp              = nn / max_thr;
+            const int n_static_blocks = pp / n_static;
 
-            pp = ((nbs + 1) * n_static) + max_thr;
+            pp = ((n_static_blocks + 1) * n_static) + max_thr;
 
             return pp;
         }

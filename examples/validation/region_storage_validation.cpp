@@ -73,6 +73,7 @@
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name
 
 namespace validation::region_storage_validation
 {
@@ -86,22 +87,6 @@ using Arr = std::conditional_t<
     chunk_config::use_zero_any,
     zero_any::Array<double>,
     std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<double>, zero::Array<double>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 /// @brief Elements of [@p first, @p last) that do not read @p want.
 long mismatches(const Arr& arr, int first, int last, double want)
