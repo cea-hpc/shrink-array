@@ -596,14 +596,6 @@ template <typename Derived>
 void ArrayChunkBase<Derived>::swap(Derived& other) noexcept
 {
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
-    if constexpr (build_config::any_check)
-    {
-        if (size_policy_.size() != other.size_policy_.size())
-        {
-            CHUNK_INVARIANT_FAILED("zero::Array::swap: mismatched chunk geometry ({} vs {})", size_policy_.size(),
-                                   other.size_policy_.size());
-        }
-    }
     swap_storage_and_identity(other);
 }
 

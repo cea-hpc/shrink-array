@@ -38,7 +38,12 @@
 //   move-construct -- the same through the move constructor (not the copy
 //            constructor, element by element);
 //   vector   -- a std::vector of arrays reallocating: the moves are noexcept,
-//            so the arrays are moved (their chunk lists kept), not copied.
+//            so the arrays are moved (their chunk lists kept), not copied;
+//   swap-geometry -- run-time geometry builds only: one array rechunked to
+//            twice the size, then swapped with the other. Each takes the
+//            other's chunk size with its chunks, in check builds as well
+//            (swap() refused it there up to 0.4.0, although it is what a
+//            move does).
 //
 // Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
 
@@ -49,7 +54,7 @@
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // chunk_config::use_zero*
+#include "chunk/config.h"                // chunk_config::use_zero*, build_config::chunk_dynamic
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -327,6 +332,73 @@ int check_vector_realloc()
     return bad ? 1 : 0;
 }
 
+/// Run-time geometry only: swap two arrays whose chunk sizes differ.
+int check_swap_geometry()
+{
+    const char* step = "swap-geometry";
+    if constexpr (!build_config::chunk_dynamic)
+    {
+        println("[{}/{}] skipped: one geometry per build (static chunk size)", variant_name(), step);
+        return 0;
+    }
+    Array<double> first_arr;
+    Array<double> second_arr;
+    const auto    small_sz = static_cast<long>(first_arr.chunk_size());
+    const long    count    = (24 * small_sz) + 13;
+    const long    n        = (40 * small_sz) + 7;
+    first_arr.resize(static_cast<int>(count));
+    second_arr.resize(static_cast<int>(n));
+    const Pattern pa{2.0, 10.0, small_sz};
+    const Pattern pb{5.0, 500.0, small_sz};
+    maybe_set_second_value(first_arr, pa.sv);
+    maybe_set_second_value(second_arr, pb.sv);
+    fill(first_arr, pa, count);
+    fill(second_arr, pb, n);
+    compress_in_region(first_arr);
+    compress_in_region(second_arr);
+
+    second_arr.rechunk_to(static_cast<unsigned int>(2 * small_sz));
+    const auto big_sz = static_cast<long>(second_arr.chunk_size());
+    int        bad    = 0;
+    if (big_sz != 2 * small_sz)
+    {
+        println("[{}/{}] FAIL rechunk_to({}) left chunk_size() = {}", variant_name(), step, 2 * small_sz, big_sz);
+        return 1;
+    }
+    bad += verify(step, "a (before)", std::as_const(first_arr), pa, count) +
+           verify(step, "b (rechunked)", std::as_const(second_arr), pb, n);
+
+    first_arr.swap(second_arr);
+    if (static_cast<long>(first_arr.chunk_size()) != big_sz || static_cast<long>(second_arr.chunk_size()) != small_sz)
+    {
+        println("[{}/{}] FAIL chunk sizes after swap: a {}, b {}, expected {} and {}", variant_name(), step,
+                static_cast<long>(first_arr.chunk_size()), static_cast<long>(second_arr.chunk_size()), big_sz,
+                small_sz);
+        ++bad;
+    }
+    bad += verify(step, "a (swapped)", std::as_const(first_arr), pb, n) +
+           verify(step, "b (swapped)", std::as_const(second_arr), pa, count);
+
+    // Each geometry keeps working on its new array: a pass, a rewrite, a pass.
+    compress_in_region(first_arr);
+    compress_in_region(second_arr);
+    const Pattern pb2{pb.sv, 900.0, big_sz};
+    const Pattern pa2{pa.sv, 90.0, small_sz};
+    fill(first_arr, pb2, n);
+    fill(second_arr, pa2, count);
+    compress_in_region(first_arr);
+    compress_in_region(second_arr);
+    bad += verify(step, "a (rewritten)", std::as_const(first_arr), pb2, n) +
+           verify(step, "b (rewritten)", std::as_const(second_arr), pa2, count);
+
+    if (!bad)
+    {
+        println("[{}/{}] OK: chunk sizes {} and {} exchanged with the chunks, compressed and rewritten", variant_name(),
+                step, big_sz, small_sz);
+    }
+    return bad ? 1 : 0;
+}
+
 } // namespace
 
 int run(int /*argc*/, char** /*argv*/)
@@ -340,6 +412,7 @@ int run(int /*argc*/, char** /*argv*/)
     fails += check_move();
     fails += check_move_construct();
     fails += check_vector_realloc();
+    fails += check_swap_geometry();
 
     release_chunk_pools();
     Runtime::shutdown();
