@@ -299,8 +299,16 @@ void bench(long n, int reps)
     line("read, every chunk compressed", read_compressed, flat_read, "");
 
     // 2. Write into materialised chunks (the hot path: acquire load + store).
-    const float write_materialised = time_ms(reps, [&] { write_ramp<<<grid, block>>>(a.view(), n, 2.0); });
-    line("write into materialised chunks", write_materialised, flat_write, "(criterion <= 2x)");
+    const char* load_name[] = {"acquire", "relaxed", "plain"};
+    for (int w = 0; w < 3; ++w)
+    {
+        a.set_write_load(static_cast<sa::WriteLoad>(w));
+        const float write_materialised = time_ms(reps, [&] { write_ramp<<<grid, block>>>(a.view(), n, 2.0); });
+        char        what[64];
+        std::snprintf(what, sizeof what, "write into materialised chunks, %s load", load_name[w]);
+        line(what, write_materialised, flat_write, "(criterion <= 2x)");
+    }
+    a.set_write_load(sa::WriteLoad::acquire);
     const float write_materialised_chunked = time_ms(reps, [&] { a.parallel_for_chunks(0, n, Ramp{2.0}); });
     line("write into materialised chunks, chunk-aligned", write_materialised_chunked, flat_write, "");
 
@@ -374,9 +382,17 @@ void bench(long n, int reps)
 
     // 4. compress() alone: every chunk materialised and uniform (all fold back), then every
     //    chunk materialised and not uniform (a pure scan, nothing folds back).
-    const double bytes = static_cast<double>(n) * sizeof(double);
-    float        fold  = 0;
+    const double bytes  = static_cast<double>(n) * sizeof(double);
+    const auto   report = [&](const char* what, float ms)
     {
+        const double gbs = bytes / (ms * 1e6);
+        std::printf("  %-44s %9.3f ms  %7.1f GB/s = %4.0f%% of stream read; 10 GB at 3.35 TB/s: %5.1f ms "
+                    "(criterion <= 10 ms)\n",
+                    what, ms, gbs, 100.0 * gbs / read_gbs, 10e9 / (gbs / read_gbs * 3.35e12) * 1e3);
+    };
+    for (int per_warp = 0; per_warp < 2; ++per_warp)
+    {
+        a.set_compress_per_warp(per_warp != 0);
         std::vector<float> t;
         for (int r = 0; r < reps; ++r)
         {
@@ -386,21 +402,15 @@ void bench(long n, int reps)
             SA_GPU(gpuDeviceSynchronize());
             t.push_back(time_once([&] { a.compress(); }));
         }
-        std::sort(t.begin(), t.end());
-        fold = t[t.size() / 2];
+        write_ramp<<<grid, block>>>(a.view(), n, 1.0);
+        a.finalize();
+        const float scan = time_ms(reps, [&] { a.compress(); });
+        char        what[64];
+        std::snprintf(what, sizeof what, "compress() by %s, every chunk folds back", per_warp ? "warp" : "block");
+        report(what, median(t));
+        std::snprintf(what, sizeof what, "compress() by %s, nothing folds (scan)", per_warp ? "warp" : "block");
+        report(what, scan);
     }
-    write_ramp<<<grid, block>>>(a.view(), n, 1.0);
-    a.finalize();
-    const float scan   = time_ms(reps, [&] { a.compress(); });
-    const auto  report = [&](const char* what, float ms)
-    {
-        const double gbs = bytes / (ms * 1e6);
-        std::printf("  %-44s %9.3f ms  %7.1f GB/s = %4.0f%% of stream read; 10 GB at 3.35 TB/s: %5.1f ms "
-                    "(criterion <= 10 ms)\n",
-                    what, ms, gbs, 100.0 * gbs / read_gbs, 10e9 / (gbs / read_gbs * 3.35e12) * 1e3);
-    };
-    report("compress(), every chunk folds back", fold);
-    report("compress(), nothing folds back (scan)", scan);
 
     (void)gpuFree(d_ranges);
     (void)gpuFree(flat_p);

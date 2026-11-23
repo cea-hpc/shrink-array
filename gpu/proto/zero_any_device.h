@@ -152,6 +152,25 @@ struct ArenaCounters
     unsigned long long claim_spin;  ///< Coordination::claim: waits given up (the write was appended)
 };
 
+/// @brief How assign() reads `buf` before writing into a materialised chunk.
+enum class WriteLoad : int
+{
+    /// Device-scope acquire (6.2 as written): formally right, but a compiler and memory
+    /// barrier per write, so each write waits for its descriptor load (HBM latency) alone.
+    acquire,
+    /// Relaxed device-scope load, no barrier: the store into `buf[i & mask]` depends on the
+    /// loaded address and cannot be performed before the load returns, and the publication
+    /// of `buf` came after a device fence over its pre-fill: the store lands after the
+    /// pre-fill (dependency ordering, as Linux's rcu_dereference; not stated by the PTX
+    /// memory model, hence measured as an option).
+    relaxed,
+    /// A plain load, which L1 may serve: a stale nullptr or busy mark only sends the write
+    /// to the slow path, which loads again with acquire; a stale buffer cannot exist (a
+    /// buffer is published at most once per write kernel, and L1 starts empty per kernel).
+    /// Same dependency argument as relaxed.
+    plain,
+};
+
 /**
  * @brief What a kernel gets of an array: a trivially copyable view, passed by value.
  * @tparam T element type (4 or 8 bytes)
@@ -179,6 +198,7 @@ struct View
     ArenaCounters*     counters;
     Coordination       coord;          ///< how assign() coordinates the warps of one chunk
     unsigned           claim_spin_max; ///< Coordination::claim: backoff rounds before giving up
+    WriteLoad          write_load;     ///< how assign() reads `buf`
 
     /// @brief a(i), in a read kernel (section 5): no barrier, one descriptor per warp.
     __device__ T operator()(long i) const noexcept
@@ -210,7 +230,8 @@ struct View
     __device__ T*   materialise(long nc, ChunkDesc<T>& d) const noexcept;
     __device__ T*   race_group(ChunkDesc<T>& d, LaneMask group, int leader, int lane) const noexcept;
     __device__ T*   materialise_claim(long nc, ChunkDesc<T>& d) const noexcept;
-    __device__ void prefill(T* buf, T c, LaneMask group, int lane) const noexcept;
+    __device__ void prefill(T* buf, T c, LaneMask group, int leader, int lane) const noexcept;
+    __device__ T*   take_spare() const noexcept;
     __device__ void append(long i, T v) const noexcept;
 };
 
@@ -219,10 +240,15 @@ struct View
 template <typename T, int S>
 __device__ T* View<T, S>::take_buffer() const noexcept
 {
-    const long long top = fetch_add(&counters->free_top, -1LL) - 1;
-    if (top >= 0)
+    // A look first: on a first write the stack is empty, and the fetch_add of every
+    // materialisation on that one counter is a serialised round trip for nothing.
+    if (load_relaxed(&counters->free_top) > 0)
     {
-        return free_stack[top];
+        const long long top = fetch_add(&counters->free_top, -1LL) - 1;
+        if (top >= 0)
+        {
+            return free_stack[top];
+        }
     }
     const unsigned long long b = fetch_add(&counters->bump, 1ULL);
     return b < arena_chunks ? arena + b * S : nullptr;
@@ -268,9 +294,11 @@ __device__ void View<T, S>::park(T* lost) const noexcept
 }
 
 /// @brief Step 3 of 6.2: the lanes of @p group fill @p buf with @p c, coalesced, then make
-///        it visible device-wide before the publication.
+///        it visible device-wide before the publication: the warp barrier orders the
+///        group's stores before the leader's, and one device fence by the leader (cumulative)
+///        orders them all before its publication. One fence per materialisation, not per lane.
 template <typename T, int S>
-__device__ void View<T, S>::prefill(T* buf, T c, LaneMask group, int lane) const noexcept
+__device__ void View<T, S>::prefill(T* buf, T c, LaneMask group, int leader, int lane) const noexcept
 {
     const int rank  = popcount(group & ((LaneMask{1} << lane) - 1));
     const int width = popcount(group);
@@ -278,8 +306,21 @@ __device__ void View<T, S>::prefill(T* buf, T c, LaneMask group, int lane) const
     {
         buf[k] = c;
     }
-    fence_device();
     sync_lanes(group);
+    if (lane == leader)
+    {
+        fence_device();
+    }
+}
+
+/// @brief A buffer parked in this warp's spare slot, if any: a look before the exchange,
+///        which is a round trip on a slot that is empty on a first write. A stale empty
+///        look leaves the buffer for compress(); a stale full one finds nullptr.
+template <typename T, int S>
+__device__ T* View<T, S>::take_spare() const noexcept
+{
+    T** const slot = spare_slot();
+    return load_ptr(slot) != nullptr ? exchange_ptr(slot, static_cast<T*>(nullptr)) : nullptr;
 }
 
 /**
@@ -300,7 +341,7 @@ __device__ T* View<T, S>::race_group(ChunkDesc<T>& d, LaneMask group, int leader
         existing = load_ptr_acquire(&d.buf);
         if (existing == nullptr)
         {
-            mine = exchange_ptr(spare_slot(), static_cast<T*>(nullptr));
+            mine = take_spare();
             mine = mine != nullptr ? mine : take_buffer();
         }
     }
@@ -321,7 +362,7 @@ __device__ T* View<T, S>::race_group(ChunkDesc<T>& d, LaneMask group, int leader
         }
         return result;
     }
-    prefill(mine, d.constant, group, lane);
+    prefill(mine, d.constant, group, leader, lane);
     T* winner = nullptr;
     if (lane == leader)
     {
@@ -398,7 +439,7 @@ __device__ T* View<T, S>::materialise_claim(long nc, ChunkDesc<T>& d) const noex
             found = cas_ptr(&d.buf, static_cast<T*>(nullptr), busy);
             if (found == nullptr)
             {
-                mine = exchange_ptr(spare_slot(), static_cast<T*>(nullptr));
+                mine = take_spare();
                 mine = mine != nullptr ? mine : take_buffer();
                 if (mine == nullptr)
                 {
@@ -414,7 +455,7 @@ __device__ T* View<T, S>::materialise_claim(long nc, ChunkDesc<T>& d) const noex
     // Phase 2: the claims of the warp published.
     if (mine != nullptr)
     {
-        prefill(mine, d.constant, group, lane);
+        prefill(mine, d.constant, group, leader, lane);
         if (lane == leader)
         {
             exchange_ptr(&d.buf, mine); // after prefill()'s fence: a release store
@@ -489,7 +530,9 @@ __device__ void View<T, S>::assign(long i, T v) const noexcept
 {
     const long    nc  = i >> shift;
     ChunkDesc<T>& d   = desc[nc];
-    T*            buf = load_ptr_acquire(&d.buf);
+    T*            buf = write_load == WriteLoad::acquire   ? load_ptr_acquire(&d.buf)
+                        : write_load == WriteLoad::relaxed ? load_ptr_relaxed(&d.buf)
+                                                           : d.buf;
     if (buf == nullptr || buf == busy_mark<T>())
     {
         // While claimed, the constant still holds and the claimer pre-fills it.
@@ -571,7 +614,7 @@ __device__ void View<T, S>::block_write(long c, long lo, long hi, const F& f) co
     }
     if (t == 0)
     {
-        T* m  = exchange_ptr(spare_slot(), static_cast<T*>(nullptr));
+        T* m  = take_spare();
         s_buf = m != nullptr ? m : take_buffer();
     }
     __syncthreads();
@@ -595,10 +638,10 @@ __device__ void View<T, S>::block_write(long c, long lo, long hi, const F& f) co
     {
         mine[t + j * BLOCK] = vals[j];
     }
-    fence_device();
-    __syncthreads();
+    __syncthreads(); // the block's stores before thread 0's fence (cumulative)
     if (t == 0)
     {
+        fence_device();
         T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
         if (found == nullptr)
         {
@@ -706,6 +749,40 @@ __global__ void compress(View<T, S> v, long n_chunks)
     }
 }
 
+/// @brief The pass with one warp per chunk (grid-stride over the chunks): each lane reads
+///        S/32 elements, a warp vote decides, lane 0 folds back.
+template <typename T, int S>
+__global__ void compress_warp(View<T, S> v, long n_chunks)
+{
+    const int  lane  = lane_id();
+    const long warps = static_cast<long>(gridDim.x) * (blockDim.x / warp_size);
+    const long first = (blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x) / warp_size;
+    for (long c = first; c < n_chunks; c += warps)
+    {
+        ChunkDesc<T>& d   = v.desc[c];
+        T*            buf = d.buf;
+        if (buf == nullptr)
+        {
+            continue; // uniform per warp
+        }
+        const long valid   = (c + 1) * S <= v.n ? S : v.n - c * S;
+        const T    head    = buf[0];
+        bool       uniform = true;
+        for (long k = lane; k < valid; k += warp_size)
+        {
+            uniform = uniform && same_bits(buf[k], head);
+        }
+        uniform = ballot(active_lanes(), !uniform) == 0;
+        if (uniform && lane == 0)
+        {
+            d.constant          = head;
+            d.buf               = nullptr;
+            const long long top = fetch_add(&v.counters->free_top, 1LL);
+            v.free_stack[top]   = buf;
+        }
+    }
+}
+
 /// @brief Replay of a copy of the append-buffer (6.4), through the same write path: an
 ///        entry that finds the arena exhausted again goes back to the (emptied) append-buffer.
 template <typename T, int S>
@@ -799,6 +876,19 @@ class DeviceArray
         view_.coord = c;
     }
 
+    /// @brief How assign() reads `buf` (default: acquire).
+    void set_write_load(WriteLoad w) noexcept
+    {
+        view_.write_load = w;
+    }
+
+    /// @brief compress() with one warp per chunk instead of one block (default: per warp
+    ///        when S <= 256, where a 256-thread block per 2 KiB chunk is too fine).
+    void set_compress_per_warp(bool per_warp) noexcept
+    {
+        compress_per_warp_ = per_warp;
+    }
+
     /// @brief a(i) = f(i) for i in [lo, hi), by the chunk-aligned loop (kernels::for_each_chunk).
     template <int BLOCK = 256, typename F>
     void parallel_for_chunks(long lo, long hi, const F& f, unsigned grid = 4096)
@@ -842,9 +932,10 @@ class DeviceArray
     long               n_chunks_;
     View<T, S>         view_{};
     std::vector<T*>    arenas_;
-    unsigned long long total_buffers_ = 0;
-    unsigned long long replays_       = 0;
-    unsigned long long overflows_     = 0;
+    unsigned long long total_buffers_     = 0;
+    unsigned long long replays_           = 0;
+    unsigned long long overflows_         = 0;
+    bool               compress_per_warp_ = S <= 256;
 };
 
 template <typename T, int S>
@@ -854,6 +945,7 @@ DeviceArray<T, S>::DeviceArray(long n, unsigned long long arena_chunks, unsigned
     view_.n              = n;
     view_.coord          = Coordination::race;
     view_.claim_spin_max = 1U << 16; // ~4 ms of 64 ns pauses: far beyond one pre-fill
+    view_.write_load     = WriteLoad::acquire;
     SA_GPU(gpuMalloc(&view_.desc, sizeof(ChunkDesc<T>) * n_chunks_));
     SA_GPU(gpuMemset(view_.desc, 0, sizeof(ChunkDesc<T>) * n_chunks_)); // {nullptr, T{}} for arithmetic T
     view_.spare_slots = 1ULL << 16; // more than the warps resident on an H100 or an MI300A
@@ -937,7 +1029,13 @@ void DeviceArray<T, S>::compress()
     kernels::reclaim_lost_counters<<<1, 1>>>(view_.counters, view_.list_capacity);
     kernels::reclaim_spares<<<64, 256>>>(view_);
     constexpr int block = S < 256 ? S : 256;
-    if (n_chunks_ > 0)
+    if (n_chunks_ > 0 && compress_per_warp_)
+    {
+        const long warps_per_block = 256 / warp_size;
+        const long blocks          = (n_chunks_ + warps_per_block - 1) / warps_per_block;
+        kernels::compress_warp<<<static_cast<unsigned>(blocks < 65536 ? blocks : 65536), 256>>>(view_, n_chunks_);
+    }
+    else if (n_chunks_ > 0)
     {
         kernels::compress<<<static_cast<unsigned>(n_chunks_), block>>>(view_, n_chunks_);
     }

@@ -558,10 +558,41 @@ doubles, rapports au tableau plat (détails et bench dans [gpu/proto](../gpu/pro
 | première écriture, réservation / alignée (course) | 2,2× / 1,9× (5,5×) | 3,4× / 1,2× (25×) | -- |
 | réécriture de plages + `finalize()`, réservation / alignée (course) | 3,7× / 4,2× (4,4×) | 2,1× / 1,9× (4,1×) | -- |
 
-Les critères tiennent sur le portable. Ils sont à confirmer sur le GH200 et le MI300A avant
-l'étape 1 ; le prototype se compile en HIP avec `-DPROTO_HIP=ON`. Le prototype n'utilise ni
+Les critères tiennent sur le portable et sur le GH200 (ci-dessous) ; le MI300A est le suivant
+(le prototype se compile en HIP avec `-DPROTO_HIP=ON`, pas encore essayé). Le prototype n'utilise ni
 CUB ni hipCUB : `compress()` lance un bloc par chunk avec un vote `__syncthreads_and`, et les
 tampons retournent à la pile libre sans passe de compaction.
+
+**GH200 (H100, 132 SMs, HBM3 à 3,7 To/s mesurés), 8 Gio de doubles**, premier passage (le
+prototype de 91d7af328) :
+
+| | S = 256 | S = 1024 | critère |
+|---|---|---|---|
+| lecture, tous les chunks matérialisés | 1,04× | 1,04× | ≤ 1,5× : tenu |
+| écriture dans des chunks matérialisés (lecture acquire) | 1,46× | 1,75× | ≤ 2× : tenu, mais de peu |
+| `compress()`, tous les chunks se replient : 10 Go extrapolés depuis 8 Gio | 7,7 ms | 4,6 ms | ≤ 10 ms : tenu |
+| première écriture, course / réservation / alignée | 15,6× / 17,7× / 5,1× | 21,8× / 14,4× / 1,8× | -- |
+| réécriture de plages + `finalize()`, course / réservation / alignée | 7,5× / 6,9× / 6,1× | 5,4× / 3,4× / 2,7× | -- |
+
+Ce que la grosse carte montre, et que le portable cachait derrière ses 170 Go/s :
+
+- **Le chemin d'écriture est limité par la latence.** Une lecture acquire du descripteur à
+  chaque écriture est aussi une barrière, pour le compilateur comme pour la mémoire. Chaque
+  écriture attend donc seule sa lecture (environ 1 µs depuis la HBM), et les écritures d'un warp
+  ne se chevauchent pas. Le chemin aligné, qui lit le descripteur une fois par bloc, coûte
+  1,16× à S = 1024. Le prototype mesure maintenant une lecture relaxed et une lecture simple
+  (`WriteLoad`), ordonnées par la dépendance d'adresse du store.
+- **Une matérialisation est une chaîne d'allers-retours** : CAS de réservation, atomiques de la
+  pile libre et du bump sur deux compteurs globaux, pré-remplissage, barrière device,
+  publication. Elle est payée à chaque pas du grid-stride, si bien que la réservation ne fait
+  pas mieux que la course à S = 256. Chaîne raccourcie depuis : un coup d'œil à la pile libre et
+  à l'emplacement de réserve avant leurs atomiques (tous deux vides lors d'une première
+  écriture), et une seule barrière device, par le leader, au lieu d'une par lane.
+- **`compress()` avec un bloc par chunk de 2 Kio est trop fin** (38 % de la bande passante en
+  flux à S = 256) : un warp par chunk est maintenant le défaut pour S ≤ 256 (portable : 74 % →
+  98 %).
+- **S = 1024 est la géométrie GPU** : égale ou meilleure sur toutes les lignes sauf deux (la
+  première écriture en course, et `assign()` dans des chunks matérialisés).
 
 ## 14. Risques et questions ouvertes
 

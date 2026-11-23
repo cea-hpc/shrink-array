@@ -147,12 +147,21 @@ void random_rounds(unsigned           seed,
                    unsigned long long arena_chunks,
                    unsigned long long append_capacity,
                    const char*        label,
-                   sa::Coordination   coord = sa::Coordination::race)
+                   sa::Coordination   coord     = sa::Coordination::race,
+                   sa::WriteLoad      load      = sa::WriteLoad::acquire,
+                   bool               flip_pass = false)
 {
-    std::printf("[%s, %s] S=%d n=%ld arena=%llu chunks append=%llu\n", label,
-                coord == sa::Coordination::claim ? "claim" : "race", S, n, arena_chunks, append_capacity);
+    const char* load_name[] = {"acquire", "relaxed", "plain"};
+    std::printf("[%s, %s, %s load%s] S=%d n=%ld arena=%llu chunks append=%llu\n", label,
+                coord == sa::Coordination::claim ? "claim" : "race", load_name[static_cast<int>(load)],
+                flip_pass ? ", other compress()" : "", S, n, arena_chunks, append_capacity);
     sa::DeviceArray<double, S> a(n, arena_chunks, append_capacity);
     a.set_coordination(coord);
+    a.set_write_load(load);
+    if (flip_pass)
+    {
+        a.set_compress_per_warp(S > 256);
+    }
     std::vector<double> mirror(static_cast<std::size_t>(n), 0.0);
     std::mt19937_64     rng(seed);
     const double        palette[] = {0.0, -0.0, 1.5, 2.5};
@@ -351,6 +360,12 @@ int main(int argc, char** argv)
         random_rounds<256>(seed + 4, 1L << 20, 1L << 12, 1L << 16, "exact arena", sa::Coordination::claim);
         random_rounds<1024>(seed + 5, 1L << 20, 1L << 10, 1L << 16, "exact arena", sa::Coordination::claim);
         random_rounds<256>(seed + 6, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk", sa::Coordination::claim);
+        random_rounds<256>(seed + 10, 1L << 20, 1L << 12, 1L << 16, "exact arena", sa::Coordination::claim,
+                           sa::WriteLoad::plain);
+        random_rounds<1024>(seed + 11, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk",
+                            sa::Coordination::claim, sa::WriteLoad::relaxed, true);
+        random_rounds<256>(seed + 12, 1L << 20, 2L << 12, 1L << 16, "roomy arena", sa::Coordination::race,
+                           sa::WriteLoad::plain, true);
         chunk_rounds<256>(seed + 7, 1L << 20, 1L << 12, 1L << 16, "exact arena");
         chunk_rounds<1024>(seed + 8, (1L << 20) + 300, (1L << 10) + 1, 1L << 16, "exact arena, tail chunk");
         chunk_rounds<256>(seed + 9, 1L << 18, 16, 1L << 18, "small arena");

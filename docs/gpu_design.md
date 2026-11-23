@@ -540,10 +540,38 @@ against a flat array (details and the bench in [gpu/proto](../gpu/proto/README.m
 | first write, claim / chunk-aligned (race) | 2.2x / 1.9x (5.5x) | 3.4x / 1.2x (25x) | -- |
 | range rewrites + `finalize()`, claim / chunk-aligned (race) | 3.7x / 4.2x (4.4x) | 2.1x / 1.9x (4.1x) | -- |
 
-The criteria hold on the laptop; they are to be confirmed on the GH200 and the MI300A (the
-prototype builds with HIP, `-DPROTO_HIP=ON`) before stage 1. The prototype uses neither
+The criteria hold on the laptop and on the GH200 (below); the MI300A is next (the prototype
+builds with HIP, `-DPROTO_HIP=ON`, not tried yet). The prototype uses neither
 CUB nor hipCUB: `compress()` is one block per chunk with a `__syncthreads_and` vote, and the
 buffers go back to the free stack with no compaction pass.
+
+**GH200 (H100, 132 SMs, HBM3 at 3.7 TB/s measured), 8 GiB of doubles**, first run (the
+prototype at 91d7af328):
+
+| | S = 256 | S = 1024 | criterion |
+|---|---|---|---|
+| read, every chunk materialised | 1.04x | 1.04x | <= 1.5x: met |
+| write into materialised chunks (acquire load) | 1.46x | 1.75x | <= 2x: met, but close |
+| `compress()`, every chunk folds back: 10 GB extrapolated from 8 GiB | 7.7 ms | 4.6 ms | <= 10 ms: met |
+| first write, race / claim / chunk-aligned | 15.6x / 17.7x / 5.1x | 21.8x / 14.4x / 1.8x | -- |
+| range rewrites + `finalize()`, race / claim / chunk-aligned | 7.5x / 6.9x / 6.1x | 5.4x / 3.4x / 2.7x | -- |
+
+What the large GPU shows, and the laptop hid behind its 170 GB/s:
+
+- **The write path is latency-bound.** An acquire load of the descriptor per write is also
+  a compiler and memory barrier, so each write waits alone for its load (~1 us from HBM): the
+  writes of a warp do not overlap. The chunk-aligned path, one descriptor load per block,
+  costs 1.16x at S = 1024. The prototype now measures a relaxed load and a plain load
+  (`WriteLoad`), ordered by the store's address dependency.
+- **A materialisation is a chain of round trips** (claim CAS, free-stack and bump atomics on
+  two global counters, pre-fill, device fence, publication), paid once per grid-stride step:
+  claim is no better than race at S = 256. Shortened since: a look at the free stack and
+  at the spare slot before their atomics (both empty on a first write), one device fence by
+  the leader instead of one per lane.
+- **`compress()` by one block per 2 KiB chunk is too fine** (38% of the stream bandwidth at
+  S = 256): one warp per chunk is now the default at S <= 256 (laptop: 74% -> 98%).
+- **S = 1024 is the GPU geometry**: equal or better on every line but two (the race's first
+  write, and `assign()` into materialised chunks).
 
 ## 14. Risks and open questions
 

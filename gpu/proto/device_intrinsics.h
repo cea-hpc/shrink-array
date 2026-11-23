@@ -143,6 +143,29 @@ __device__ inline P* load_ptr(P* const* slot) noexcept
     return *reinterpret_cast<P* const volatile*>(slot);
 }
 
+/// @brief Relaxed device-scope atomic load of a pointer slot, with no compiler barrier: the
+///        loads of successive writes can be in flight together (the write path's read of
+///        `buf` when ordered by its address dependency, see View::assign).
+template <typename P>
+__device__ inline P* load_ptr_relaxed(P* const* slot) noexcept
+{
+#if defined(__HIP_PLATFORM_AMD__)
+    return __hip_atomic_load(const_cast<P**>(slot), __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+    unsigned long long bits;
+    asm volatile("ld.relaxed.gpu.global.u64 %0, [%1];" : "=l"(bits) : "l"(slot));
+    return reinterpret_cast<P*>(bits);
+#else
+    return load_ptr(slot);
+#endif
+}
+
+/// @brief Relaxed load of a signed 64-bit counter (a look before an atomic on it).
+__device__ inline long long load_relaxed(const long long* counter) noexcept
+{
+    return *reinterpret_cast<const volatile long long*>(counter);
+}
+
 /// @brief Device-scope acquire load of a pointer slot: a buffer published by the release
 ///        CAS of 6.2 is seen with its whole pre-fill (the write path's read of `buf`).
 template <typename P>
