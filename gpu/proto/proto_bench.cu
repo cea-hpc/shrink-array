@@ -61,7 +61,7 @@ struct Flat
 };
 
 template <typename A>
-__global__ void read_sum(A a, long n, double* out)
+__global__ void __launch_bounds__(256, SA_THREADS_PER_SM / 256) read_sum(A a, long n, double* out)
 {
     double s = 0;
     for (long i = blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x; i < n;
@@ -80,7 +80,7 @@ __global__ void read_sum(A a, long n, double* out)
 }
 
 template <typename A>
-__global__ void write_ramp(A a, long n, double base)
+__global__ void __launch_bounds__(256, SA_THREADS_PER_SM / 256) write_ramp(A a, long n, double base)
 {
     for (long i = blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x; i < n;
          i += static_cast<long>(gridDim.x) * blockDim.x)
@@ -93,7 +93,8 @@ __global__ void write_ramp(A a, long n, double base)
 ///        write path is bound by one descriptor load in flight per warp (the store into a
 ///        buffer may alias the descriptors, so a compiler cannot hoist the next load above it).
 template <int S>
-__global__ void write_ramp_ahead(sa::View<double, S> a, long n, double base)
+__global__ void __launch_bounds__(256, SA_THREADS_PER_SM / 256)
+    write_ramp_ahead(sa::View<double, S> a, long n, double base)
 {
     constexpr int U      = 4;
     const long    stride = static_cast<long>(gridDim.x) * blockDim.x;
@@ -127,7 +128,7 @@ __global__ void write_ramp_ahead(sa::View<double, S> a, long n, double base)
 }
 
 template <typename A>
-__global__ void write_value(A a, long n, double v)
+__global__ void __launch_bounds__(256, SA_THREADS_PER_SM / 256) write_value(A a, long n, double v)
 {
     for (long i = blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x; i < n;
          i += static_cast<long>(gridDim.x) * blockDim.x)
@@ -145,7 +146,7 @@ struct Range
 };
 
 template <typename A>
-__global__ void write_ranges(A a, const Range* ranges, long n_ranges)
+__global__ void __launch_bounds__(256, SA_THREADS_PER_SM / 256) write_ranges(A a, const Range* ranges, long n_ranges)
 {
     for (long r = blockIdx.x; r < n_ranges; r += gridDim.x)
     {
@@ -184,7 +185,8 @@ struct RangeValue
 /// @brief write_ranges by the chunk-aligned path: each block takes a range and goes over
 ///        its chunks with block_write (two ranges may share a chunk).
 template <int BLOCK, int S>
-__global__ void __launch_bounds__(BLOCK) write_ranges_chunked(sa::View<double, S> a, const Range* ranges, long n_ranges)
+__global__ void __launch_bounds__(BLOCK, SA_THREADS_PER_SM / BLOCK)
+    write_ranges_chunked(sa::View<double, S> a, const Range* ranges, long n_ranges)
 {
     for (long r = blockIdx.x; r < n_ranges; r += gridDim.x)
     {
@@ -470,8 +472,8 @@ int main(int argc, char** argv)
     cudaDeviceProp p{};
     SA_GPU(cudaGetDeviceProperties(&p, 0));
 #endif
-    std::printf("proto_bench on %s (%d SMs, %.1f GB), %d reps, median times; %d shards, home run %ld\n", p.name,
-                p.multiProcessorCount, static_cast<double>(p.totalGlobalMem) / 1e9, reps, sa::n_shards, sa::home_run);
+    std::printf("proto_bench on %s (%d SMs, %.1f GB), %d reps, median times; %d shards\n", p.name,
+                p.multiProcessorCount, static_cast<double>(p.totalGlobalMem) / 1e9, reps, sa::n_shards);
     try
     {
         bench<256>(n, reps);

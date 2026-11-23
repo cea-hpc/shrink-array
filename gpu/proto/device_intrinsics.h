@@ -34,6 +34,17 @@ inline constexpr int warp_size = 32;
 using LaneMask                 = std::uint32_t;
 #endif
 
+/// @brief Resident threads per SM (CU): the write kernels declare
+///        __launch_bounds__(block, SA_THREADS_PER_SM / block), so that the compiler keeps
+///        them at full occupancy (32 registers on an H100) and spills in the cold
+///        materialisation path instead (inlined, that path took the fast path from 32 to 38
+///        registers, 64 -> 48 resident warps: GH200 writes 1.48x -> 1.85x).
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ == 860 || __CUDA_ARCH__ == 870 || __CUDA_ARCH__ == 890)
+    #define SA_THREADS_PER_SM 1536
+#else
+    #define SA_THREADS_PER_SM 2048
+#endif
+
 /// @brief This thread's lane in its warp.
 __device__ inline int lane_id() noexcept
 {

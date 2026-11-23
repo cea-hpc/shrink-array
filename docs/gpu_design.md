@@ -602,11 +602,15 @@ What the large GPU shows, and the laptop hid behind its 170 GB/s:
   explanation holds, and the facade's loop will batch its descriptor loads.
 - The shards helped where the counters were contended (folds at S = 256: 36% -> 62%; claim
   range rewrites), but writes into materialised chunks (1.48x -> 1.85x), the chunk-aligned
-  paths and the folds at S = 1024 (83% -> 67%) got slower. Likely cause, not measured yet:
-  with a home shard per chunk, neighbouring chunks get buffers in different regions of the
-  arena and a sweep scatters its accesses. The home shard is now taken per run of
-  `home_run` consecutive chunks (`-DPROTO_HOME_RUN`, default 64), to be measured at 1, 64 and
-  1024.
+  paths and the folds at S = 1024 (83% -> 67%) got slower. Not the buffers' placement: a home
+  shard per run of 1, 64 or 1024 chunks measured the same (and runs of 64 concentrated the
+  allocations on one 16-buffer shard: 9x more lost CAS, a roomy arena exhausted; dropped).
+  **Registers**: the slow path, inlined into `assign()`, took the write kernel from 32 to 38
+  registers, 64 -> 48 resident warps per SM, a quarter fewer descriptor loads in flight for a
+  latency-bound path: 64/48 = 1.33, the ratio measured. Out of line (`__noinline__`) is worse
+  (46 registers, the call convention); the write kernels now declare
+  `__launch_bounds__(block, SA_THREADS_PER_SM / block)`, which keeps them at 32 registers and
+  spills in the cold path. The facade's kernels will do the same.
 - The first write by `assign()` stays at 15x to 22x: its cost is the latency chain of a
   materialisation more than the counters; the chunk-aligned path stays the facade's answer.
 

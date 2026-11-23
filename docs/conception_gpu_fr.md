@@ -627,11 +627,18 @@ Ce que la grosse carte montre, et que le portable cachait derrière ses 170 Go/s
   seule lecture en vol tient, et la boucle de la façade lira ses descripteurs par lots.
 - Les shards ont aidé là où les compteurs étaient disputés (replis à S = 256 : 36 % → 62 % ;
   réécritures de plages en réservation). En revanche, l'écriture dans des chunks matérialisés
-  (1,48× → 1,85×), les chemins alignés et les replis à S = 1024 (83 % → 67 %) ont ralenti.
-  Cause probable, pas encore mesurée : avec un shard d'origine par chunk, des chunks voisins
-  reçoivent leurs tampons dans des régions différentes de l'arène, et un parcours éparpille
-  ses accès. Le shard d'origine est maintenant pris par série de `home_run` chunks consécutifs
-  (`-DPROTO_HOME_RUN`, 64 par défaut), à mesurer à 1, 64 et 1024.
+  (1,48× → 1,85×), les chemins alignés et les replis à S = 1024 (83 % → 67 %) ont ralenti. Ce
+  n'est pas la place des tampons : un shard d'origine par série de 1, 64 ou 1024 chunks a donné
+  les mêmes mesures. Les séries de 64 concentraient de plus les allocations sur un shard de
+  16 tampons : 9 fois plus de CAS perdus, et une arène pourtant large épuisée. Option
+  abandonnée. **Les registres** : le chemin lent, compilé en ligne dans `assign()`, faisait
+  passer le kernel d'écriture de 32 à 38 registres, donc de 64 à 48 warps résidents par SM.
+  Cela fait un quart de lectures de descripteur en vol en moins pour un chemin limité par la
+  latence : 64/48 = 1,33, le rapport mesuré. Sortir le chemin lent (`__noinline__`) est pire
+  (46 registres, à cause de la convention d'appel). Les kernels d'écriture déclarent
+  maintenant `__launch_bounds__(bloc, SA_THREADS_PER_SM / bloc)`, ce qui les garde à
+  32 registres et fait déborder le chemin froid en mémoire. Les kernels de la façade feront de
+  même.
 - La première écriture via `assign()` reste entre 15× et 22× : son coût est la chaîne de
   latence d'une matérialisation plus que les compteurs ; le chemin aligné reste la réponse de
   la façade.

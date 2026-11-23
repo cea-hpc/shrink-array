@@ -16,7 +16,6 @@ project(shrink_array_gpu_proto LANGUAGES CXX)
 
 option(PROTO_HIP "Build for AMD with HIP instead of CUDA" OFF)
 set(PROTO_SHARDS 128 CACHE STRING "Shards per arena (zero_any_device.h, n_shards)")
-set(PROTO_HOME_RUN 64 CACHE STRING "Consecutive chunks per home shard (zero_any_device.h, home_run)")
 
 if (PROTO_HIP)
   enable_language(HIP)
@@ -36,7 +35,7 @@ foreach (prog proto_test proto_bench)
   set_source_files_properties(${prog}.cu PROPERTIES LANGUAGE ${PROTO_LANG})
   set_target_properties(${prog} PROPERTIES ${PROTO_LANG}_STANDARD 20 ${PROTO_LANG}_STANDARD_REQUIRED ON)
   target_include_directories(${prog} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_definitions(${prog} PRIVATE PROTO_SHARDS=${PROTO_SHARDS} PROTO_HOME_RUN=${PROTO_HOME_RUN})
+  target_compile_definitions(${prog} PRIVATE PROTO_SHARDS=${PROTO_SHARDS})
   # Device code optimised whatever the compiler: clang does not optimise it by default.
   target_compile_options(${prog} PRIVATE $<$<COMPILE_LANGUAGE:${PROTO_LANG}>:-O3>)
   if (NOT PROTO_HIP)
