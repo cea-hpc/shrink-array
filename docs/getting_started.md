@@ -75,7 +75,7 @@ library's tool, which the executable carries; a runtime that does not (Ubuntu 24
 cmake_minimum_required(VERSION 3.20)
 project(my_app LANGUAGES CXX)
 
-find_package(shrink_array 0.3 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(shrink_array 0.4 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE shrink_array::zero_any)

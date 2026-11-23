@@ -15,7 +15,7 @@
 #
 #     FetchContent_Declare(shrink_array
 #         GIT_REPOSITORY https://github.com/cea-hpc/shrink-array.git
-#         GIT_TAG        v0.3.0)
+#         GIT_TAG        v0.4.0)
 #
 # It also checks what a consumer is owed: its own build type, flags and
 # targets are left alone (a `doc` target of its own, no test of the library
