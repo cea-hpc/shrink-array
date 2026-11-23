@@ -9,5 +9,7 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    # develop, where every change lands first (main only takes the release merges).
+    target-branch: "develop"
     commit-message:
       prefix: "ci"
