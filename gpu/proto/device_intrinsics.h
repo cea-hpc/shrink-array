@@ -17,7 +17,10 @@
 
 #include <cstdint>
 
-#if defined(__HIP_PLATFORM_AMD__)
+// SA_HIP: an AMD build. __HIP__ is what clang defines for -x hip (CMake's HIP language);
+// __HIP_PLATFORM_AMD__ is what hipcc and the HIP headers define.
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIP__)
+    #define SA_HIP 1
     #include <hip/hip_runtime.h>
 #else
     #include <cuda_runtime.h>
@@ -26,7 +29,7 @@
 namespace shrink_array::device
 {
 
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
 inline constexpr int warp_size = 64;
 using LaneMask                 = std::uint64_t;
 #else
@@ -43,7 +46,7 @@ __device__ inline int lane_id() noexcept
 /// @brief The lanes of the warp that execute this call.
 __device__ inline LaneMask active_lanes() noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     return __ballot(1);
 #else
     return __activemask();
@@ -53,7 +56,7 @@ __device__ inline LaneMask active_lanes() noexcept
 /// @brief The lanes of @p mask for which @p pred holds. Every lane of @p mask calls it.
 __device__ inline LaneMask ballot(LaneMask mask, bool pred) noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     return __ballot(pred) & mask;
 #else
     return __ballot_sync(mask, pred);
@@ -64,7 +67,7 @@ __device__ inline LaneMask ballot(LaneMask mask, bool pred) noexcept
 template <typename V>
 __device__ inline V shuffle(LaneMask mask, V value, int src) noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     (void)mask;
     return __shfl(value, src);
 #else
@@ -83,7 +86,7 @@ __device__ inline P* shuffle_ptr(LaneMask mask, P* ptr, int src) noexcept
 /// @brief Lowest lane of a non-empty @p mask.
 __device__ inline int first_lane(LaneMask mask) noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     return __ffsll(static_cast<unsigned long long>(mask)) - 1;
 #else
     return __ffs(static_cast<int>(mask)) - 1;
@@ -93,7 +96,7 @@ __device__ inline int first_lane(LaneMask mask) noexcept
 /// @brief Number of lanes in @p mask.
 __device__ inline int popcount(LaneMask mask) noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     return __popcll(static_cast<unsigned long long>(mask));
 #else
     return __popc(mask);
@@ -103,7 +106,7 @@ __device__ inline int popcount(LaneMask mask) noexcept
 /// @brief Wait for the lanes of @p mask (their earlier stores visible to each other).
 __device__ inline void sync_lanes(LaneMask mask) noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     (void)mask;
     __builtin_amdgcn_wave_barrier();
     __builtin_amdgcn_fence(__ATOMIC_ACQ_REL, "wavefront");
@@ -143,7 +146,7 @@ __device__ inline P* exchange_ptr(P** slot, P* desired) noexcept
 template <typename P>
 __device__ inline P* cas_ptr_release(P** slot, P* expected, P* desired) noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     __hip_atomic_compare_exchange_strong(slot, &expected, desired, __ATOMIC_RELEASE, __ATOMIC_RELAXED,
                                          __HIP_MEMORY_SCOPE_AGENT);
     return expected;
@@ -165,7 +168,7 @@ __device__ inline P* cas_ptr_release(P** slot, P* expected, P* desired) noexcept
 template <typename P>
 __device__ inline P* exchange_ptr_release(P** slot, P* desired) noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     return __hip_atomic_exchange(slot, desired, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_AGENT);
 #elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
     unsigned long long old;
@@ -193,7 +196,7 @@ __device__ inline P* load_ptr(P* const* slot) noexcept
 template <typename P>
 __device__ inline P* load_ptr_relaxed(P* const* slot) noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     return __hip_atomic_load(const_cast<P**>(slot), __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
 #elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
     unsigned long long bits;
@@ -215,7 +218,7 @@ __device__ inline long long load_relaxed(const long long* counter) noexcept
 template <typename P>
 __device__ inline P* load_ptr_acquire(P* const* slot) noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     return __hip_atomic_load(const_cast<P**>(slot), __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_AGENT);
 #elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
     unsigned long long bits;
@@ -232,7 +235,7 @@ __device__ inline P* load_ptr_acquire(P* const* slot) noexcept
 ///        being waited for run instead of hammering its descriptor.
 __device__ inline void backoff() noexcept
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     __builtin_amdgcn_s_sleep(2);
 #elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
     __nanosleep(64);

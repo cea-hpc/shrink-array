@@ -133,6 +133,26 @@ What the large GPU shows, and the laptop hid behind its 170 GB/s:
   The earlier leader-fence attempt was measured together with the free-stack look and
   reverted with it, so this is its first measurement alone.
 
+**Publication, same session** (8 GiB): one release CAS instead of a fence per lane gives the
+chunk-aligned first write 4.95x -> 4.59x (S = 256) and 2.32x -> 2.17x (S = 1024), its range
+rewrites 4.51x -> 4.28x and 2.40x -> 2.35x; neutral on `assign()` (race and claim within
+2%). Kept as the default.
+
+**Stage 0 on NVIDIA: done.** The three criteria hold on the GH200 (read 1.04x, write into a
+materialised chunk under 2x, `compress()` of 10 GB in 4.4 to 4.8 ms). The conclusions that
+carry into stage 1:
+
+- S = 1024 is the GPU geometry.
+- The facade's loops take the chunk-aligned path (first write 2.2x, range rewrites with
+  `finalize()` 2.4x at S = 1024) and batch their descriptor loads (1.2x for writes into
+  materialised chunks).
+- `assign()` in arbitrary kernels uses the claim, with a warp-uniform grouping, and is a
+  correct fallback (first write 14x, range rewrites 2.7x at S = 1024), not a fast path.
+- Arena counters sharded per arena (folds at S = 256: 36% -> 62%); `compress()` one warp
+  per chunk.
+
+Left for stage 0: the MI300A (HIP build, wavefronts of 64, the bounded wait on divergent paths).
+
 ## What the prototype changed in the design
 
 - **A chunk spans S/32 warps** (S/64 wavefronts): warp aggregation (6.2) gives one

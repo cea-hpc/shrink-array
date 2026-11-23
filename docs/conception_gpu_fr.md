@@ -663,6 +663,28 @@ Ce que la grosse carte montre, et que le portable cachait derrière ses 170 Go/s
   lane, pour comparer). L'essai précédent, avec une barrière par le leader, avait été mesuré
   avec le coup d'œil à la pile libre et annulé avec lui : c'est sa première mesure seule.
 
+**Publication, même session** (8 Gio) : un seul CAS release au lieu d'une barrière par lane
+fait passer la première écriture alignée de 4,95× à 4,59× (S = 256) et de 2,32× à 2,17×
+(S = 1024), et ses réécritures de plages de 4,51× à 4,28× et de 2,40× à 2,35×. C'est neutre sur
+`assign()` (course et réservation à 2 % près). Gardé par défaut.
+
+**Étape 0 côté NVIDIA : terminée.** Les trois critères tiennent sur le GH200 (lecture à
+1,04×, écriture dans un chunk matérialisé sous 2×, `compress()` de 10 Go en 4,4 à 4,8 ms). Les
+conclusions qui passent à l'étape 1 :
+
+- S = 1024 est la géométrie GPU.
+- Les boucles de la façade prennent le chemin aligné (première écriture à 2,2×, réécritures de
+  plages avec `finalize()` à 2,4× à S = 1024) et lisent leurs descripteurs par lots (1,2× pour
+  l'écriture dans des chunks matérialisés).
+- `assign()` dans les kernels quelconques utilise la réservation, avec un regroupement
+  uniforme sur le warp. C'est un repli correct (première écriture à 14×, réécritures de plages
+  à 2,7× à S = 1024), pas un chemin rapide.
+- Compteurs d'arène partitionnés par arène (replis à S = 256 : 36 % → 62 %) ; `compress()`
+  avec un warp par chunk.
+
+Reste pour l'étape 0 : le MI300A (compilation HIP, wavefronts de 64, attente bornée sur des
+branches divergentes).
+
 ## 14. Risques et questions ouvertes
 
 - **La lecture à plus de 1,5×** : si la latence de l'indirection n'est pas masquée sur un

@@ -28,7 +28,7 @@ namespace sa = shrink_array::device;
 namespace
 {
 
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
 using GpuEvent = hipEvent_t;
     #define gpuEventCreate hipEventCreate
     #define gpuEventRecord hipEventRecord
@@ -261,7 +261,7 @@ constexpr unsigned block = 256;
 template <typename K>
 void kernel_info(const char* what, K kernel, int threads)
 {
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     hipFuncAttributes attr{};
     SA_GPU(hipFuncGetAttributes(&attr, reinterpret_cast<const void*>(kernel)));
     int blocks = 0;
@@ -494,7 +494,7 @@ int main(int argc, char** argv)
     const int  log2n = argc > 1 ? std::atoi(argv[1]) : 27;
     const int  reps  = argc > 2 ? std::atoi(argv[2]) : 10;
     const long n     = 1L << log2n;
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     hipDeviceProp_t p{};
     SA_GPU(hipGetDeviceProperties(&p, 0));
 #else

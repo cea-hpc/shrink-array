@@ -45,7 +45,7 @@
 namespace shrink_array::device
 {
 
-#if defined(__HIP_PLATFORM_AMD__)
+#if defined(SA_HIP)
     #define SA_GPU(call) ::shrink_array::device::sa_check((call), #call, __FILE__, __LINE__)
 inline void sa_check(hipError_t e, const char* what, const char* file, int line)
 {
