@@ -427,12 +427,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     [[nodiscard]] int written_chunk_count() const;
 
-    /// @brief Former name of written_chunk_count().
-    [[deprecated("renamed written_chunk_count()")]] [[nodiscard]] int get_nb_chunk_written() const
-    {
-        return written_chunk_count();
-    }
-
     /**
      * @brief Calculate the filling rate of written chunks.
      * @return Percentage of modified chunks.

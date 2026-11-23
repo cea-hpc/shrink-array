@@ -57,7 +57,7 @@ the tag's checksum to the recipe.
 ### Changed
 
 - `ParamChunk::set_decalage_chunk()` is `set_chunk_shift()` (a no-op kept for old call sites, as
-  before); the former name stays, deprecated. Internally ChunkSizePolicy's decalage() is
+  before); the former name is not kept (see Removed). Internally ChunkSizePolicy's decalage() is
   `shift()`, and `print_info_chunk()` prints "chunk shift" instead of "decalage chunk".
 - `shrink_gui` 0.18, "cette machine": the launcher defaults to
   `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` where `systemd-run --user`
@@ -76,7 +76,7 @@ the tag's checksum to the recipe.
   (all internal). The developer settings follow: `CHUNK_SECOND_VALUE_ID_LIMIT`,
   `CHUNK_SECOND_VALUE_RECLAIM`, and the compile-time `CHUNK_SECOND_VALUE_REGION_BYTES`,
   `CHUNK_SECOND_VALUE_MAX_IDS`, `CHUNK_SECOND_VALUE_LOOKUP_LOG2`; their `CHUNK_CONST_VAL2_*` /
-  `CHUNK_CONST2_RECLAIM` names are still read until 1.0. The harnesses
+  `CHUNK_CONST2_RECLAIM` names are no longer read (see Removed). The harnesses
   `const2_registry_validation` and `const2_reclaim_validation` are
   `second_value_registry_validation` and `second_value_reclaim_validation`, the
   `rechunk_validation` cases `val2-*` are `second-value-*`.
@@ -88,6 +88,36 @@ the tag's checksum to the recipe.
 - `CHUNK_CST_VAL2_ID_LIMIT` and `CHUNK_CST2_RECLAIM`, the names these two settings had before
   0.3.0, as 0.3.0 announced: `CHUNK_SECOND_VALUE_ID_LIMIT` and `CHUNK_SECOND_VALUE_RECLAIM`
   above.
+- **Every compatibility path for a former name** (breaking: the next release is 0.4.0). The
+  names deprecated in 0.3.0 and those kept "until 1.0" since 0.1.3 / 0.2.0 are gone; a former
+  name no longer compiles, configures or is read:
+  - the headers `chunk/manage_ompt.h`, `chunk/param_chunk.h`, `chunk/array_chunk_bits.h`,
+    `chunk/array_chunk_range_ops.h`, `chunk/zero_one_value_array.h` (include `chunk/phases.h`,
+    `chunk/runtime.h`, `chunk/bit_array.h`, `chunk/range_ops.h`, `chunk/zero_or_value_array.h`);
+  - the `[[deprecated]]` names `ParamChunk`, `Runtime::init_indexes()` (both forms),
+    `Runtime::set_decalage_chunk()`, `destroy_block_chunk()`, `ArrayChunkBits`,
+    `build_config::has_not_ompt`, `chunk_config::use_zero_one_value`, the namespace
+    `zero_one_value`, `get_second_value()`, `get_nb_chunk_written()` (use `Runtime`,
+    `Runtime::init()`, `set_chunk_shift()`, `Runtime::shutdown()`, `BitArray`,
+    `build_config::needs_explicit_phases`, `chunk_config::use_zero_or_value`, `zero_or_value`,
+    `second_value()`, `written_chunk_count()`), and the macro `CHUNK_VARIANT_ZERO_ONE_VALUE`
+    (`CHUNK_VARIANT_ZERO_OR_VALUE`); `docs/api.md` keeps the table of the 0.3 renames;
+  - the CMake option names without `CHUNK_` (`OMP`, `SANITIZER`, `CHECK_OPTIM`, `USE_LIBCXX`,
+    ...: 0.3.0 lists them), no longer read at the top level; the `CHUNK_VARIANTS` spelling
+    `zero_one_value`, now refused with the new name as `chunk`, `chunk2`, `chunk2a` are; the
+    targets `chunk::chunk_zero_one_value*`, `chunk_zero_one_value*` and
+    `shrink_array::zero_one_value*` (link `shrink_array::zero_or_value*`);
+  - the compile-time `CHUNK_CONST_VAL2_REGION_BYTES`, `CHUNK_CONST_VAL2_MAX_IDS`,
+    `CHUNK_CONST_VAL2_INDEX_LOG2` and the variables `CHUNK_CONST_VAL2_ID_LIMIT`,
+    `CHUNK_CONST2_RECLAIM` (the `CHUNK_SECOND_VALUE_*` names above);
+  - the switches of before `CHUNK_LOG`: `FAST_ALLOC_TRACE`, `CHUNK_ARENA_REPORT`,
+    `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS`, `CHUNK_CST2_PROBE` (`CHUNK_LOG=alloc=trace`,
+    `arena=info`, `ledger=info`, `ompt=info`, `compress=info`). fast_allocators is 2.5.0
+    (`CHUNK_FAST_ALLOCATORS_VERSION` follows);
+  - in the scripts, `CHUNK_BUILD_REP` (`CHUNK_BUILD_ROOT`) and `python/omp_speedup.py`
+    (`python/thread_speedup.py`). The data recorded under old names (variant labels in perf
+    databases and summaries, `shrink_gui` runs of `omp_speedup.py`) are still read.
+  `find_package(chunk)` stays, deprecated: `find_package(shrink_array)` loads it.
 
 ### Fixed
 

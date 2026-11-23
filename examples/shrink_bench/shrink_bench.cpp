@@ -892,7 +892,7 @@ try
     // index type). Static builds too, unlike the advisor. 0 or unset: never.
     const Int second_value_reclaim_period = []() -> Int
     {
-        const char* const name = shrink_array::env_name_or_former("CHUNK_SECOND_VALUE_RECLAIM", "CHUNK_CONST2_RECLAIM");
+        const char* const name = "CHUNK_SECOND_VALUE_RECLAIM";
         if (const char* env = std::getenv(name); env != nullptr && *env != '\0')
         {
             if (Int value = 0; parse_number(env, value))

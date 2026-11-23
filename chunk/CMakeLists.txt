@@ -48,7 +48,7 @@ message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${
 # a variant left out are not built nor registered as tests. A build that checks
 # one variant's option (CHUNK_SECOND_VALUE_INDEXED is zero_any's) needs only that
 # one; trim it during development too. The former names chunk, chunk2, chunk2a
-# are refused, with the new name in the message.
+# and zero_one_value are refused, with the new name in the message.
 set(CHUNK_VARIANTS "zero;zero_or_value;zero_any" CACHE STRING
     "Semicolon list of the variants to build: zero, zero_or_value, zero_any.")
 set(_chunk_variants_read "")
@@ -60,8 +60,7 @@ foreach(_v IN LISTS CHUNK_VARIANTS)
     message(FATAL_ERROR "CHUNK_VARIANTS: '${_v}' is the former name of '${_new}': write '${_new}'")
   endif()
   if (_v STREQUAL "zero_one_value")
-    message(DEPRECATION "CHUNK_VARIANTS: 'zero_one_value' is 'zero_or_value' now (the former name goes at the next minor version)")
-    set(_v zero_or_value)
+    message(FATAL_ERROR "CHUNK_VARIANTS: 'zero_one_value' is the former name of 'zero_or_value': write 'zero_or_value'")
   endif()
   if (NOT _v MATCHES "^(zero|zero_or_value|zero_any)$")
     message(FATAL_ERROR "CHUNK_VARIANTS: unknown variant '${_v}' (zero, zero_or_value, zero_any)")
@@ -467,20 +466,15 @@ set(CHUNK_INTERNAL_HEADERS
 set(CHUNK_PUBLIC_HEADERS
         public/chunk/zero_array.h
         public/chunk/zero_or_value_array.h
-        public/chunk/zero_one_value_array.h
         public/chunk/zero_any_array.h
         public/chunk/pattern_array.h
         public/chunk/bit_array.h
-        public/chunk/array_chunk_bits.h
         public/chunk/bit.h
         public/chunk/range_ops.h
-        public/chunk/array_chunk_range_ops.h
         public/chunk/vector_range_ops.h
         public/chunk/chunk_exchange.h
         public/chunk/runtime.h
-        public/chunk/param_chunk.h
         public/chunk/phases.h
-        public/chunk/manage_ompt.h
         public/chunk/tbb_adaptor.h
         public/chunk/chunk_size_advisor.h
         public/chunk/rechunk_decider.h
@@ -750,17 +744,6 @@ foreach(_t IN LISTS _chunk_install_targets)
   if (NOT TARGET chunk::${_t})
     add_library(chunk::${_t} ALIAS ${_t})
   endif()
-  # zero_or_value was zero_one_value until 0.3: the former names of its targets,
-  # plain and under both namespaces, for a project that takes this one in.
-  if (_t MATCHES "^chunk_zero_or_value")
-    string(REPLACE "zero_or_value" "zero_one_value" _former "${_t}")
-    string(REGEX REPLACE "^chunk_" "" _former_short "${_former}")
-    foreach(_alias IN ITEMS ${_former} chunk::${_former} shrink_array::${_former_short})
-      if (NOT TARGET ${_alias})
-        add_library(${_alias} ALIAS ${_t})
-      endif()
-    endforeach()
-  endif()
   # ... and under the project's name, the one of find_package(shrink_array):
   # shrink_array::zero_any_256 for chunk_zero_any_256.
   string(REGEX REPLACE "^chunk_" "" _short "${_t}")
@@ -772,7 +755,7 @@ endforeach()
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).
 # fast_allocators/CMakeLists.txt, configured after this file, checks it against
 # its own ALLOCATORS_VERSION through this global property.
-set(CHUNK_FAST_ALLOCATORS_VERSION 2.4.0)
+set(CHUNK_FAST_ALLOCATORS_VERSION 2.5.0)
 set_property(GLOBAL PROPERTY CHUNK_FAST_ALLOCATORS_VERSION ${CHUNK_FAST_ALLOCATORS_VERSION})
 
 install(TARGETS ${_chunk_install_targets}
@@ -840,9 +823,6 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/licenses/
 
 include(CMakePackageConfigHelpers)
 
-# "_256;_1024" written "256 _1024" after the "_" of the template: the suffixes of the
-# static sizes, for the former target names the two config files declare.
-string(REPLACE ";" " _" _chunk_static_suffixes "${CHUNK_STATIC_SIZES}")
 configure_package_config_file(chunk-config.cmake.in chunk-config.cmake
         INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
 

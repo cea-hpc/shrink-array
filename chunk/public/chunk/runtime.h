@@ -27,7 +27,7 @@
 #include "chunk/internal/singleton.h"           // Singleton
 #include "chunk/internal/type_state_registry.h" // TypeStateRegistry
 #include "chunk/log.h"                          // CHUNK_LOG (the static build's ignored setters)
-#include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk: the shutdown
+#include "chunk/internal/pool_release.h"        // release_chunk_pools, shutdown_runtime: the shutdown
 
 namespace shrink_array
 {
@@ -263,19 +263,6 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
      */
     static void init(bool big_chunk_block);
 
-    /// @brief Former name of init().
-    [[deprecated("renamed Runtime::init()")]] static void init_indexes(bool big_chunk_block)
-    {
-        init(big_chunk_block);
-    }
-
-    /// @brief Former name of init<Types>().
-    template <typename Types>
-    [[deprecated("renamed Runtime::init<Types>()")]] static void init_indexes(bool big_chunk_block)
-    {
-        init<Types>(big_chunk_block);
-    }
-
     /**
      * @brief The end of the program's use of the library: the allocation
      *        blocks of every element type given back. Optional (the process
@@ -412,12 +399,6 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
         }
     }
 
-    /// @brief set_chunk_shift() under its former (French) name.
-    [[deprecated("renamed set_chunk_shift()")]] static void set_decalage_chunk(unsigned int value)
-    {
-        set_chunk_shift(value);
-    }
-
     /**
      * @brief No-op compatibility shim: the mask is derived from CHUNK_SIZE.
      *
@@ -460,8 +441,5 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
     /// @brief Allocation block size in bytes, shared by all types and threads.
     static int block_size;
 };
-
-/// @brief Former name of Runtime.
-using ParamChunk [[deprecated("renamed Runtime (chunk/runtime.h)")]] = Runtime;
 
 } // namespace shrink_array

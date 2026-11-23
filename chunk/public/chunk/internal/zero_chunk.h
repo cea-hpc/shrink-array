@@ -31,7 +31,7 @@
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/pool_release.h"        // release_chunk_pools, shutdown_runtime
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_const_val)
 
 namespace shrink_array

@@ -261,8 +261,8 @@ vers un flux. Les exemples affichent par eux.
 
 ## Noms changés en 0.3
 
-Les anciens noms compilent encore, avec un avertissement d'obsolescence (les en-têtes : sans
-rien dire), et disparaissent à la version mineure suivante.
+Les anciens noms compilaient jusqu'à 0.3, obsolètes ; 0.4 les a retirés. Un programme écrit
+pour 0.2 les remplace ainsi (les graphies `pmp::` des trois fonctions des threads restent).
 
 | ancien nom | nom |
 |---|---|

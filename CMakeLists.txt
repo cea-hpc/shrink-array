@@ -21,59 +21,6 @@ endif()
 option(SHRINK_ARRAY_BUILD_EXAMPLES "Build the examples, benchmarks and validation harnesses" ${SHRINK_ARRAY_IS_TOP_LEVEL})
 option(SHRINK_ARRAY_BUILD_TESTS "Register the tests (include(CTest))" ${SHRINK_ARRAY_IS_TOP_LEVEL})
 
-# The options had no prefix until 0.3 (OMP, SANITIZER, CHECK_OPTIM, ...): a name
-# a project that takes this one in may use for something else, in the cache they
-# share. They are CHUNK_ ones now. The former names are still read, with a
-# message, when this project is the top-level one -- never as a subproject,
-# where the name may be the consumer's.
-if(SHRINK_ARRAY_IS_TOP_LEVEL)
-    foreach(_chunk_renamed IN ITEMS
-            "INTEL_ICPX_GLOB=CHUNK_INTEL_ICPX_GLOB"
-            "INTEL_ICPX=CHUNK_INTEL_ICPX"
-            "INTEL_LIBM_DIR=CHUNK_INTEL_LIBM_DIR"
-            "ONEAPI_NO_INTEL_LIBS=CHUNK_ONEAPI_NO_INTEL_LIBS"
-            "ONEAPI_FAST_FP=CHUNK_ONEAPI_FAST_FP"
-            "ONEAPI_XHOST=CHUNK_ONEAPI_XHOST"
-            "ARMPL_LIBM_DIR=CHUNK_ARMPL_LIBM_DIR"
-            "HAVE_AGGRESSIVE_COMPRESSION=CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT"
-            "GCC_TOOLCHAIN_DIR=CHUNK_GCC_TOOLCHAIN_DIR"
-            "ENABLE_IWYU=CHUNK_ENABLE_IWYU"
-            "USE_LIBCXX=CHUNK_USE_LIBCXX"
-            "USE_GPERF=CHUNK_USE_GPERF"
-            "USE_MOLD=CHUNK_USE_MOLD"
-            "CHECK_OPTIM=CHUNK_CHECK_OPTIM"
-            "SANITIZER=CHUNK_SANITIZER"
-            "OMP=CHUNK_OPENMP")
-        string(REPLACE "=" ";" _chunk_renamed "${_chunk_renamed}")
-        list(GET _chunk_renamed 0 _chunk_former)
-        list(GET _chunk_renamed 1 _chunk_name)
-        if(DEFINED CACHE{${_chunk_former}})
-            message(DEPRECATION "-D${_chunk_former} is -D${_chunk_name} now (the former name goes at the next minor version)")
-            # The former entry's type (BOOL, PATH, STRING): an old build tree
-            # has it from its own option() / set(CACHE). A -D without a type
-            # leaves it UNINITIALIZED, and the option() / set(CACHE) of the
-            # new name further down gives it its type then.
-            # FORCE: the former entry is removed below at every configure,
-            # so it is in the cache only when THIS run was given it. Without
-            # it, `cmake -DOMP=OFF` on a configured tree printed the message
-            # above and kept the new name's cached value.
-            get_property(_chunk_type CACHE ${_chunk_former} PROPERTY TYPE)
-            if(_chunk_type STREQUAL "UNINITIALIZED" AND DEFINED CACHE{${_chunk_name}})
-                get_property(_chunk_type CACHE ${_chunk_name} PROPERTY TYPE)
-            endif()
-            # ${...} and not $CACHE{...}: only a plain read marks a -D as used.
-            # With $CACHE{}, the value was taken and CMake still ended on
-            # "Manually-specified variables were not used by the project".
-            set(${_chunk_name} "${${_chunk_former}}" CACHE ${_chunk_type} "(given as ${_chunk_former})" FORCE)
-            unset(${_chunk_former} CACHE)
-        endif()
-    endforeach()
-    unset(_chunk_renamed)
-    unset(_chunk_former)
-    unset(_chunk_name)
-    unset(_chunk_type)
-endif()
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(CHUNK_CHECK_OPTIM "Enable runtime invariant checks in release builds" OFF)
