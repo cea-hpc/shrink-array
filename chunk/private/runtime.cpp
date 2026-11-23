@@ -30,9 +30,10 @@
 #include <algorithm> // std::max
 #include <chrono>    // steady_clock, the gate rates (CHUNK_STATS report only)
 #include <cstddef>   // std::size_t (CHUNK_STATS report only: the retention)
-#include <iomanip>   // std::setprecision (CHUNK_STATS report only: the ratios)
+#include <iomanip>   // std::setprecision, std::setw (CHUNK_STATS report only)
 #include <iostream>  // std::cout
 #include <mutex>     // std::scoped_lock (CHUNK_STATS report only: the size distribution)
+#include <string>    // std::to_string (CHUNK_STATS report only: the size distribution)
 #include <utility>   // std::cmp_greater
 
 #include "chunk/config.h"                              // build_config::chunk_dynamic, threaded
@@ -476,7 +477,9 @@ void Runtime::chunk_stats()
                     std::cout << "  size dist      arrays at each chunk size, at their own teardown:\n";
                     for (const auto& [size, count] : dist)
                     {
-                        std::cout << "    S=" << size << "          = " << count << "\n";
+                        // "S=<size>" padded so that "=" lines up with the counters above.
+                        std::cout << "    " << std::left << std::setw(13) << ("S=" + std::to_string(size)) << std::right
+                                  << "= " << count << "\n";
                     }
                 }
             }
