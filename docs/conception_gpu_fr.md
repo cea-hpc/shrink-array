@@ -576,23 +576,41 @@ prototype de 91d7af328) :
 
 Ce que la grosse carte montre, et que le portable cachait derrière ses 170 Go/s :
 
-- **Le chemin d'écriture est limité par la latence.** Une lecture acquire du descripteur à
-  chaque écriture est aussi une barrière, pour le compilateur comme pour la mémoire. Chaque
-  écriture attend donc seule sa lecture (environ 1 µs depuis la HBM), et les écritures d'un warp
-  ne se chevauchent pas. Le chemin aligné, qui lit le descripteur une fois par bloc, coûte
-  1,16× à S = 1024. Le prototype mesure maintenant une lecture relaxed et une lecture simple
-  (`WriteLoad`), ordonnées par la dépendance d'adresse du store.
-- **Une matérialisation est une chaîne d'allers-retours** : CAS de réservation, atomiques de la
-  pile libre et du bump sur deux compteurs globaux, pré-remplissage, barrière device,
-  publication. Elle est payée à chaque pas du grid-stride, si bien que la réservation ne fait
-  pas mieux que la course à S = 256. Chaîne raccourcie depuis : un coup d'œil à la pile libre et
-  à l'emplacement de réserve avant leurs atomiques (tous deux vides lors d'une première
-  écriture), et une seule barrière device, par le leader, au lieu d'une par lane.
-- **`compress()` avec un bloc par chunk de 2 Kio est trop fin** (38 % de la bande passante en
-  flux à S = 256) : un warp par chunk est maintenant le défaut pour S ≤ 256 (portable : 74 % →
-  98 %).
+- **Le chemin d'écriture est limité par une seule lecture de descripteur en vol par warp.**
+  Un store dans un tampon peut toucher les descripteurs (aliasing) : le compilateur ne peut
+  donc pas lancer la lecture du descripteur de l'écriture suivante avant le store courant, et
+  chaque warp attend environ 1 µs par écriture. Un second passage a mesuré les lectures
+  acquire, relaxed et simple (`WriteLoad`) à égalité (1,48× à 1,52×) : la barrière n'était pas
+  en cause. Le chemin aligné, qui lit le descripteur une fois par bloc, coûte 1,12× à
+  S = 1024 ; le bench mesure aussi quatre descripteurs lus d'avance par thread (ce que peut
+  faire une boucle de façade).
+- **Une matérialisation est une chaîne d'allers-retours, sur deux compteurs globaux** (le
+  sommet de la pile libre et le bump), payée à chaque pas du grid-stride : la réservation ne
+  fait pas mieux que la course à S = 256. Deux raccourcis essayés entre-temps ont aggravé les
+  choses et ont été annulés. Le premier jetait un coup d'œil à la pile libre avant son
+  atomique ; or, dans le bench, la première écriture suit un repli, donc la pile est pleine et
+  le coup d'œil ajoute un aller-retour. Le second faisait une seule barrière device par le
+  leader après la barrière de warp, au lieu d'une par lane, si bien que les barrières
+  s'exécutaient l'une après l'autre. Première écriture : 5,1× → 9,0× (S = 256), 1,8× → 2,5×
+  (S = 1024). Les compteurs sont maintenant **partitionnés** : chaque arène est découpée en
+  128 shards, chacun avec son bump et son segment de pile libre. Un chunk alloue dans son shard
+  d'origine (son indice modulo 128), puis dans les suivants, et un tampon revient au shard de
+  son adresse.
+- **`compress()`** : un warp par chunk est maintenant le défaut (GH200 : 83 % de la bande
+  passante en flux à S = 1024, contre 66 % avec un bloc par chunk). À S = 256, les deux
+  n'atteignent que 36 à 39 % quand tous les chunks se replient : le coût est l'empilement sur
+  la pile libre de chaque repli, sur un seul compteur (un scan sans repli prend 0,96 ms contre
+  6,4 ms), que les shards répartissent.
 - **S = 1024 est la géométrie GPU** : égale ou meilleure sur toutes les lignes sauf deux (la
   première écriture en course, et `assign()` dans des chunks matérialisés).
+- **Un bug du chemin de course, trouvé en route** : chaque lane quittait la boucle de
+  regroupement dès que son groupe était traité, si bien que les shuffles des tours suivants
+  s'exécutaient avec des masques changeants pendant que d'autres lanes étaient encore dans le
+  travail de leur groupe. Avec clang-CUDA et l'allocation partitionnée, plus lente, certaines
+  lanes pré-remplissaient alors le mauvais tampon, et des tampons publiés gardaient des
+  éléments jamais écrits (un passage de test sur deux). Le regroupement est maintenant
+  uniforme sur le warp, comme l'était déjà celui de la réservation (`group_by_chunk`), et
+  16 passages sur 16 réussissent.
 
 ## 14. Risques et questions ouvertes
 

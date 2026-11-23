@@ -89,6 +89,43 @@ __global__ void write_ramp(A a, long n, double base)
     }
 }
 
+/// @brief write_ramp with four descriptors loaded ahead per thread: tests whether the
+///        write path is bound by one descriptor load in flight per warp (the store into a
+///        buffer may alias the descriptors, so a compiler cannot hoist the next load above it).
+template <int S>
+__global__ void write_ramp_ahead(sa::View<double, S> a, long n, double base)
+{
+    constexpr int U      = 4;
+    const long    stride = static_cast<long>(gridDim.x) * blockDim.x;
+    for (long i = blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x; i < n; i += U * stride)
+    {
+        double* buf[U];
+#pragma unroll
+        for (int k = 0; k < U; ++k)
+        {
+            const long j = i + k * stride;
+            buf[k]       = j < n ? sa::load_ptr_relaxed(&a.desc[j >> sa::View<double, S>::shift].buf) : nullptr;
+        }
+#pragma unroll
+        for (int k = 0; k < U; ++k)
+        {
+            const long   j = i + k * stride;
+            const double v = base + 0.5 * static_cast<double>(j & 1023);
+            if (j < n)
+            {
+                if (buf[k] != nullptr && buf[k] != sa::busy_mark<double>())
+                {
+                    buf[k][j & sa::View<double, S>::mask] = v;
+                }
+                else
+                {
+                    a.assign(j, v);
+                }
+            }
+        }
+    }
+}
+
 template <typename A>
 __global__ void write_value(A a, long n, double v)
 {
@@ -309,6 +346,8 @@ void bench(long n, int reps)
         line(what, write_materialised, flat_write, "(criterion <= 2x)");
     }
     a.set_write_load(sa::WriteLoad::acquire);
+    const float write_ahead = time_ms(reps, [&] { write_ramp_ahead<S><<<grid, block>>>(a.view(), n, 2.0); });
+    line("write into materialised chunks, 4 loads ahead", write_ahead, flat_write, "");
     const float write_materialised_chunked = time_ms(reps, [&] { a.parallel_for_chunks(0, n, Ramp{2.0}); });
     line("write into materialised chunks, chunk-aligned", write_materialised_chunked, flat_write, "");
 

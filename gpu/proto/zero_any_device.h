@@ -85,6 +85,7 @@ inline void sa_check(cudaError_t e, const char* what, const char* file, int line
     #define gpuGetLastError cudaGetLastError
 #endif
 
+
 /// @brief Same bits: what the CPU version calls same_value() (keeps -0.0 apart from 0.0,
 ///        a NaN equal to itself). The comparison of the write's case 1 and of the vote.
 template <typename T>
@@ -141,8 +142,6 @@ enum class Coordination : int
 /// @brief The device-side counters of an array, read back by the host at a phase end.
 struct ArenaCounters
 {
-    unsigned long long bump;        ///< next arena buffer handed out (past capacity: exhausted)
-    long long          free_top;    ///< entries of the free stack (may go below 0 under pops)
     unsigned long long lost;        ///< buffers of lost CAS, parked until compress()
     unsigned long long append_n;    ///< append-buffer entries written (past capacity: lost)
     unsigned long long arena_fail;  ///< writes that found the arena exhausted
@@ -151,6 +150,43 @@ struct ArenaCounters
     unsigned long long claim_wait;  ///< Coordination::claim: groups that waited for another warp's claim
     unsigned long long claim_spin;  ///< Coordination::claim: waits given up (the write was appended)
 };
+
+/// @brief Number of shards of an arena: its bump and its free stack are split into that many
+///        independent counters, so that the atomics of a phase spread over as many addresses
+///        (one global counter serialised millions of materialisations on the GH200).
+#ifndef PROTO_SHARDS
+    #define PROTO_SHARDS 128
+#endif
+inline constexpr int n_shards = PROTO_SHARDS;
+
+/// @brief One shard's counters, alone on a 128-byte line.
+struct alignas(128) Shard
+{
+    long long          top;  ///< entries of the shard's free-stack segment (may go below 0 under pops)
+    unsigned long long bump; ///< next never-used buffer of the shard (past its length: exhausted)
+};
+
+/// @brief An arena as kernels see it: its buffers, split into n_shards contiguous shards,
+///        each owning the free-stack segment of its buffers (a buffer always goes back to the
+///        shard of its address, so a segment never overflows).
+template <typename T>
+struct ArenaDesc
+{
+    T*                 base;
+    unsigned long long n;            ///< buffers
+    unsigned long long shard_size;   ///< buffers per shard (the last ones may hold fewer, or none)
+    unsigned long long stack_offset; ///< first free-stack entry of this arena
+    Shard*             shards;       ///< n_shards counters
+
+    __host__ __device__ unsigned long long shard_len(int s) const noexcept
+    {
+        const unsigned long long first = static_cast<unsigned long long>(s) * shard_size;
+        return first >= n ? 0 : (n - first < shard_size ? n - first : shard_size);
+    }
+};
+
+/// @brief Most arenas an array may have (grow() adds one per replay).
+inline constexpr int max_arenas = 32;
 
 /// @brief How assign() reads `buf` before writing into a materialised chunk.
 enum class WriteLoad : int
@@ -183,11 +219,11 @@ struct View
     static constexpr int  shift = __builtin_ctz(static_cast<unsigned>(S));
     static constexpr long mask  = S - 1;
 
-    ChunkDesc<T>*      desc;          ///< n_chunks descriptors
-    long               n;             ///< elements
-    T*                 arena;         ///< the current arena: arena_chunks buffers of S elements
-    unsigned long long arena_chunks;  ///< its capacity in buffers
-    T**                free_stack;    ///< buffers given back by compress()
+    ChunkDesc<T>*      desc;   ///< n_chunks descriptors
+    long               n;      ///< elements
+    ArenaDesc<T>*      arenas; ///< n_arenas arenas, the newest last
+    int                n_arenas;
+    T**                free_stack;    ///< buffers given back by compress(), one segment per shard
     T**                lost_list;     ///< buffers of lost CAS
     unsigned long long list_capacity; ///< capacity of each of the two lists
     T**                spare;         ///< one parked buffer per slot (a warp's lost CAS), see materialise()
@@ -223,35 +259,79 @@ struct View
     template <int BLOCK, typename F>
     __device__ void block_write(long c, long lo, long hi, const F& f) const noexcept;
 
+    /// @brief @p buf back to the free-stack segment of its shard (compress() only: no pop runs).
+    __device__ void give_back(T* buf) const noexcept;
+
   private:
-    __device__ T*   take_buffer() const noexcept;
+    __device__ T*   take_buffer(long home) const noexcept;
     __device__ T**  spare_slot() const noexcept;
     __device__ void park(T* lost) const noexcept;
     __device__ T*   materialise(long nc, ChunkDesc<T>& d) const noexcept;
-    __device__ T*   race_group(ChunkDesc<T>& d, LaneMask group, int leader, int lane) const noexcept;
+    __device__ void group_by_chunk(long nc, LaneMask warp, LaneMask& group, int& leader) const noexcept;
+    __device__ T*   materialise_race(long nc, ChunkDesc<T>& d) const noexcept;
     __device__ T*   materialise_claim(long nc, ChunkDesc<T>& d) const noexcept;
     __device__ void prefill(T* buf, T c, LaneMask group, int leader, int lane) const noexcept;
     __device__ T*   take_spare() const noexcept;
     __device__ void append(long i, T v) const noexcept;
 };
 
-/// @brief A buffer for a materialisation (6.2 step 2): the free stack, else the arena's bump.
-///        No push happens during a write kernel, so the pops need no ABA guard (6.3).
+/**
+ * @brief A buffer for the materialisation of chunk @p home (6.2 step 2): in each arena, the
+ *        newest first, the chunk's home shard (home % n_shards) and then the next ones; in a
+ *        shard, its free stack, else its bump. No push happens during a write kernel, so the
+ *        pops need no ABA guard (6.3).
+ *
+ * @details The home shard is tried with its atomics directly (two at most, on counters that
+ *          the neighbouring chunks do not share); the other shards only after a look, so that
+ *          a nearly full arena costs loads, not atomics.
+ */
 template <typename T, int S>
-__device__ T* View<T, S>::take_buffer() const noexcept
+__device__ T* View<T, S>::take_buffer(long home) const noexcept
 {
-    // A look first: on a first write the stack is empty, and the fetch_add of every
-    // materialisation on that one counter is a serialised round trip for nothing.
-    if (load_relaxed(&counters->free_top) > 0)
+    const int s0 = static_cast<int>(static_cast<unsigned long>(home) % n_shards);
+    for (int a = n_arenas - 1; a >= 0; --a)
     {
-        const long long top = fetch_add(&counters->free_top, -1LL) - 1;
-        if (top >= 0)
+        const ArenaDesc<T>& ar = arenas[a];
+        for (int k = 0; k < n_shards; ++k)
         {
-            return free_stack[top];
+            const int                s   = (s0 + k) % n_shards;
+            Shard&                   sh  = ar.shards[s];
+            const unsigned long long len = ar.shard_len(s);
+            if (k > 0 && load_relaxed(&sh.top) <= 0 &&
+                *reinterpret_cast<const volatile unsigned long long*>(&sh.bump) >= len)
+            {
+                continue;
+            }
+            const long long top = fetch_add(&sh.top, -1LL) - 1;
+            if (top >= 0)
+            {
+                return free_stack[ar.stack_offset + s * ar.shard_size + static_cast<unsigned long long>(top)];
+            }
+            const unsigned long long b = fetch_add(&sh.bump, 1ULL);
+            if (b < len)
+            {
+                return ar.base + (s * ar.shard_size + b) * S;
+            }
         }
     }
-    const unsigned long long b = fetch_add(&counters->bump, 1ULL);
-    return b < arena_chunks ? arena + b * S : nullptr;
+    return nullptr;
+}
+
+template <typename T, int S>
+__device__ void View<T, S>::give_back(T* buf) const noexcept
+{
+    for (int a = 0; a < n_arenas; ++a)
+    {
+        const ArenaDesc<T>& ar = arenas[a];
+        if (buf >= ar.base && buf < ar.base + ar.n * S)
+        {
+            const unsigned long long idx = static_cast<unsigned long long>(buf - ar.base) / S;
+            const unsigned long long s   = idx / ar.shard_size;
+            const long long          top = fetch_add(&ar.shards[s].top, 1LL);
+            free_stack[ar.stack_offset + s * ar.shard_size + static_cast<unsigned long long>(top)] = buf;
+            return;
+        }
+    }
 }
 
 /// @brief This warp's spare slot: the buffer of a lost CAS waits there for the warp's next
@@ -294,95 +374,28 @@ __device__ void View<T, S>::park(T* lost) const noexcept
 }
 
 /// @brief Step 3 of 6.2: the lanes of @p group fill @p buf with @p c, coalesced, then make
-///        it visible device-wide before the publication: the warp barrier orders the
-///        group's stores before the leader's, and one device fence by the leader (cumulative)
-///        orders them all before its publication. One fence per materialisation, not per lane.
+///        it visible device-wide before the publication (every lane fences its own stores,
+///        concurrently: a fence by the leader alone after the warp barrier measured slower
+///        on the GH200, the fences then running one after the other).
 template <typename T, int S>
 __device__ void View<T, S>::prefill(T* buf, T c, LaneMask group, int leader, int lane) const noexcept
 {
+    (void)leader;
     const int rank  = popcount(group & ((LaneMask{1} << lane) - 1));
     const int width = popcount(group);
     for (int k = rank; k < S; k += width)
     {
         buf[k] = c;
     }
+    fence_device();
     sync_lanes(group);
-    if (lane == leader)
-    {
-        fence_device();
-    }
 }
 
-/// @brief A buffer parked in this warp's spare slot, if any: a look before the exchange,
-///        which is a round trip on a slot that is empty on a first write. A stale empty
-///        look leaves the buffer for compress(); a stale full one finds nullptr.
+/// @brief The buffer parked in this warp's spare slot, if any.
 template <typename T, int S>
 __device__ T* View<T, S>::take_spare() const noexcept
 {
-    T** const slot = spare_slot();
-    return load_ptr(slot) != nullptr ? exchange_ptr(slot, static_cast<T*>(nullptr)) : nullptr;
-}
-
-/**
- * @brief Coordination::race for the lanes of @p group (one chunk): one buffer per warp,
- *        pre-filled, published by one CAS; the loser parks its buffer and writes into the
- *        winner's. Returns the chunk's buffer, or nullptr when the arena is exhausted and no
- *        other warp has published one.
- */
-template <typename T, int S>
-__device__ T* View<T, S>::race_group(ChunkDesc<T>& d, LaneMask group, int leader, int lane) const noexcept
-{
-    // The elected lane looks again before allocating: with scattered indices many
-    // warps reach one chunk at once, and a chunk published meanwhile costs no buffer.
-    T* existing = nullptr;
-    T* mine     = nullptr;
-    if (lane == leader)
-    {
-        existing = load_ptr_acquire(&d.buf);
-        if (existing == nullptr)
-        {
-            mine = take_spare();
-            mine = mine != nullptr ? mine : take_buffer();
-        }
-    }
-    existing = shuffle_ptr(group, existing, leader);
-    mine     = shuffle_ptr(group, mine, leader);
-    if (existing != nullptr)
-    {
-        sync_lanes(group); // the leader's acquire before the group's writes
-        return existing;
-    }
-    if (mine == nullptr)
-    {
-        // Arena exhausted: another warp may still have published this chunk.
-        T* result = load_ptr_acquire(&d.buf);
-        if (result == nullptr && lane == leader)
-        {
-            fetch_add(&counters->arena_fail, 1ULL);
-        }
-        return result;
-    }
-    prefill(mine, d.constant, group, leader, lane);
-    T* winner = nullptr;
-    if (lane == leader)
-    {
-        T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
-        if (found == nullptr)
-        {
-            winner = mine;
-            fetch_add(&counters->materialise, 1ULL);
-        }
-        else
-        {
-            winner = found;
-            fence_device(); // acquire: the winner's pre-fill before our writes
-            fetch_add(&counters->cas_lost, 1ULL);
-            park(mine);
-        }
-    }
-    winner = shuffle_ptr(group, winner, leader);
-    sync_lanes(group);
-    return winner;
+    return exchange_ptr(spare_slot(), static_cast<T*>(nullptr));
 }
 
 /**
@@ -402,31 +415,18 @@ __device__ T* View<T, S>::race_group(ChunkDesc<T>& d, LaneMask group, int leader
  *          assign() calls on divergent paths of one wavefront (AMD, no independent thread
  *          scheduling).
  *
- *          Every lane of the warp goes through the grouping loop as many times as the
- *          others (pending is uniform): the warp-wide shuffles use one mask, each lane
- *          reading its own leader.
+ *          The grouping (group_by_chunk) is warp-uniform: the warp-wide shuffles use one
+ *          mask, each lane reading its own leader.
  */
 template <typename T, int S>
 __device__ T* View<T, S>::materialise_claim(long nc, ChunkDesc<T>& d) const noexcept
 {
-    T* const       busy    = busy_mark<T>();
-    const int      lane    = lane_id();
-    const LaneMask warp    = active_lanes();
-    LaneMask       pending = warp;
-    LaneMask       group   = 0;
-    int            leader  = lane;
-    while (pending != 0)
-    {
-        const int      l   = first_lane(pending);
-        const long     lnc = shuffle(warp, nc, l);
-        const LaneMask g   = ballot(warp, ((pending >> lane) & 1) != 0 && nc == lnc);
-        if (((g >> lane) & 1) != 0)
-        {
-            group  = g;
-            leader = l;
-        }
-        pending &= ~g;
-    }
+    T* const       busy = busy_mark<T>();
+    const int      lane = lane_id();
+    const LaneMask warp = active_lanes();
+    LaneMask       group;
+    int            leader;
+    group_by_chunk(nc, warp, group, leader);
 
     // Phase 1: one attempt per group, no wait.
     T* found = nullptr;
@@ -440,7 +440,7 @@ __device__ T* View<T, S>::materialise_claim(long nc, ChunkDesc<T>& d) const noex
             if (found == nullptr)
             {
                 mine = take_spare();
-                mine = mine != nullptr ? mine : take_buffer();
+                mine = mine != nullptr ? mine : take_buffer(nc);
                 if (mine == nullptr)
                 {
                     exchange_ptr(&d.buf, static_cast<T*>(nullptr)); // arena exhausted: release
@@ -495,34 +495,108 @@ __device__ T* View<T, S>::materialise_claim(long nc, ChunkDesc<T>& d) const noex
 }
 
 /**
- * @brief Materialise chunk @p nc for the lanes of the warp that call it (6.2): the lanes
- *        that need the same chunk form a group; Coordination::race below, claim in
- *        materialise_claim(). Returns the chunk's buffer, or nullptr: the caller appends.
+ * @brief The lanes of the warp that call it, grouped by chunk: each lane gets its group and
+ *        the group's leader (its lowest lane).
+ *
+ * @details Every lane goes through the loop as many times as the others (pending is
+ *          uniform), so the warp-wide shuffles and ballots have one mask. In the first race
+ *          version each lane left the loop once its own group was done, and the shuffles of
+ *          the next iterations ran with masks that changed while other lanes sat inside
+ *          their group's work.
  */
+template <typename T, int S>
+__device__ void View<T, S>::group_by_chunk(long nc, LaneMask warp, LaneMask& group, int& leader) const noexcept
+{
+    const int lane    = lane_id();
+    LaneMask  pending = warp;
+    group             = 0;
+    leader            = lane;
+    while (pending != 0)
+    {
+        const int      l   = first_lane(pending);
+        const long     lnc = shuffle(warp, nc, l);
+        const LaneMask g   = ballot(warp, ((pending >> lane) & 1) != 0 && nc == lnc);
+        if (((g >> lane) & 1) != 0)
+        {
+            group  = g;
+            leader = l;
+        }
+        pending &= ~g;
+    }
+}
+
+/**
+ * @brief Coordination::race (6.2 as written) for the lanes of the warp that call it: per
+ *        group, one buffer, pre-filled, published by one CAS; the loser parks its buffer
+ *        and writes into the winner's. Returns the chunk's buffer, or nullptr when the arena
+ *        is exhausted and no other warp has published one.
+ */
+template <typename T, int S>
+__device__ T* View<T, S>::materialise_race(long nc, ChunkDesc<T>& d) const noexcept
+{
+    const int      lane = lane_id();
+    const LaneMask warp = active_lanes();
+    LaneMask       group;
+    int            leader;
+    group_by_chunk(nc, warp, group, leader);
+
+    // The elected lane looks again before allocating: with scattered indices many
+    // warps reach one chunk at once, and a chunk published meanwhile costs no buffer.
+    T* existing = nullptr;
+    T* mine     = nullptr;
+    if (lane == leader)
+    {
+        existing = load_ptr_acquire(&d.buf);
+        if (existing == nullptr)
+        {
+            mine = take_spare();
+            mine = mine != nullptr ? mine : take_buffer(nc);
+        }
+    }
+    existing = shuffle_ptr(warp, existing, leader);
+    mine     = shuffle_ptr(warp, mine, leader);
+
+    T* winner = existing;
+    if (existing == nullptr && mine != nullptr)
+    {
+        prefill(mine, d.constant, group, leader, lane);
+        if (lane == leader)
+        {
+            T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
+            if (found == nullptr)
+            {
+                winner = mine;
+                fetch_add(&counters->materialise, 1ULL);
+            }
+            else
+            {
+                winner = found;
+                fence_device(); // acquire: the winner's pre-fill before our writes
+                fetch_add(&counters->cas_lost, 1ULL);
+                park(mine);
+            }
+        }
+    }
+    else if (existing == nullptr && lane == leader)
+    {
+        // Arena exhausted: another warp may still have published this chunk.
+        winner = load_ptr_acquire(&d.buf);
+        if (winner == nullptr)
+        {
+            fetch_add(&counters->arena_fail, 1ULL);
+        }
+    }
+    winner = shuffle_ptr(warp, winner, leader);
+    sync_lanes(warp); // the leaders' acquire before the writes of their groups
+    return winner;
+}
+
+/// @brief Materialise chunk @p nc for the lanes of the warp that call it (6.2), as `coord`
+///        says. Returns the chunk's buffer, or nullptr: the caller appends.
 template <typename T, int S>
 __device__ T* View<T, S>::materialise(long nc, ChunkDesc<T>& d) const noexcept
 {
-    if (coord == Coordination::claim)
-    {
-        return materialise_claim(nc, d);
-    }
-    const int lane    = lane_id();
-    LaneMask  pending = active_lanes();
-    T*        result  = nullptr;
-    // A lane leaves as soon as its own group is done: the masks of the shuffles and
-    // ballots below must always contain the calling lane.
-    while (((pending >> lane) & 1) != 0)
-    {
-        const int      leader = first_lane(pending);
-        const long     lnc    = shuffle(pending, nc, leader);
-        const LaneMask group  = ballot(pending, nc == lnc);
-        if (((group >> lane) & 1) != 0)
-        {
-            result = race_group(d, group, leader, lane);
-        }
-        pending &= ~group;
-    }
-    return result;
+    return coord == Coordination::claim ? materialise_claim(nc, d) : materialise_race(nc, d);
 }
 
 template <typename T, int S>
@@ -615,7 +689,7 @@ __device__ void View<T, S>::block_write(long c, long lo, long hi, const F& f) co
     if (t == 0)
     {
         T* m  = take_spare();
-        s_buf = m != nullptr ? m : take_buffer();
+        s_buf = m != nullptr ? m : take_buffer(c);
     }
     __syncthreads();
     T* const mine = s_buf;
@@ -638,10 +712,10 @@ __device__ void View<T, S>::block_write(long c, long lo, long hi, const F& f) co
     {
         mine[t + j * BLOCK] = vals[j];
     }
-    __syncthreads(); // the block's stores before thread 0's fence (cumulative)
+    fence_device();
+    __syncthreads();
     if (t == 0)
     {
-        fence_device();
         T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), mine);
         if (found == nullptr)
         {
@@ -679,41 +753,49 @@ __device__ void View<T, S>::block_write(long c, long lo, long hi, const F& f) co
 namespace kernels
 {
 
-/// @brief Before a compress(): the free stack's top back to >= 0 (pops past empty), and
-///        the lost buffers onto the free stack (6.3: they wait for the phase end).
+/// @brief Before a compress(), first: every shard's top back to >= 0 (pops past empty) and
+///        its bump clamped to its length, so that give_back() can push.
 template <typename T, int S>
-__global__ void reclaim_lost(View<T, S> v)
+__global__ void normalise_shards(View<T, S> v)
 {
-    const unsigned long long n_lost = v.counters->lost < v.list_capacity ? v.counters->lost : v.list_capacity;
-    const long long          top    = v.counters->free_top < 0 ? 0 : v.counters->free_top;
-    for (unsigned long long k = blockIdx.x * blockDim.x + threadIdx.x; k < n_lost; k += gridDim.x * blockDim.x)
+    for (int a = 0; a < v.n_arenas; ++a)
     {
-        v.free_stack[top + static_cast<long long>(k)] = v.lost_list[k];
+        const ArenaDesc<T>& ar = v.arenas[a];
+        for (int s = threadIdx.x; s < n_shards; s += blockDim.x)
+        {
+            Shard& sh = ar.shards[s];
+            sh.top    = sh.top < 0 ? 0 : sh.top;
+            sh.bump   = sh.bump > ar.shard_len(s) ? ar.shard_len(s) : sh.bump;
+        }
     }
 }
 
-/// @brief Counters after reclaim_lost: the stack holds the lost buffers, the lost list is empty.
-__global__ void reclaim_lost_counters(ArenaCounters* c, unsigned long long list_capacity)
-{
-    const unsigned long long n_lost = c->lost < list_capacity ? c->lost : list_capacity;
-    const long long          top    = c->free_top < 0 ? 0 : c->free_top;
-    c->free_top                     = top + static_cast<long long>(n_lost);
-    c->lost                         = 0;
-}
-
-/// @brief Before a compress(), after reclaim_lost_counters: every parked spare onto the free stack.
+/// @brief Before a compress(), after normalise_shards: the lost buffers and the parked spares
+///        back to their shards (6.3: they wait for the phase end).
 template <typename T, int S>
-__global__ void reclaim_spares(View<T, S> v)
+__global__ void reclaim_parked(View<T, S> v)
 {
-    for (unsigned long long k = blockIdx.x * blockDim.x + threadIdx.x; k < v.spare_slots; k += gridDim.x * blockDim.x)
+    const unsigned long long n_lost = v.counters->lost < v.list_capacity ? v.counters->lost : v.list_capacity;
+    const unsigned long long stride = static_cast<unsigned long long>(gridDim.x) * blockDim.x;
+    for (unsigned long long k = blockIdx.x * blockDim.x + threadIdx.x; k < n_lost; k += stride)
+    {
+        v.give_back(v.lost_list[k]);
+    }
+    for (unsigned long long k = blockIdx.x * blockDim.x + threadIdx.x; k < v.spare_slots; k += stride)
     {
         T* buf = v.spare[k];
         if (buf != nullptr)
         {
-            v.spare[k]                                          = nullptr;
-            v.free_stack[fetch_add(&v.counters->free_top, 1LL)] = buf;
+            v.spare[k] = nullptr;
+            v.give_back(buf);
         }
     }
+}
+
+/// @brief After reclaim_parked: the lost list is empty.
+__global__ void clear_lost(ArenaCounters* c)
+{
+    c->lost = 0;
 }
 
 /// @brief The pass (section 7.1): one block per chunk; a uniform materialised chunk takes
@@ -742,10 +824,9 @@ __global__ void compress(View<T, S> v, long n_chunks)
     uniform = __syncthreads_and(uniform) != 0;
     if (uniform && threadIdx.x == 0)
     {
-        d.constant          = first;
-        d.buf               = nullptr;
-        const long long top = fetch_add(&v.counters->free_top, 1LL);
-        v.free_stack[top]   = buf;
+        d.constant = first;
+        d.buf      = nullptr;
+        v.give_back(buf);
     }
 }
 
@@ -775,10 +856,9 @@ __global__ void compress_warp(View<T, S> v, long n_chunks)
         uniform = ballot(active_lanes(), !uniform) == 0;
         if (uniform && lane == 0)
         {
-            d.constant          = head;
-            d.buf               = nullptr;
-            const long long top = fetch_add(&v.counters->free_top, 1LL);
-            v.free_stack[top]   = buf;
+            d.constant = head;
+            d.buf      = nullptr;
+            v.give_back(buf);
         }
     }
 }
@@ -882,8 +962,7 @@ class DeviceArray
         view_.write_load = w;
     }
 
-    /// @brief compress() with one warp per chunk instead of one block (default: per warp
-    ///        when S <= 256, where a 256-thread block per 2 KiB chunk is too fine).
+    /// @brief compress() with one warp per chunk instead of one block (default: per warp).
     void set_compress_per_warp(bool per_warp) noexcept
     {
         compress_per_warp_ = per_warp;
@@ -924,18 +1003,21 @@ class DeviceArray
         return n_chunks_;
     }
 
+
   private:
     void                        grow(unsigned long long more_chunks);
     void                        resize_lists(unsigned long long capacity);
     [[nodiscard]] ArenaCounters read_counters() const;
 
-    long               n_chunks_;
-    View<T, S>         view_{};
-    std::vector<T*>    arenas_;
-    unsigned long long total_buffers_     = 0;
-    unsigned long long replays_           = 0;
-    unsigned long long overflows_         = 0;
-    bool               compress_per_warp_ = S <= 256;
+    long                      n_chunks_;
+    View<T, S>                view_{};
+    std::vector<T*>           arenas_;
+    std::vector<Shard*>       shards_;
+    std::vector<ArenaDesc<T>> arena_descs_;
+    unsigned long long        total_buffers_     = 0;
+    unsigned long long        replays_           = 0;
+    unsigned long long        overflows_         = 0;
+    bool                      compress_per_warp_ = true; // GH200: 83% of stream read at S = 1024, against 66% per block
 };
 
 template <typename T, int S>
@@ -951,6 +1033,7 @@ DeviceArray<T, S>::DeviceArray(long n, unsigned long long arena_chunks, unsigned
     view_.spare_slots = 1ULL << 16; // more than the warps resident on an H100 or an MI300A
     SA_GPU(gpuMalloc(&view_.spare, sizeof(T*) * view_.spare_slots));
     SA_GPU(gpuMemset(view_.spare, 0, sizeof(T*) * view_.spare_slots));
+    SA_GPU(gpuMalloc(&view_.arenas, sizeof(ArenaDesc<T>) * max_arenas));
     SA_GPU(gpuMalloc(&view_.counters, sizeof(ArenaCounters)));
     SA_GPU(gpuMemset(view_.counters, 0, sizeof(ArenaCounters)));
     view_.append_capacity = append_capacity;
@@ -966,6 +1049,11 @@ DeviceArray<T, S>::~DeviceArray()
     {
         (void)gpuFree(a);
     }
+    for (Shard* sh : shards_)
+    {
+        (void)gpuFree(sh);
+    }
+    (void)gpuFree(view_.arenas);
     (void)gpuFree(view_.desc);
     (void)gpuFree(view_.counters);
     (void)gpuFree(view_.append_index);
@@ -985,9 +1073,8 @@ void DeviceArray<T, S>::resize_lists(unsigned long long capacity)
     SA_GPU(gpuMalloc(&lost, sizeof(T*) * capacity));
     if (view_.free_stack != nullptr)
     {
-        const ArenaCounters c   = read_counters();
-        const long long     top = c.free_top < 0 ? 0 : c.free_top;
-        SA_GPU(gpuMemcpy(stack, view_.free_stack, sizeof(T*) * top, gpuMemcpyDeviceToDevice));
+        // The old arenas keep their segments: the whole old stack, at the same offsets.
+        SA_GPU(gpuMemcpy(stack, view_.free_stack, sizeof(T*) * view_.list_capacity, gpuMemcpyDeviceToDevice));
         (void)gpuFree(view_.free_stack);
         (void)gpuFree(view_.lost_list);
     }
@@ -1001,16 +1088,29 @@ void DeviceArray<T, S>::resize_lists(unsigned long long capacity)
 template <typename T, int S>
 void DeviceArray<T, S>::grow(unsigned long long more_chunks)
 {
-    T* a = nullptr;
+    if (arena_descs_.size() >= static_cast<std::size_t>(max_arenas))
+    {
+        throw std::runtime_error("DeviceArray::grow: more than max_arenas arenas");
+    }
+    T*     a      = nullptr;
+    Shard* shards = nullptr;
     SA_GPU(gpuMalloc(&a, sizeof(T) * S * more_chunks));
+    SA_GPU(gpuMalloc(&shards, sizeof(Shard) * n_shards));
+    SA_GPU(gpuMemset(shards, 0, sizeof(Shard) * n_shards));
     arenas_.push_back(a);
+    shards_.push_back(shards);
+    ArenaDesc<T> ar{};
+    ar.base         = a;
+    ar.n            = more_chunks;
+    ar.shard_size   = (more_chunks + n_shards - 1) / n_shards;
+    ar.stack_offset = total_buffers_;
+    ar.shards       = shards;
+    arena_descs_.push_back(ar);
     total_buffers_ += more_chunks;
     resize_lists(total_buffers_);
-    view_.arena        = a;
-    view_.arena_chunks = more_chunks;
-    ArenaCounters c    = read_counters();
-    c.bump             = 0;
-    SA_GPU(gpuMemcpy(view_.counters, &c, sizeof(c), gpuMemcpyHostToDevice));
+    SA_GPU(gpuMemcpy(view_.arenas, arena_descs_.data(), sizeof(ArenaDesc<T>) * arena_descs_.size(),
+                     gpuMemcpyHostToDevice));
+    view_.n_arenas = static_cast<int>(arena_descs_.size());
 }
 
 template <typename T, int S>
@@ -1025,9 +1125,9 @@ template <typename T, int S>
 void DeviceArray<T, S>::compress()
 {
     SA_GPU(gpuDeviceSynchronize());
-    kernels::reclaim_lost<<<64, 256>>>(view_);
-    kernels::reclaim_lost_counters<<<1, 1>>>(view_.counters, view_.list_capacity);
-    kernels::reclaim_spares<<<64, 256>>>(view_);
+    kernels::normalise_shards<<<1, n_shards>>>(view_);
+    kernels::reclaim_parked<<<64, 256>>>(view_);
+    kernels::clear_lost<<<1, 1>>>(view_.counters);
     constexpr int block = S < 256 ? S : 256;
     if (n_chunks_ > 0 && compress_per_warp_)
     {

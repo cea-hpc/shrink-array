@@ -57,20 +57,35 @@ prototype at 91d7af328):
 
 What the large GPU shows, and the laptop hid behind its 170 GB/s:
 
-- **The write path is latency-bound.** An acquire load of the descriptor per write is also
-  a compiler and memory barrier, so each write waits alone for its load (~1 us from HBM): the
-  writes of a warp do not overlap. The chunk-aligned path, one descriptor load per block,
-  costs 1.16x at S = 1024. The prototype now measures a relaxed load and a plain load
-  (`WriteLoad`), ordered by the store's address dependency.
-- **A materialisation is a chain of round trips** (claim CAS, free-stack and bump atomics on
-  two global counters, pre-fill, device fence, publication), paid once per grid-stride step:
-  claim is no better than race at S = 256. Shortened since: a look at the free stack and
-  at the spare slot before their atomics (both empty on a first write), one device fence by
-  the leader instead of one per lane.
-- **`compress()` by one block per 2 KiB chunk is too fine** (38% of the stream bandwidth at
-  S = 256): one warp per chunk is now the default at S <= 256 (laptop: 74% -> 98%).
+- **The write path is bound by one descriptor load in flight per warp.** A store into a
+  buffer may alias the descriptors, so the compiler cannot issue the next write's descriptor
+  load before the current store: each warp waits ~1 us per write. A second run measured the
+  acquire, relaxed and plain loads (`WriteLoad`) equal (1.48x to 1.52x): the barrier was not
+  the cause. The chunk-aligned path, one descriptor load per block, costs 1.12x at S = 1024;
+  the bench now also measures four descriptors loaded ahead per thread (what a facade loop
+  can do).
+- **A materialisation is a chain of round trips, on two global counters** (the free stack's
+  top and the bump), paid once per grid-stride step: claim is no better than race at
+  S = 256. Two shortcuts tried in between made it worse and were reverted: a look at the free
+  stack before its atomic (the bench's first write follows a fold, so the stack is full and
+  the look is one more round trip) and one device fence by the leader after the warp barrier
+  instead of one per lane (the fences then run one after the other); first write 5.1x ->
+  9.0x (S = 256), 1.8x -> 2.5x (S = 1024). The counters are now **sharded**: each arena is
+  split into 128 shards, each with its own bump and free-stack segment; a chunk allocates in
+  its home shard (its index modulo 128), then the next ones, and a buffer goes back to the
+  shard of its address.
+- **`compress()`**: one warp per chunk is now the default (GH200: 83% of the stream bandwidth
+  at S = 1024, against 66% per block). At S = 256 both reach only 36-39% when every chunk
+  folds back: the cost is the free-stack push of each fold on one counter (a scan without
+  folds runs in 0.96 ms against 6.4 ms), which the shards spread.
 - **S = 1024 is the GPU geometry**: equal or better on every line but two (the race's first
   write, and `assign()` into materialised chunks).
+- **A race-path bug found on the way**: the race grouping loop, which each lane left once its
+  own group was done, ran later shuffles with changing masks while other lanes were inside
+  their group's work. With clang-CUDA and the slower sharded allocation, some lanes then
+  pre-filled the wrong buffer, and published buffers kept never-written elements (one test
+  run in two). The grouping is now warp-uniform, as the claim path's already was
+  (`group_by_chunk`), and 16 runs out of 16 pass.
 
 ## What the prototype changed in the design
 
