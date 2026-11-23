@@ -113,9 +113,9 @@ void for_each_slice(long count, Body&& body)
 #pragma omp parallel
     {
         begin_phase();
-        const long team  = team_size();
-        const long rank  = thread_rank();
-        const auto cut   = [&](long k) { return k >= team ? count : (k == 0 ? 0 : (count * k / team) / 100 * 100 + 93); };
+        const long team = team_size();
+        const long rank = thread_rank();
+        const auto cut = [&](long k) { return k >= team ? count : (k == 0 ? 0 : (count * k / team) / 100 * 100 + 93); };
         const long first = cut(rank) > count ? count : cut(rank);
         const long last  = cut(rank + 1) > count ? count : cut(rank + 1);
         if (first < last)
@@ -165,20 +165,23 @@ int check_two_sources(long count, long chunk)
 
     Array<double> dst(static_cast<int>(count));
     maybe_set_second_value(dst, second);
-    for_each_slice(count, [&](std::size_t first, std::size_t last) { transform_ranges_mt(dst, first, last, op, a, b); });
+    for_each_slice(count,
+                   [&](std::size_t first, std::size_t last) { transform_ranges_mt(dst, first, last, op, a, b); });
     int bad = verify("two_sources", std::as_const(dst), want);
 
     // Onto a target that holds data everywhere.
     Array<double> full(static_cast<int>(count));
     maybe_set_second_value(full, second);
-    for_each_slice(count, [&](std::size_t first, std::size_t last)
+    for_each_slice(count,
+                   [&](std::size_t first, std::size_t last)
                    {
                        for (std::size_t i = first; i < last; ++i)
                        {
                            full[static_cast<int>(i)] = 1000.0 + static_cast<double>(i);
                        }
                    });
-    for_each_slice(count, [&](std::size_t first, std::size_t last) { transform_ranges_mt(full, first, last, op, a, b); });
+    for_each_slice(count,
+                   [&](std::size_t first, std::size_t last) { transform_ranges_mt(full, first, last, op, a, b); });
     bad += verify("over_data", std::as_const(full), want);
     return bad;
 }
@@ -204,7 +207,8 @@ int check_kept_compressed(long count, long chunk)
 
     Array<double> dst(static_cast<int>(count));
     maybe_set_second_value(dst, second);
-    for_each_slice(count, [&](std::size_t first, std::size_t last) { transform_ranges_mt(dst, first, last, op, a, b); });
+    for_each_slice(count,
+                   [&](std::size_t first, std::size_t last) { transform_ranges_mt(dst, first, last, op, a, b); });
     int bad = verify("kept_compressed", std::as_const(dst), want);
 
     const long written = static_cast<long>(dst.written_chunk_count());
@@ -310,10 +314,10 @@ int check_bounds(long count, long chunk)
             want[i] = op(pattern(static_cast<long>(i), chunk, 0), pattern(static_cast<long>(i), chunk, 1));
         }
     };
-    apply(10, 10);                                                               // empty
-    apply(size + 5, size + 50);                                                  // past the end
+    apply(10, 10);                                                                   // empty
+    apply(size + 5, size + 50);                                                      // past the end
     apply(static_cast<std::size_t>(chunk) + 3, static_cast<std::size_t>(chunk) + 9); // inside one chunk
-    apply(size - 20, size + 1000);                                               // clamped
+    apply(size - 20, size + 1000);                                                   // clamped
     apply(static_cast<std::size_t>(2 * chunk), static_cast<std::size_t>(3 * chunk)); // one whole chunk
     return verify("bounds", std::as_const(dst), want);
 }
