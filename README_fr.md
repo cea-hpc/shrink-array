@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/cea-hpc/shrink-array/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C.svg)](docs/getting_started_fr.md)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-00599C.svg)](docs/getting_started_fr.md)
 [![Spack](https://img.shields.io/badge/Spack-package-0f6cbd.svg)](docs/getting_started_fr.md)
 [![Checked with GenMC](https://img.shields.io/badge/checked%20with-GenMC-8a2be2.svg)](docs/formal_models_fr.md)
 
@@ -475,8 +475,9 @@ sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AA
 consomme la bibliothèque par `FetchContent` ([CI](.github/workflows/ci.yml)) ; chaque nuit, les
 builds AArch64 trop longs pour un push -- le backend std sous ThreadSanitizer, le build `_dyn` --
 et, sur x86-64, AddressSanitizer, UndefinedBehaviorSanitizer, Clang 23, les plus anciens
-compilateurs pris en charge (GCC 13, Clang 18) et la recette Spack installée depuis le dépôt
-([nightly](.github/workflows/nightly.yml)).
+compilateurs que `develop` prend en charge (GCC 13, Clang 18) et la recette Spack installée depuis
+le dépôt ([nightly](.github/workflows/nightly.yml)). Le nightly tourne sur `develop` ; cette
+branche, `cpp23`, demande le C++23 : GCC 14 ou Clang 18 au moins.
 
 Le retour le plus utile est un essai sur vos données : si la bibliothèque économise de
 la mémoire dans votre code -- ou n'en économise pas --

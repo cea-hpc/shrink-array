@@ -36,9 +36,9 @@ matter. [variants.md](variants.md) compares them on a real workload.
 ## 2. Install
 
 With Spack, the recipe is in the repository: see [the README](../README.md#with-spack)
-(`spack install shrink-array`). From the sources, with a C++20 compiler (tested with GCC 13
-and 14 and Clang 18; the build scripts also cover oneAPI, AOCC and NVHPC; the `cpp23`
-branch needs C++23, GCC 14 or later) and CMake ≥ 3.20:
+(`spack install shrink-array`). From the sources, with a C++23 compiler (this `cpp23` branch:
+GCC 14 or later, Clang 18 or later, oneAPI; NVHPC and AOCC 5 have no usable C++23. `develop`
+stays in C++20, from GCC 13; the `cpp26` branch needs GCC 16) and CMake ≥ 3.20:
 
 ```sh
 cmake -S shrink-array -B build -G Ninja \
@@ -83,7 +83,7 @@ target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 
 The library you link **chooses the variant and the chunk size**. The headers are the same
 for all of them, and the library brings the compile definitions that select its own
-(`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++20,
+(`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++23,
 `-fopenmp` when it was built with OpenMP, and its dependencies. The other options it was built
 with are in the installed `chunk/build_options.h`, which the headers read: a program compiles them
 as the library did.

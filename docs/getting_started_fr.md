@@ -39,9 +39,10 @@ cas réel.
 ## 2. Installer
 
 Avec Spack, la recette est dans le dépôt : voir [le README](../README_fr.md#installer)
-(`spack install shrink-array`). Depuis les sources, avec un compilateur C++20 (essayé avec
-GCC 13 et 14 et Clang 18 ; les scripts de compilation couvrent aussi oneAPI, AOCC et NVHPC ;
-la branche `cpp23` demande le C++23, GCC 14 ou plus récent) et CMake ≥ 3.20 :
+(`spack install shrink-array`). Depuis les sources, avec un compilateur C++23 (cette branche
+`cpp23` : GCC 14 ou plus, Clang 18 ou plus, oneAPI ; NVHPC et AOCC 5 n'ont pas de C++23
+utilisable. `develop` reste en C++20, dès GCC 13 ; la branche `cpp26` demande GCC 16) et
+CMake ≥ 3.20 :
 
 ```sh
 cmake -S shrink-array -B build -G Ninja \
@@ -88,7 +89,7 @@ target_link_libraries(mon_appli PRIVATE shrink_array::zero_any)
 
 La bibliothèque liée **choisit la variante et la taille de chunk**. Les en-têtes sont les mêmes
 pour toutes, et la bibliothèque apporte les définitions de compilation qui sélectionnent la
-sienne (`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` ou `CHUNK_DYNAMIC`), ainsi que le C++20,
+sienne (`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` ou `CHUNK_DYNAMIC`), ainsi que le C++23,
 `-fopenmp` si elle a été construite avec OpenMP, et ses dépendances. Les autres options de sa
 construction sont dans `chunk/build_options.h`, installé, que lisent les en-têtes : un
 programme les compile comme la bibliothèque.
