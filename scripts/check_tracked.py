@@ -12,8 +12,14 @@ What the tracked sources name:
 1. a quoted `#include "x"` of chunk/, fast_allocators/ and examples/ (looked up
    next to the including file, then under chunk/public, fast_allocators/public
    and third_party);
-2. a relative import of the Python packages under python/ (`from . import a`,
-   `from .a import b`, `from ..a import b`);
+2. an import of the Python tree under python/: relative (`from . import a`,
+   `from .a import b`, `from ..a import b`), or absolute when its first name
+   is a module or package of ours -- next to the importing file (a script's
+   directory is on its path: `import numa_launch`, a test's `from conftest
+   import x`) or under python/ (`from shrink_gui.config import x`, `import
+   bench_runner.pool`). The standard library and the installed packages are
+   not ours and are left alone; a name imported FROM a module is looked at
+   only when a file of that name sits there untracked (it may be an attribute);
 3. a source path written in a CMakeLists.txt (relative to it, or after
    ${PROJECT_SOURCE_DIR} / ${CMAKE_SOURCE_DIR} / ${CMAKE_CURRENT_SOURCE_DIR}),
    the validation harnesses, built as `<name>.cpp` from the names
@@ -27,6 +33,12 @@ What the tracked sources name:
    that put it in an IDE's project, and the statement of what is API and what
    is detail). The install copies the whole tree either way, so an unlisted
    header still ships; it is only outside every target.
+6. a std-alloc build (CHUNK_STD_ALLOC) installs no fast_allocators, only the
+   handful of its headers that chunk's headers include: chunk/CMakeLists.txt's
+   `if (CHUNK_STD_ALLOC)` install lists every fast_allocators header reached,
+   transitively, from chunk/public outside the `#if CHUNK_OPT_FAST_ALLOC` /
+   `#if !CHUNK_OPT_STD_ALLOC` blocks. A header missing from that list breaks
+   every consumer of such an install, and no CI job builds one.
 A named file that exists but is untracked is an error (`git add` it); one that
 exists nowhere is an error too, unless a tracked `<name>.in` generates it (a
 CMake *-config-version.cmake is generated; words inside a CMake string are not
@@ -42,6 +54,8 @@ import sys
 
 INCLUDE = re.compile(r'^\s*#\s*include\s*"([^"]+)"')
 PY_REL_FROM = re.compile(r"^\s*from\s+(\.+)([\w.]*)\s+import\s+(.+?)\s*(?:#.*)?$")
+PY_ABS_FROM = re.compile(r"^\s*from\s+([A-Za-z_]\w*(?:\.\w+)*)\s+import\s+(.+?)\s*(?:#.*)?$")
+PY_IMPORT = re.compile(r"^\s*import\s+([A-Za-z_][\w.]*(?:\s+as\s+\w+)?(?:\s*,\s*[A-Za-z_][\w.]*(?:\s+as\s+\w+)?)*)\s*(?:#.*)?$")
 CMAKE_PATH = re.compile(r'(?:\$\{(?:PROJECT_SOURCE_DIR|CMAKE_SOURCE_DIR|CMAKE_CURRENT_SOURCE_DIR)\}/)?'
                         r'[A-Za-z0-9_./-]+\.(?:h|hpp|cpp|c|py|cmake|in)\b')
 MD_LINK = re.compile(r"\]\(([^)#\s:]+)(?:#[^)]*)?\)")
@@ -52,9 +66,43 @@ CMAKE_NAME_LISTS = {
     "examples/validation/CMakeLists.txt": (CMAKE_HARNESS, ".cpp", "harness"),
     "formal/CMakeLists.txt": (CMAKE_MODELS, ".c", "model"),
 }
-INCLUDE_ROOTS = ("chunk/public", "fast_allocators/public", "third_party")
+# examples/common: the include directory of shrink_examples_common (examples/CMakeLists.txt).
+INCLUDE_ROOTS = ("chunk/public", "fast_allocators/public", "third_party", "examples/common")
 CXX_DIRS = ("chunk", "fast_allocators", "examples")
 CXX_SUFFIXES = (".h", ".hpp", ".cpp", ".in")
+
+
+FAST_ALLOC_ONLY = re.compile(r"(?<![!\w])CHUNK_OPT_FAST_ALLOC\b|!\s*CHUNK_OPT_STD_ALLOC\b")
+STD_ALLOC_ONLY = re.compile(r"!\s*CHUNK_OPT_FAST_ALLOC\b|(?<![!\w])CHUNK_OPT_STD_ALLOC\b")
+FA_INCLUDE = re.compile(r'^\s*#\s*include\s*[<"](fast_allocators/[^>"]+)[>"]')
+STD_ALLOC_INSTALL = re.compile(r"^if \(CHUNK_STD_ALLOC\)\n(.*?)^endif\(\)", re.M | re.S)
+
+
+def std_alloc_includes(text):
+    """The fast_allocators headers a file includes in a std-alloc build: its
+    `#include "fast_allocators/..."` lines, minus those inside a block that only
+    a fast-alloc build compiles (`#if CHUNK_OPT_FAST_ALLOC`,
+    `#if !CHUNK_OPT_STD_ALLOC`, or the `#else` of the opposite test). Other
+    conditions count as taken: a superset is the safe side."""
+    stack = []  # per open #if: is the current branch fast-alloc only?
+    found = set()
+    for line in text.split("\n"):
+        d = re.match(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)", line)
+        if d:
+            kw, cond = d.group(1), d.group(2)
+            if kw in ("if", "ifdef", "ifndef"):
+                stack.append([bool(FAST_ALLOC_ONLY.search(cond)), bool(STD_ALLOC_ONLY.search(cond))])
+            elif kw == "elif" and stack:
+                stack[-1] = [bool(FAST_ALLOC_ONLY.search(cond)), False]
+            elif kw == "else" and stack:
+                stack[-1] = [stack[-1][1], False]
+            elif kw == "endif" and stack:
+                stack.pop()
+            continue
+        m = FA_INCLUDE.match(line)
+        if m and not any(fast for fast, _ in stack):
+            found.add(m.group(1))
+    return found
 
 
 def git_files(root, *args):
@@ -105,12 +153,46 @@ def main():
                 # a project header, or a sibling: it must exist somewhere
                 verdict(f"{f}:{n}", f'#include "{inc}"', cands)
 
-    # 2. relative Python imports
+    # 2. Python imports: relative, and absolute ones of our own modules
+    known = tracked | untracked
+
+    def ours(base, first):
+        """Is @p first a module or package of ours in directory @p base?"""
+        prefix = f"{base}/{first}"
+        return f"{prefix}.py" in known or any(k.startswith(prefix + "/") for k in known)
+
+    def absolute_import(where, here, module, names):
+        """`import module` / `from module import names`: checked when the
+        module's first name is ours, next to the importing file or under
+        python/."""
+        parts = module.split(".")
+        for base in dict.fromkeys((str(here), "python")):
+            if not ours(base, parts[0]):
+                continue
+            p = pathlib.PurePosixPath(base).joinpath(*parts)
+            verdict(where, f"import of {module}", [f"{p}.py", f"{p}/__init__.py"])
+            for name in names:
+                for c in (f"{p}/{name}.py", f"{p}/{name}/__init__.py"):
+                    if c in untracked:
+                        problems.append(f"{where}: from {module} import {name} -> {c} exists but is not tracked "
+                                        "(git add it)")
+            return
+
     for f in sorted(tracked):
         if not f.startswith("python/") or not f.endswith(".py"):
             continue
         pkg = pathlib.PurePosixPath(f).parent
         for n, line in enumerate((root / f).read_text(encoding="utf-8", errors="replace").split("\n"), 1):
+            m_abs = PY_ABS_FROM.match(line)
+            if m_abs:
+                names = [x.strip().split(" as ")[0].strip() for x in m_abs.group(2).strip("()").split(",")]
+                absolute_import(f"{f}:{n}", pkg, m_abs.group(1), [x for x in names if x and x != "*"])
+                continue
+            m_imp = PY_IMPORT.match(line)
+            if m_imp:
+                for mod in m_imp.group(1).split(","):
+                    absolute_import(f"{f}:{n}", pkg, mod.strip().split(" as ")[0].strip(), [])
+                continue
             m = PY_REL_FROM.match(line)
             if not m:
                 continue
@@ -189,6 +271,29 @@ def main():
             if f[len(lib) + 1:] not in listed:
                 problems.append(f"{f}: tracked, but in no header list of {lib}/CMakeLists.txt (add it to "
                                 f"{'CHUNK' if lib == 'chunk' else 'ALLOCATORS'}_INTERNAL_HEADERS or _PUBLIC_HEADERS)")
+
+    # 6. the std-alloc install ships every fast_allocators header chunk's headers reach
+    cml = (root / "chunk" / "CMakeLists.txt").read_text(encoding="utf-8")
+    block = STD_ALLOC_INSTALL.search(cml)
+    if not block:
+        problems.append("chunk/CMakeLists.txt: no `if (CHUNK_STD_ALLOC)` install block found (rule 6)")
+    else:
+        installed = set(re.findall(r"fast_allocators/public/(fast_allocators/[A-Za-z0-9_/]+\.h)\b", block.group(1)))
+        todo = set()
+        for f in sorted(t for t in tracked if t.startswith("chunk/public/") and t.endswith(".h")):
+            todo |= std_alloc_includes((root / f).read_text(encoding="utf-8", errors="replace"))
+        reached = set()
+        while todo:
+            h = todo.pop()
+            if h in reached:
+                continue
+            reached.add(h)
+            src = root / "fast_allocators" / "public" / h
+            if src.is_file():
+                todo |= std_alloc_includes(src.read_text(encoding="utf-8", errors="replace"))
+        for h in sorted(reached - installed):
+            problems.append(f"chunk/CMakeLists.txt: the CHUNK_STD_ALLOC install misses fast_allocators/public/{h}, "
+                            f"which chunk's headers include in a std-alloc build")
 
     for p in problems:
         print(p)

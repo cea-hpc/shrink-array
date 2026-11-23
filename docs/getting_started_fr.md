@@ -69,7 +69,10 @@ Quand le projet est intégré à un autre par `add_subdirectory` ou `FetchConten
 bibliothèques sont construites.
 
 Avec Clang ou oneAPI, un build OpenMP utilise aussi l'interface **OMPT** du runtime, ce qui
-dispense le programme des appels de phase du §5.
+dispense le programme des appels de phase du §5. La configuration vérifie que le runtime OpenMP
+charge l'outil de la bibliothèque, que porte l'exécutable ; avec un runtime qui ne le fait pas
+(le `libomp5-18` d'Ubuntu 24.04), la bibliothèque est construite sans lui, comme avec GCC, et un
+avertissement CMake le dit.
 
 ## 3. L'utiliser depuis CMake
 
@@ -77,7 +80,7 @@ dispense le programme des appels de phase du §5.
 cmake_minimum_required(VERSION 3.20)
 project(mon_appli LANGUAGES CXX)
 
-find_package(shrink_array 0.3 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(shrink_array 0.4 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 
 add_executable(mon_appli main.cpp)
 target_link_libraries(mon_appli PRIVATE shrink_array::zero_any)
@@ -304,9 +307,10 @@ dans une région depuis un seul thread pendant que le reste de l'équipe laisse 
 paix : sous `omp single` ou `omp masked`, ou derrière un verrou du programme que chaque autre
 thread attend. Deux threads d'une région n'exécutent jamais de points séquentiels en même temps,
 et aucun thread n'écrit ni ne lit un tableau pendant ce temps. Un appel explicite à
-`make_block_compression()` fait exception : dans une région, il est refusé (arrêt dans un build
-de contrôle, erreur dans le journal et pas de passe ailleurs) -- les passes des écrivains y
-compressent.
+`make_block_compression()` et `shrink_to_fit()` font exception : dans une région, ils sont
+refusés, sous `omp single` aussi (arrêt dans un build de contrôle, message d'erreur et pas de
+passe ailleurs) -- les passes des écrivains y compressent, et `shrink_to_fit()` vient après la
+région.
 
 **Les tableaux de travail dans une région.** Un thread d'une région peut construire ses propres
 tableaux (`zero_any::Array<double> work(n);`), les écrire, les lire et les laisser détruire,

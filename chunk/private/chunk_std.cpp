@@ -25,7 +25,7 @@
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED (teardown_outside_region)
 #include "chunk/internal/live_arrays.h"         // live_array_count: the teardown waits for the last array
 #include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools, defined here
-#include "chunk/internal/singleton.h"           // SingletonChk
+#include "chunk/internal/singleton.h"           // Singleton
 #include "chunk/internal/pmp_chunk.h"           // CHUNK_PMP_IN_PARALLEL_REGION
 
 namespace shrink_array
@@ -41,43 +41,43 @@ std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant
 // No #ifdef _OPENMP here. The bodies below are members of
 // ChunkPoolParallelInterface (zero_chunk.h), so they are TEMPLATES: a build
 // instantiates only its own specialisation and never compiles the other's. They
-// reach the facade through SingletonChk<AllT>, never SingletonChk<TypeStateRegistry>:
+// reach the facade through Singleton<Registry>, never Singleton<TypeStateRegistry>:
 // the calls must stay dependent, or phase-1 lookup resolves them against the
 // concrete type at definition time and the other model fails to compile.
 
 // --- OpenMP: the pools are per-rank -------------------------------------
 
-template <typename AllT>
-bool ChunkPoolParallelInterface<true, AllT>::need_load_balance_list_block_free()
+template <typename Registry>
+bool ChunkPoolParallelInterface<true, Registry>::need_load_balance_list_block_free()
 {
-    const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
+    const auto& type_registry = Singleton<Registry>::get_ref();
 
-    return ens_type_chunk.need_load_balance_list_block_free();
+    return type_registry.need_load_balance_list_block_free();
 }
 
-template <typename AllT>
-void ChunkPoolParallelInterface<true, AllT>::load_balance_list_block_free()
+template <typename Registry>
+void ChunkPoolParallelInterface<true, Registry>::load_balance_list_block_free()
 {
-    const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-    ens_type_chunk.load_balance_list_block_free();
+    const auto& type_registry = Singleton<Registry>::get_ref();
+    type_registry.load_balance_list_block_free();
 }
 
-template <typename AllT>
-void ChunkPoolParallelInterface<true, AllT>::clear_all_list_block_free_thr()
+template <typename Registry>
+void ChunkPoolParallelInterface<true, Registry>::clear_all_list_block_free_thr()
 {
-    auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-    ens_type_chunk.clear_list_block_free_thr();
+    auto& type_registry = Singleton<Registry>::get_ref();
+    type_registry.clear_list_block_free_thr();
 }
 
-template <typename AllT>
-void ChunkPoolParallelInterface<true, AllT>::delete_list_block_chunk_free_itself()
+template <typename Registry>
+void ChunkPoolParallelInterface<true, Registry>::delete_list_block_chunk_free_itself()
 {
-    const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-    ens_type_chunk.delete_list_block_chunk_free_itself();
+    const auto& type_registry = Singleton<Registry>::get_ref();
+    type_registry.delete_list_block_chunk_free_itself();
 }
 
-template <typename AllT>
-void ChunkPoolParallelInterface<true, AllT>::release_chunk_pools()
+template <typename Registry>
+void ChunkPoolParallelInterface<true, Registry>::release_chunk_pools()
 {
     // Both halves, in this order: the lists must be emptied before the
     // containers holding them are released.
@@ -87,18 +87,18 @@ void ChunkPoolParallelInterface<true, AllT>::release_chunk_pools()
 
 // --- Serial: one allocator, nothing per-rank ----------------------------
 
-template <typename AllT>
-void ChunkPoolParallelInterface<false, AllT>::delete_chunk_allocator()
+template <typename Registry>
+void ChunkPoolParallelInterface<false, Registry>::delete_chunk_allocator()
 {
     if constexpr (build_config::use_fast_alloc)
     {
-        const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-        ens_type_chunk.delete_chunk_allocator();
+        const auto& type_registry = Singleton<Registry>::get_ref();
+        type_registry.delete_chunk_allocator();
     }
 }
 
-template <typename AllT>
-void ChunkPoolParallelInterface<false, AllT>::release_chunk_pools()
+template <typename Registry>
+void ChunkPoolParallelInterface<false, Registry>::release_chunk_pools()
 {
     delete_chunk_allocator();
 }
@@ -213,22 +213,22 @@ std::size_t compress_now_and_trim_pools()
     {
         return 0;
     }
-    const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
+    const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
     // Every rank's candidates (the threaded builds; outside a region, one region
     // in which each rank sweeps its own list): the pass that ends a phase, which
-    // CHUNK_AGGRESSIVE_COMPRESSION skips -- force_chunk_to_compress() alone
+    // CHUNK_AGGRESSIVE_COMPRESSION skips -- force_compress_all() alone
     // folded the calling rank's list only. A no-op in a serial build.
-    if (ens_type_chunk.have_chunk_to_compress_potentially())
+    if (type_registry.has_candidates())
     {
-        ens_type_chunk.compress_chunk_to_compress_potentially(true);
+        type_registry.run_compress_pass(true);
     }
     // Then the calling rank's sweep, in every build: a serial zero_any queues
     // its candidates too, and folds them in batches of half the list
     // (perform_compression); the last, partial batch waited here for good
     // (nothing for a serial zero or zero_or_value: their counters compress on
     // the write).
-    ens_type_chunk.force_chunk_to_compress();
-    return ens_type_chunk.trim_reuse_pools(0);
+    type_registry.force_compress_all();
+    return type_registry.trim_reuse_pools(0);
 }
 
 void internal::shutdown_runtime()
@@ -245,8 +245,8 @@ void internal::shutdown_runtime()
         {
             return; // see release_chunk_pools()
         }
-        const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
-        ens_type_chunk.destroy_block_chunk();
+        const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
+        type_registry.destroy_block_chunk();
     }
 }
 

@@ -24,10 +24,10 @@
 #include "chunk/internal/chunk_size_config.h"   // static_chunk_size, static_chunk_shift, static_chunk_mask
 #include "chunk/internal/chunk_size_policy.h"   // active_chunk_size, chunk_size_error
 #include "chunk/internal/pow2.h"                // log2int
-#include "chunk/internal/singleton.h"           // SingletonChk
+#include "chunk/internal/singleton.h"           // Singleton
 #include "chunk/internal/type_state_registry.h" // TypeStateRegistry
 #include "chunk/log.h"                          // CHUNK_LOG (the static build's ignored setters)
-#include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk: the shutdown
+#include "chunk/internal/pool_release.h"        // release_chunk_pools, shutdown_runtime: the shutdown
 
 namespace shrink_array
 {
@@ -70,22 +70,22 @@ namespace shrink_array
 /**
  * @brief The thread-model half of the startup: one verb, two bodies.
  * @tparam Enabled build_config::threaded.
- * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING -- see below.
+ * @tparam Registry    The TypeStateRegistry facade. LOAD-BEARING -- see below.
  *
- * @note AllT looks redundant (it is only ever TypeStateRegistry) and is not: it keeps the two
+ * @note Registry looks redundant (it is only ever TypeStateRegistry) and is not: it keeps the two
  *       bodies TEMPLATES, so only the one this build selects is instantiated. A `template <>`
  *       full specialisation would be compiled eagerly, and the two bodies cannot both compile
  *       (each calls TypeStateRegistry verbs only its own TypeStateRegistryParallelInterface<Derived, B>
- *       declares). The calls must also stay DEPENDENT on AllT (SingletonChk<AllT>, never
- *       SingletonChk<TypeStateRegistry>), or phase-1 lookup rejects the other build's body. Same
+ *       declares). The calls must also stay DEPENDENT on Registry (Singleton<Registry>, never
+ *       Singleton<TypeStateRegistry>), or phase-1 lookup rejects the other build's body. Same
  *       reason as the Derived parameter of TypeStateRegistryParallelInterface.
  */
-template <bool Enabled = build_config::threaded, typename AllT = TypeStateRegistry>
+template <bool Enabled = build_config::threaded, typename Registry = TypeStateRegistry>
 struct RuntimeParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: init_thread_structures() prints the allocator / thread-model banner.
-template <typename AllT>
-struct RuntimeParallelInterface<true, AllT>
+template <typename Registry>
+struct RuntimeParallelInterface<true, Registry>
 {
     /**
      * @brief What init() prints about the thread model (OpenMP build).
@@ -98,8 +98,8 @@ struct RuntimeParallelInterface<true, AllT>
 };
 
 /// @brief Serial builds: init_thread_structures() is a no-op.
-template <typename AllT>
-struct RuntimeParallelInterface<false, AllT>
+template <typename Registry>
+struct RuntimeParallelInterface<false, Registry>
 {
     /**
      * @brief Serial build: nothing to print, nothing to size.
@@ -111,19 +111,19 @@ struct RuntimeParallelInterface<false, AllT>
 /**
  * @brief The runtime-geometry verb, present only in dynamic builds.
  * @tparam Enabled build_config::chunk_dynamic.
- * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING, as on RuntimeParallelInterface
+ * @tparam Registry    The TypeStateRegistry facade. LOAD-BEARING, as on RuntimeParallelInterface
  *                 (see the note there).
  *
  * @note The body calls TypeStateRegistry::register_chunk_size(), which only
  *       TypeStateRegistryDynInterface<Derived, true> declares: keep it a template and the call
- *       dependent on AllT, or the static build fails to compile.
+ *       dependent on Registry, or the static build fails to compile.
  */
-template <bool Enabled = build_config::chunk_dynamic, typename AllT = TypeStateRegistry>
+template <bool Enabled = build_config::chunk_dynamic, typename Registry = TypeStateRegistry>
 struct RuntimeDynInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: provides register_chunk_size().
-template <typename AllT>
-struct RuntimeDynInterface<true, AllT>
+template <typename Registry>
+struct RuntimeDynInterface<true, Registry>
 {
     /**
      * @brief Declare a runtime chunk size so arrays of that geometry can allocate.
@@ -147,8 +147,8 @@ struct RuntimeDynInterface<true, AllT>
 };
 
 /// @brief Fixed-geometry builds: no runtime size to declare.
-template <typename AllT>
-struct RuntimeDynInterface<false, AllT>
+template <typename Registry>
+struct RuntimeDynInterface<false, Registry>
 {
     /**
      * @brief Accepts the call and does nothing (fixed-geometry build).
@@ -221,14 +221,14 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
         {
             const unsigned int cs = active_chunk_size();
             std::cout << "chunk size     : " << cs << " (runtime)\n";
-            std::cout << "decalage chunk : " << static_cast<unsigned int>(log2int(static_cast<std::size_t>(cs)))
+            std::cout << "chunk shift    : " << static_cast<unsigned int>(log2int(static_cast<std::size_t>(cs)))
                       << "\n";
             std::cout << "modulo chunk   : " << (cs - 1u) << "\n";
         }
         else
         {
             std::cout << "chunk size     : " << static_chunk_size << "\n";
-            std::cout << "decalage chunk : " << static_chunk_shift << "\n";
+            std::cout << "chunk shift    : " << static_chunk_shift << "\n";
             std::cout << "modulo chunk   : " << static_chunk_mask << "\n";
         }
     }
@@ -262,19 +262,6 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
      *          must cut its slabs to one size.
      */
     static void init(bool big_chunk_block);
-
-    /// @brief Former name of init().
-    [[deprecated("renamed Runtime::init()")]] static void init_indexes(bool big_chunk_block)
-    {
-        init(big_chunk_block);
-    }
-
-    /// @brief Former name of init<Types>().
-    template <typename Types>
-    [[deprecated("renamed Runtime::init<Types>()")]] static void init_indexes(bool big_chunk_block)
-    {
-        init<Types>(big_chunk_block);
-    }
 
     /**
      * @brief The end of the program's use of the library: the allocation
@@ -313,7 +300,7 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
     static void init(bool big_chunk_block)
     {
         init(big_chunk_block); // the process-wide setup first: the managers need its block size
-        SingletonChk<TypeStateRegistry>::get_ref().initialize<Types>();
+        Singleton<TypeStateRegistry>::get_ref().initialize<Types>();
     }
 
     /**
@@ -403,11 +390,11 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
      * @warning Warns when asked for a shift the binary was not built with, as
      *          set_chunk_size() does.
      */
-    static void set_decalage_chunk(unsigned int value)
+    static void set_chunk_shift(unsigned int value)
     {
         if (value != static_chunk_shift)
         {
-            CHUNK_LOG(warn, general, "set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", value,
+            CHUNK_LOG(warn, general, "set_chunk_shift({}) ignored; built with CHUNK_SIZE={} (shift {})", value,
                       static_chunk_size, static_chunk_shift);
         }
     }
@@ -416,7 +403,7 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
      * @brief No-op compatibility shim: the mask is derived from CHUNK_SIZE.
      *
      * @param value the mask the caller wanted; only compared, never applied
-     * @warning Warns rather than ignoring silently. @see set_decalage_chunk
+     * @warning Warns rather than ignoring silently. @see set_chunk_shift
      */
     static void set_modulo_chunk(int value)
     {
@@ -454,8 +441,5 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
     /// @brief Allocation block size in bytes, shared by all types and threads.
     static int block_size;
 };
-
-/// @brief Former name of Runtime.
-using ParamChunk [[deprecated("renamed Runtime (chunk/runtime.h)")]] = Runtime;
 
 } // namespace shrink_array

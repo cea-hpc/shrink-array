@@ -36,8 +36,7 @@
  *   decider applies says so), CHUNK_LOG=warn,rechunk=debug,
  *   CHUNK_LOG=off. Items apply left to right: a bare level sets every
  *   channel, `channel=level` one. Read once, at the first message;
- *   configure() applies a specification on top of it. The switches of the
- *   former traces raise a channel on top (see legacy_switches).
+ *   configure() applies a specification on top of it.
  * - Cost: a message filtered out is one relaxed load and a compare; its
  *   arguments are not evaluated. CHUNK_LOG_MAX_LEVEL (0 fatal .. 5 trace, 5
  *   by default) removes the levels above it from the build altogether.
@@ -593,76 +592,12 @@ inline void report_bad_items(const Spec& spec, std::string_view who) noexcept
     }
 }
 
-/// @brief An environment switch that raises a channel to a level: a trace
-///        or a report of before the log (deprecated: its use is warned about;
-///        docs/developer_settings.md section 2 dates its removal), or a setting
-///        whose point is what it logs (none left: the decider's
-///        CHUNK_RECHUNK_CHURN is now CHUNK_LOG=rechunk=debug).
-struct LegacySwitch
-{
-    std::string_view name;
-    Channel          channel;
-    Level            level;
-    bool             deprecated;
-};
-
-/// @brief The switches, applied after CHUNK_LOG and raising only: setting
-///        one shows what it showed before, whatever CHUNK_LOG says.
-///        Set = non-empty and not starting with '0'.
-inline constexpr std::array<LegacySwitch, 5> legacy_switches{{
-    {"FAST_ALLOC_TRACE", Channel::alloc, Level::trace, true},
-    {"CHUNK_ARENA_REPORT", Channel::arena, Level::info, true},
-    {"CHUNK_LEDGER_REPORT", Channel::ledger, Level::info, true},
-    {"CHUNK_OMPT_STATS", Channel::ompt, Level::info, true},
-    {"CHUNK_CST2_PROBE", Channel::compress, Level::info, true},
-}};
-
-/// @brief True when switch @p sw is set.
-[[nodiscard]] inline bool is_set(const LegacySwitch& sw) noexcept
-{
-    char name[64];
-    std::memcpy(name, sw.name.data(), sw.name.size());
-    name[sw.name.size()] = '\0';
-    const char* value    = std::getenv(name);
-    return value != nullptr && value[0] != '\0' && value[0] != '0';
-}
-
-/// @brief Raise @p max by the legacy switches set.
-inline void raise_by_legacy_switches(std::array<Level, n_channels>& max) noexcept
-{
-    for (const LegacySwitch& sw : legacy_switches)
-    {
-        Level& level = max[static_cast<std::size_t>(sw.channel)];
-        if (is_set(sw) && level < sw.level)
-        {
-            level = sw.level;
-        }
-    }
-}
-
-/// @brief Warn, on channel env, about the deprecated switches set.
-inline void warn_deprecated_switches() noexcept
-{
-    for (const LegacySwitch& sw : legacy_switches)
-    {
-        if (sw.deprecated && is_set(sw))
-        {
-            char       msg[line_max];
-            const auto len =
-                format_message(msg, "{} is deprecated: it means CHUNK_LOG={}={}, which it now sets", sw.name,
-                               fast_alloc::logging::name(sw.channel), fast_alloc::logging::name(sw.level));
-            emit_direct(Level::warn, Channel::env, std::string_view{msg, len});
-        }
-    }
-}
-
-/// @brief Read CHUNK_LOG, the legacy switches and CHUNK_LOG_FILE: once, at the first message.
+/// @brief Read CHUNK_LOG and CHUNK_LOG_FILE: once, at the first message.
 inline void read_environment() noexcept
 {
     configuring      = true;
     const char* env  = std::getenv("CHUNK_LOG");
     Spec        spec = parse_spec(env != nullptr ? env : "", default_max);
-    raise_by_legacy_switches(spec.max);
     store(spec.max);
 
     if (const char* path = std::getenv("CHUNK_LOG_FILE"); path != nullptr && *path != '\0')
@@ -696,7 +631,6 @@ inline void read_environment() noexcept
     }
 
     report_bad_items(spec, "CHUNK_LOG");
-    warn_deprecated_switches();
     configuring = false;
 }
 

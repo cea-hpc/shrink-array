@@ -219,36 +219,37 @@ se limite aux reconstructions.
 
 ## 8. Limites connues
 
-- **`zero` ralentit après son rechunk.** Après le passage à 1 024, `zero` dynamique tourne 1,5 à
-  2 fois moins vite par itération que le statique 1 024 (environ 40 cœurs occupés à un IPC de
-  3,65, contre 52 cœurs à 4,24). Un build dynamique **démarré** à 1 024 va aussi vite que le
-  statique, et `zero_or_value` ne ralentit pas après ses rechunks : c'est l'état laissé par la
-  reconstruction de `zero` qui est en cause. Ni l'ordonnancement de la reconstruction, ni les
-  seuils de compression n'expliquent l'écart. Cause encore inconnue.
-  Remesuré en octobre 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
-  2 000 itérations, `diag_zero_rechunk_slowdown.py`) : +17 % par itération après le
-  passage à 1 024. Inchangé avec une seule tranche, une reconstruction en
-  ordonnancement statique, sans recyclage des slabs, sans réutilisation de
-  `chunk_list_`, en affinité paresseuse ; le placement NUMA est équilibré comme celui du
-  statique. L'essentiel venait de l'advisor : ses analyses continuaient à chaque
-  passage une fois la géométrie stabilisée, et leurs parties séquentielles
-  faisaient attendre les autres threads (__kmp_fork_barrier). Avec
-  `max_backoff_ticks` (même nœud, `OMP_PROC_BIND=close`, 4 000 itérations, dernier
-  rechunk à l'itération 1 700) : +22 % -> **+7 %**. Le reste est un va-et-vient de
-  compression que le statique n'a pas (~15 000 tampons libérés par itération contre
-  aucun), encore inexpliqué. Toujours là en novembre 2026 après le découpage de la fin du
-  rechunk de `zero`, à titre indicatif (x86-64, GCC 16, 8 threads, `--mode perf --divisor 16
-  --iter_max 2000`, meilleur de 3) : +11 à +13 % par itération après le dernier rechunk
-  (itération 600), 4 % de mémoire résidente de plus que le statique 1 024. Le va-et-vient n'a
-  pas pu être mesuré à cette taille : la ligne `churn` compte par clé d'allocation, et un
-  tableau puise dans la réserve partagée (clé 0, non comptée) tant que ses métadonnées ne
-  dépassent pas `CHUNK_ALLOC_AFFINITY_MIN_BYTES` (16 Mio) et qu'il n'a pas été rechunké -- la
-  ligne le dit désormais. À mesurer en taille réelle (`diag_zero_rechunk_slowdown.py` tel quel).
+- **`zero` après son rechunk : plus lent que la taille où il arrive, ce n'est plus le cas.** `zero`
+  dynamique tournait 1,5 à 2 fois moins vite par itération que le statique 1 024 après le passage
+  à 1 024, et l'on accusait l'état laissé par la reconstruction. Les analyses de l'advisor à chaque
+  passage en faisaient l'essentiel (octobre 2026, inti, aarch64, LLVM, 64 threads : +22 % -> +7 %
+  avec `max_backoff_ticks`). Remesuré en taille réelle en novembre 2026 (inti, 72 threads, GCC,
+  `OMP_PROC_BIND=true`, `--mode perf --iter_max 4000`, meilleur de 3,
+  `diag_zero_rechunk_slowdown.py`), face au statique 1 024 sur les mêmes itérations :
+
+  | `zero` dynamique | temps / itération | mémoire résidente |
+  |---|---|---|
+  | sans advisor (reste à 64, aucun rechunk) | 1,03 | 1,10 |
+  | forcé à 1 024 à l'itération 1 700 (`--force_rechunk 1024 --force_rechunk_at 1700`) | **1,03** | 1,04 |
+  | le choix de l'advisor (768, dernier rechunk à l'itération 1 700) | 1,05 | 1,03 |
+
+  Un rechunk vers 1 024 ne coûte rien de plus que les 3 % du build dynamique lui-même, rechunk ou
+  non. Aucun signe d'un mauvais état non plus : aucun bloc libéré par un rang qui ne possède pas
+  sa slab (`parked_foreign` à 0), même IPC (4,4) et même part des échantillons dans la barrière
+  OpenMP (environ 14 %) que le statique. Ce qui reste est le choix de l'advisor : il prend 768,
+  taille à laquelle `arr3`, `arr4` et `arr5` font du va-et-vient (99, 72 et 68 matérialisations
+  par itération, environ 430 tampons libérés par itération contre 5 pour le statique), `arr4` et
+  `arr5` continuent de se densifier (+9 à +10 % de chunks matérialisés résidents après le
+  rechunk), et 768 ne tient pas moins de mémoire que 1 024 : voir le point suivant. Inexpliqués :
+  les 4 % de mémoire résidente qu'un build dynamique forcé à 1 024 tient de plus que le statique
+  1 024.
 - **Le modèle est statique.** L'advisor juge sur l'état présent des chunks, pas sur les
-  écritures à venir. Sur ce banc, les matérialisations passagères mesurées ne pèsent pas
-  (la ligne `churn` de `CHUNK_LOG=rechunk=debug`), mais un calcul qui écrit beaucoup dans des zones constantes
-  pourrait faire regretter un grossissement : c'est le rôle de l'apprentissage
-  (`coarsen_trust_ratio`) et de l'anti-retour.
+  écritures à venir. Un calcul qui écrit beaucoup dans des zones constantes peut faire regretter
+  un grossissement : c'est le rôle de l'apprentissage (`coarsen_trust_ratio`) et de
+  l'anti-retour. Sur ce banc en taille réelle (voir le point précédent), l'advisor installe
+  `zero` à 768 sur des tableaux qui continuent de se densifier : environ 2 % par itération et
+  aucune mémoire gagnée face à 1 024, les matérialisations se voyant dans la ligne `churn` de
+  `CHUNK_LOG=rechunk=debug`.
 - **Les tableaux de booléens du banc** : `array_bool` et `array_bool_bits` restent à leur
   géométrie de naissance, sauf si `--advise_bool` les confie au décideur, pour que les deux
   conteneurs de booléens soient comparés tels quels. Le rechunk de `Array<bool>` est vérifié

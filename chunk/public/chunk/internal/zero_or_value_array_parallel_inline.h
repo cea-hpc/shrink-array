@@ -27,6 +27,7 @@
 #include "chunk/internal/pmp_chunk.h"                          // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
 #include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_own_candidates)
+#include "chunk/internal/array_users.h"                        // ArrayUsers::only (drain_own_candidates)
 #include "chunk/internal/own_candidates.h"                     // with_own_candidates_only (drain_own_candidates)
 #include "chunk/config.h"                                      // build_config::chunk_dynamic
 
@@ -51,7 +52,7 @@ void zero_or_value::FastBlockSupport<Derived, true>::drain_candidates()
         shrink_array::set_thread_chunk_size(self().chunk_size());
     }
 
-    // bool has its own pass (the (thr, inf_array, proxy) overload static_asserts for it).
+    // bool has its own pass (the (thr, array_info, proxy) overload static_asserts for it).
     // [&], not [this]: `this` is unused in the bool instantiation (-Wunused-lambda-capture).
     const auto pass_on_rank = [&](int thr)
     {
@@ -94,19 +95,33 @@ void zero_or_value::FastBlockSupport<Derived, true>::drain_own_candidates()
     // writer handshake: this array's candidates only, the thread's list for this second
     // value holding chunks of arrays other threads are writing. Other threads may be
     // reading, so the buffers released wait for a grace period (read_reclaim.h).
-    const int  rank     = CHUNK_PMP_THREAD_RANK;
-    const int  array_id = ProxyT::array_registry->get_array_id(self().registry_key());
-    const auto inf      = self().get_info_second_value();
-    auto&      by_value = ManagerT::zero_or_value_candidates_map_thr[rank];
-    if (const auto it = by_value.find(inf.second_value); it != by_value.end() && it->second)
+    const int  own        = CHUNK_PMP_THREAD_RANK;
+    const int  array_id   = ProxyT::array_registry->get_array_id(self().registry_key());
+    const auto array_info = self().get_info_second_value();
+    // A work array of the calling thread: its own list. A SHARED array (other
+    // ranks queued chunks of it: ArrayUsers) is resized at a sequential point
+    // -- under `omp single`, the team waiting -- and every rank's list holds
+    // &chunk_list_[j] pointers and set flags that the resize invalidates:
+    // every rank's list then, this array's candidates only as well.
+    const bool shared = !internal::ArrayUsers<ChunkType>::only(array_id, own);
+    const auto n_rank = static_cast<int>(ManagerT::zero_or_value_candidates_map_thr.size());
+    const int  first  = shared ? 0 : own;
+    const int  last   = shared ? std::min(CHUNK_PMP_RANK_BOUND, n_rank) : std::min(own + 1, n_rank);
+    for (int rank = std::max(first, 0); rank < last; ++rank)
     {
+        auto&      by_value = ManagerT::zero_or_value_candidates_map_thr[rank];
+        const auto it       = by_value.find(array_info.second_value);
+        if (it == by_value.end() || !it->second)
+        {
+            continue;
+        }
         internal::with_own_candidates_only(*it->second, array_id,
                                            [&]
                                            {
                                                const read_reclaim::PassScope pass_scope;
                                                if constexpr (Derived::is_not_bool)
                                                {
-                                                   ChunkType::make_block_compression(rank, inf, nullptr);
+                                                   ChunkType::make_block_compression(rank, array_info, nullptr);
                                                }
                                                else
                                                {
@@ -115,7 +130,7 @@ void zero_or_value::FastBlockSupport<Derived, true>::drain_own_candidates()
                                            });
     }
     const read_reclaim::PassScope sweep_scope;
-    sweep_leftover_candidates(/*own_rank_only=*/true);
+    sweep_leftover_candidates(/*own_rank_only=*/!shared);
 }
 
 template <typename Derived>
@@ -132,13 +147,13 @@ void zero_or_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates([
         using ProxyT   = Traits::ProxyType;
         using ManagerT = Traits::ManagerType;
 
-        const int  array_id = ProxyT::array_registry->get_array_id(self().registry_key());
-        const auto inf      = self().get_info_second_value();
-        const int  thr_self = get_thr_rank_fast();
-        const auto n_rank   = static_cast<int>(ManagerT::zero_or_value_candidates_map_thr.size());
-        const int  first    = own_rank_only ? thr_self : 0;
-        const int  last     = own_rank_only ? std::min(thr_self + 1, n_rank) : n_rank;
-        bool       found    = false;
+        const int  array_id   = ProxyT::array_registry->get_array_id(self().registry_key());
+        const auto array_info = self().get_info_second_value();
+        const int  thr_self   = get_thr_rank_fast();
+        const auto n_rank     = static_cast<int>(ManagerT::zero_or_value_candidates_map_thr.size());
+        const int  first      = own_rank_only ? thr_self : 0;
+        const int  last       = own_rank_only ? std::min(thr_self + 1, n_rank) : n_rank;
+        bool       found      = false;
         for (int thr = first; thr < last; ++thr)
         {
             for (const auto& kv : ManagerT::zero_or_value_candidates_map_thr[thr])
@@ -151,8 +166,8 @@ void zero_or_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates([
                 {
                     if (std::get<2>(tup) == array_id)
                     {
-                        std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
-                        ProxyT::reset_array_inside_list_to_compress(array_id, std::get<1>(tup));
+                        std::get<0>(tup)->compress(thr_self, array_info, /*apply=*/true, std::get<3>(tup).count());
+                        ProxyT::clear_candidate_flag(array_id, std::get<1>(tup));
                         found = true;
                     }
                 }

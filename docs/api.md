@@ -8,7 +8,7 @@
 
 ***
 
-All names are in namespace `shrink_array`, `build_config` and `chunk_config` included; the allocator library's are in `fast_alloc`. The macros start with CHUNK (CHUNK_, CHUNK2A_) or FAST_ALLOC_.
+All names are in namespace `shrink_array`, `build_config` and `chunk_config` included; the allocator library's are in `fast_alloc`. The macros start with CHUNK_ or FAST_ALLOC_.
 
 ## 1. Starting and stopping the library
 
@@ -46,11 +46,12 @@ alone ([getting started, §5](getting_started.md)); it invalidates the array's p
 | read | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | return a `T` |
 | write | `operator[](i)`, `at(i)` | return a write proxy (§4) |
 | raw reference | `operator()(i)` (non-const) | a `T&` into the buffer: **only on a materialised chunk**, bypasses the library |
+| preallocate | `alloc_chunk(i)`, `alloc_chunk(i, rank)` | materialises the chunk holding element `i` if it is compressed, keeping what it reads (`T{}`, or the second value it was compressed to); the loop that follows can then store through `operator()(i)`. Callable from a parallel region, each thread on chunks of its own (`rank`: the calling thread's, its buffer pool) |
 | grow, shrink **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` also folds every chunk that became constant; a negative `n` (here and in the constructor) throws `std::length_error`, as `std::vector` |
 | append | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** only when it needs a new chunk |
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
-| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_or_value::Array`, `zero_any::Array`) |
+| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_or_value::Array`). `zero_any::Array`'s compresses nothing: it reports the chunks that are constant and still materialised (`CHUNK_LOG=compress=info`); `shrink_to_fit()` is the pass there |
 | free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `zero_any::Array<T>` uses any more, so that their identifiers are reused; returns how many (`zero_any::Array`); a sequential point over **every** array of the type, see below |
 | statistics | `stats()`, `written_chunk_count()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones) |
@@ -105,6 +106,12 @@ array's storage: every **(S)** operation invalidates it. In every build,
 does not compile, with a message. A proxy kept on purpose: `std::move(x) = v;`, or
 `a.element_proxy(i)`. The wrapper costs nothing at run time (force-inlined).
 `-DCHUNK_LOOSE_ELEMENT_REF` turns the check off.
+
+An operand of another type than the element: a plain `T` computes in the common type, and so does
+the proxy for the *clean* operands -- the same type, an integer into a floating or complex `T`, the
+scalar of a complex `T`, an `int` into `short`, `char` or `unsigned char`. Any other operand is
+converted to `T` first, with an `HPC WARNING` (`[[deprecated]]`), the same in every variant and
+build, deferred or not: an `int` element `*= 1.5` is multiplied by 1, `/= 0.5` divided by 0.
 
 ## 5. Range operations
 
@@ -244,8 +251,8 @@ The examples print through them.
 
 ## Names changed in 0.3
 
-The former names still compile, with a deprecation warning (the headers: silently), and go at
-the next minor version.
+The former names compiled until 0.3, deprecated; 0.4 removed them. A program written against
+0.2 replaces them as follows (the `pmp::` spellings of the three thread functions remain).
 
 | former name | name |
 |---|---|

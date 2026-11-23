@@ -13,7 +13,7 @@ set -u
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${CHUNK_BUILD_ROOT:-${CHUNK_BUILD_REP:-$SRC}}" # CHUNK_BUILD_REP: the former name
+WORK="${CHUNK_BUILD_ROOT:-$SRC}"
 GCC_MODULE="${GCC_MODULE:-c++/gcc/15.2.0}"
 GCC_TSAN_MODULE="${GCC_TSAN_MODULE:-c++/gcc/14.1.0}"
 arch="$(source /etc/os-release && echo ${ID^^}_${VERSION_ID}__$(uname -m))"

@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 if(POLICY CMP0126)
     cmake_policy(SET CMP0126 NEW)
 endif()
-project(shrink_array VERSION 0.3.0 LANGUAGES CXX)
+project(shrink_array VERSION 0.4.0 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
 # FetchContent)? PROJECT_IS_TOP_LEVEL says it from CMake 3.21; this is the same
@@ -20,51 +20,6 @@ else()
 endif()
 option(SHRINK_ARRAY_BUILD_EXAMPLES "Build the examples, benchmarks and validation harnesses" ${SHRINK_ARRAY_IS_TOP_LEVEL})
 option(SHRINK_ARRAY_BUILD_TESTS "Register the tests (include(CTest))" ${SHRINK_ARRAY_IS_TOP_LEVEL})
-
-# The options had no prefix until 0.3 (OMP, SANITIZER, CHECK_OPTIM, ...): a name
-# a project that takes this one in may use for something else, in the cache they
-# share. They are CHUNK_ ones now. The former names are still read, with a
-# message, when this project is the top-level one -- never as a subproject,
-# where the name may be the consumer's.
-if(SHRINK_ARRAY_IS_TOP_LEVEL)
-    foreach(_chunk_renamed IN ITEMS
-            "INTEL_ICPX_GLOB=CHUNK_INTEL_ICPX_GLOB"
-            "INTEL_ICPX=CHUNK_INTEL_ICPX"
-            "INTEL_LIBM_DIR=CHUNK_INTEL_LIBM_DIR"
-            "ONEAPI_NO_INTEL_LIBS=CHUNK_ONEAPI_NO_INTEL_LIBS"
-            "ONEAPI_FAST_FP=CHUNK_ONEAPI_FAST_FP"
-            "ONEAPI_XHOST=CHUNK_ONEAPI_XHOST"
-            "ARMPL_LIBM_DIR=CHUNK_ARMPL_LIBM_DIR"
-            "HAVE_AGGRESSIVE_COMPRESSION=CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT"
-            "GCC_TOOLCHAIN_DIR=CHUNK_GCC_TOOLCHAIN_DIR"
-            "ENABLE_IWYU=CHUNK_ENABLE_IWYU"
-            "USE_LIBCXX=CHUNK_USE_LIBCXX"
-            "USE_GPERF=CHUNK_USE_GPERF"
-            "USE_MOLD=CHUNK_USE_MOLD"
-            "CHECK_OPTIM=CHUNK_CHECK_OPTIM"
-            "SANITIZER=CHUNK_SANITIZER"
-            "OMP=CHUNK_OPENMP")
-        string(REPLACE "=" ";" _chunk_renamed "${_chunk_renamed}")
-        list(GET _chunk_renamed 0 _chunk_former)
-        list(GET _chunk_renamed 1 _chunk_name)
-        if(DEFINED CACHE{${_chunk_former}})
-            message(DEPRECATION "-D${_chunk_former} is -D${_chunk_name} now (the former name goes at the next minor version)")
-            # The former entry's type (BOOL, PATH, STRING): an old build tree
-            # has it from its own option() / set(CACHE). A -D without a type
-            # leaves it UNINITIALIZED, and the option() / set(CACHE) of the
-            # new name further down gives it its type then.
-            get_property(_chunk_type CACHE ${_chunk_former} PROPERTY TYPE)
-            if(NOT DEFINED CACHE{${_chunk_name}})
-                set(${_chunk_name} "$CACHE{${_chunk_former}}" CACHE ${_chunk_type} "(given as ${_chunk_former})")
-            endif()
-            unset(${_chunk_former} CACHE)
-        endif()
-    endforeach()
-    unset(_chunk_renamed)
-    unset(_chunk_former)
-    unset(_chunk_name)
-    unset(_chunk_type)
-endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -117,12 +72,12 @@ option(FAST_ALLOC_CHECK_LISTS "Debug builds: check every slab list in full on ea
 # 4 bytes per chunk instead of 8 or 16, -3.8% RSS on the 50 M-chunk reference
 # run, for one more dependent load on every write of a materialised chunk --
 # +3% CPU on the perf bench. Off by default; see SecondValueTraits in
-# chunk/internal/array_const_val2_holder.h.
+# chunk/internal/second_value_registry.h.
 option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte identifiers (less memory, +3% write CPU)" OFF)
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
 # build (chunk/build_options.h).
 
-# CHUNK_MM_PROTECT: zero/zero_or_value's shared constant buffers (const_val1, the const_val2
+# CHUNK_MM_PROTECT: zero/zero_or_value's shared constant buffers (first_value, the second_value
 # region) are mprotect'ed read-only, so a stray write into a compressed chunk
 # faults at the culprit instead of corrupting a value shared by thousands of
 # chunks. A debugging build: one mprotect per buffer, and page-rounded slots.
@@ -250,6 +205,16 @@ if(CHUNK_OPENMP)
             # for the targets that exist only with the OMPT tool
             # (examples/multi_mat's embedded-compression executable).
             set(CHUNK_HAVE_OMPT ON)
+
+            # The OpenMP runtime finds the tool with dlsym("ompt_start_tool") in the
+            # EXECUTABLE: its symbols must be in the dynamic symbol table, which an
+            # executable does not export by default (chunk/CMakeLists.txt gives these
+            # options to every executable linking a variant).
+            set(CHUNK_OMPT_TOOL_LINK_OPTIONS -rdynamic)
+            # Not every runtime looks there (cmake/ompt_probe.cpp): check that this
+            # one does; CHUNK_HAVE_OMPT goes OFF if not.
+            include(${PROJECT_SOURCE_DIR}/cmake/shrink_ompt_probe.cmake)
+            shrink_check_ompt_tool_loads(${CHUNK_OMPT_TOOL_LINK_OPTIONS})
         endif()
         message(STATUS "Clang/IntelLLVM compiler detected")
     else()
@@ -542,10 +507,15 @@ endif()
 # chosen by who builds it: Spack's compiler wrapper passes the -march= of the
 # spec's target, and a flag added here comes after it and wins, so the package
 # was tied to the build host whatever target= said. The recipe sets it OFF.
+# OFF by default in a consuming project (add_subdirectory, FetchContent): the
+# library's objects built for the build host, the project's own without that
+# flag, gave a binary that no longer ran elsewhere -- and inline functions
+# compiled for two instruction sets. The project's flags apply; it sets
+# CHUNK_NATIVE_TUNING=ON before including the library to have them.
 if(SHRINK_ARRAY_IS_TOP_LEVEL)
     option(CHUNK_NATIVE_TUNING "Optimised builds: tune for the build host (-march=native, -mcpu=native, -tp=host). OFF: no target flag, the caller's apply" ON)
 elseif(NOT DEFINED CHUNK_NATIVE_TUNING)
-    set(CHUNK_NATIVE_TUNING ON)
+    set(CHUNK_NATIVE_TUNING OFF)
 endif()
 
 if(NOT CHUNK_NATIVE_TUNING)
@@ -862,6 +832,13 @@ if(CHUNK_ENABLE_IWYU)
     endif()
 endif()
 
+# What the executables of examples/ link ahead of the libraries (the optimised
+# libm below): applied right before add_subdirectory(examples), after chunk/
+# and fast_allocators/, so that the libraries -- and their installed CMake
+# targets -- carry no absolute path to it and no rpath (a relocatable install).
+set(_shrink_exe_link_libs "")
+set(_shrink_exe_link_opts "")
+
 # ── Intel libm for GNU / Clang builds on x86-64 ─────────────────────────────
 # RHEL 8's glibc libm is old and slow on cos/sin/atan/tan, which the benches'
 # compute phases live in: AMD Milan, GNU, shrink_bench_omp_zero_any_256, 64 threads,
@@ -929,19 +906,21 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
     if(SHRINK_LIBIMF AND SHRINK_LIBINTLC)
         get_filename_component(_imf_dir "${SHRINK_LIBIMF}" DIRECTORY)
         message(STATUS "Intel libm: ${SHRINK_LIBIMF} -- linked ahead of libm (SHRINK_INTEL_LIBM=OFF to disable)")
-        # link_libraries: every target created from here on links them first,
-        # ahead of the -lm the examples add and the driver's own. libintlc is
-        # kept as a DIRECT dependency even under --as-needed: libimf needs it,
-        # and the executable's RUNPATH only serves its direct dependencies.
-        link_libraries("${SHRINK_LIBIMF}" "-Wl,--push-state,--no-as-needed" "${SHRINK_LIBINTLC}" "-Wl,--pop-state")
-        add_link_options("LINKER:-rpath,${_imf_dir}")
+        # The project's executables link them first, ahead of the -lm the
+        # examples add and the driver's own (_shrink_exe_link_*, applied before
+        # add_subdirectory(examples) below: not the libraries, whose installed
+        # targets would carry the absolute path and rpath). libintlc is kept
+        # as a DIRECT dependency even under --as-needed: libimf needs it, and
+        # the executable's RUNPATH only serves its direct dependencies.
+        list(APPEND _shrink_exe_link_libs "${SHRINK_LIBIMF}" "-Wl,--push-state,--no-as-needed" "${SHRINK_LIBINTLC}" "-Wl,--pop-state")
+        list(APPEND _shrink_exe_link_opts "LINKER:-rpath,${_imf_dir}")
         # And its -L, as a raw flag. CMake (3.28) writes libintlc as a bare
         # -lintlc, without the directory, so the link only worked where
         # LIBRARY_PATH held it -- a shell that had sourced oneAPI's setvars.sh,
         # as compile_all.sh does -- and failed elsewhere with "library not
         # found: intlc". link_directories() would be dropped too when the
         # directory is among the compiler's implicit ones; a raw -L is not.
-        add_link_options("-L${_imf_dir}")
+        list(APPEND _shrink_exe_link_opts "-L${_imf_dir}")
     else()
         message(STATUS "Intel libm: not found -- glibc libm (set CHUNK_INTEL_LIBM_DIR, or load the oneAPI environment)")
     endif()
@@ -980,10 +959,9 @@ if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
     if(SHRINK_LIBAMATH)
         get_filename_component(_amath_dir "${SHRINK_LIBAMATH}" DIRECTORY)
         message(STATUS "ArmPL libm: ${SHRINK_LIBAMATH} -- linked ahead of libm (SHRINK_ARM_LIBM=ON)")
-        # link_libraries: every target created from here on links it first,
-        # ahead of the -lm the examples add and the driver's own.
-        link_libraries("${SHRINK_LIBAMATH}")
-        add_link_options("LINKER:-rpath,${_amath_dir}")
+        # The project's executables link it first (_shrink_exe_link_*, as libimf).
+        list(APPEND _shrink_exe_link_libs "${SHRINK_LIBAMATH}")
+        list(APPEND _shrink_exe_link_opts "LINKER:-rpath,${_amath_dir}")
     else()
         message(STATUS "ArmPL libm: libamath not found -- glibc libm (load the armpl module before cmake, or set CHUNK_ARMPL_LIBM_DIR)")
     endif()
@@ -1046,6 +1024,13 @@ endif()
 if(SHRINK_ARRAY_BUILD_EXAMPLES)
     # shrink-build-stamp: [build] line in the validation binaries, `check` target
     include(${PROJECT_SOURCE_DIR}/cmake/shrink_build_stamp.cmake)
+    # The optimised libm (above): every executable from here on, no library.
+    if(_shrink_exe_link_libs)
+        link_libraries(${_shrink_exe_link_libs})
+    endif()
+    if(_shrink_exe_link_opts)
+        add_link_options(${_shrink_exe_link_opts})
+    endif()
     add_subdirectory(examples)
     shrink_add_check_target()
 endif()

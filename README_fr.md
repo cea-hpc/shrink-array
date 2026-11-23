@@ -164,7 +164,7 @@ dans le corps prend `sa::tbb::phase_body(inner)`. L'en-tête est fourni avec la 
 ne dépend pas de TBB : c'est au programme de se lier à TBB.
 
 ```cmake
-find_package(shrink_array 0.3 REQUIRED)
+find_package(shrink_array 0.4 REQUIRED)
 find_package(TBB REQUIRED)
 target_link_libraries(my_app PRIVATE shrink_array::zero_any TBB::tbb)
 ```
@@ -355,7 +355,7 @@ cmake --install build
 Puis, dans votre projet :
 
 ```cmake
-find_package(shrink_array 0.3 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(shrink_array 0.4 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
@@ -466,7 +466,7 @@ changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 
 ## État du projet et contributions
 
-shrink-array en est à la version 0.3 : avant la 1.0, une version mineure peut changer
+shrink-array en est à la version 0.4 : avant la 1.0, une version mineure peut changer
 l'interface ([politique de versions](CHANGELOG.md)). Chaque push lance les vérifications des
 sources, les builds GCC 14 (OpenMP, série et threads std avec oneTBB), les tests de validation, le backend std
 sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AArch64, un projet qui

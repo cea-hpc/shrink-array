@@ -8,7 +8,7 @@
 
 ***
 
-Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chunk_config` compris ; ceux de la bibliothèque d'allocation sont dans `fast_alloc`. Les macros commencent par CHUNK (CHUNK_, CHUNK2A_) ou FAST_ALLOC_.
+Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chunk_config` compris ; ceux de la bibliothèque d'allocation sont dans `fast_alloc`. Les macros commencent par CHUNK_ ou FAST_ALLOC_.
 
 ## 1. Démarrer et arrêter la bibliothèque
 
@@ -47,11 +47,12 @@ il invalide les proxys du tableau.
 | lecture | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | renvoient un `T` |
 | écriture | `operator[](i)`, `at(i)` | renvoient un proxy d'écriture (§4) |
 | référence brute | `operator()(i)` (non const) | un `T&` dans le tampon : **seulement sur un chunk matérialisé**, contourne la bibliothèque |
+| préallocation | `alloc_chunk(i)`, `alloc_chunk(i, rank)` | matérialise le chunk de l'élément `i` s'il est compressé, en gardant ce qu'il lit (`T{}`, ou la seconde valeur à laquelle il était compressé) ; la boucle qui suit peut alors écrire par `operator()(i)`. Appelable dans une région parallèle, chaque thread sur ses propres chunks (`rank` : celui du thread appelant, sa réserve de tampons) |
 | agrandir, réduire **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` replie aussi chaque chunk devenu constant ; un `n` négatif (ici et au constructeur) lève `std::length_error`, comme `std::vector` |
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
-| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_or_value::Array`, `zero_any::Array`) |
+| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_or_value::Array`). Celui de `zero_any::Array` ne compresse rien : il signale les chunks constants encore matérialisés (`CHUNK_LOG=compress=info`) ; la passe y est `shrink_to_fit()` |
 | libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `zero_any::Array<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`zero_any::Array`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas |
 | statistiques | `stats()`, `written_chunk_count()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) |
@@ -109,6 +110,13 @@ dans un `ElementRef` (`internal/element_ref.h`) que seul un temporaire peut util
 `auto x = a[i];` puis tout usage de `x` ne compile pas, avec un message. Un proxy gardé
 volontairement : `std::move(x) = v;`, ou `a.element_proxy(i)`. L'enveloppe ne coûte rien à
 l'exécution (inlinée de force). `-DCHUNK_LOOSE_ELEMENT_REF` désactive la vérification.
+
+Un opérande d'un autre type que l'élément : un `T` nu calcule dans le type commun, et le proxy aussi
+pour les opérandes *propres* -- le même type, un entier dans un `T` flottant ou complexe, le
+scalaire d'un `T` complexe, un `int` dans `short`, `char` ou `unsigned char`. Tout autre opérande
+est d'abord converti en `T`, avec un `HPC WARNING` (`[[deprecated]]`), de la même façon dans toutes
+les variantes et tous les builds, différé ou non : un élément `int` `*= 1.5` est multiplié par 1,
+`/= 0.5` divisé par 0.
 
 ## 5. Opérations sur des plages
 
@@ -253,8 +261,8 @@ vers un flux. Les exemples affichent par eux.
 
 ## Noms changés en 0.3
 
-Les anciens noms compilent encore, avec un avertissement d'obsolescence (les en-têtes : sans
-rien dire), et disparaissent à la version mineure suivante.
+Les anciens noms compilaient jusqu'à 0.3, obsolètes ; 0.4 les a retirés. Un programme écrit
+pour 0.2 les remplace ainsi (les graphies `pmp::` des trois fonctions des threads restent).
 
 | ancien nom | nom |
 |---|---|

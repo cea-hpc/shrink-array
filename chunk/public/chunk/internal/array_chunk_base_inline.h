@@ -608,6 +608,30 @@ void ArrayChunkBase<Derived>::swap(Derived& other) noexcept
 }
 
 template <typename Derived>
+CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T&
+ArrayChunkBase<Derived>::operator()(IndexType index) noexcept
+{
+    const int   chunk_index = chunk_index_of(index);
+    const int   elem_offset = offset_in_chunk(index);
+    const auto& chunk_t     = chunk_list_[chunk_index];
+
+    sync_chunk(chunk_t, chunk_index, elem_offset);
+
+    // The chunk's own check (ChunkBase::operator()) cannot tell for
+    // zero_or_value: its chunk needs the array's second-value index to know
+    // whether it is materialised.
+    if constexpr (build_config::any_check && has_chunk_written_v<Derived>)
+    {
+        if (!is_written_at(chunk_index)) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("operator()(i), the raw reference, on a chunk that is not materialised");
+        }
+    }
+
+    return chunk_t(elem_offset);
+}
+
+template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
 ArrayChunkBase<Derived>::operator()(IndexType index) const noexcept
 {
@@ -636,7 +660,7 @@ ArrayChunkBase<Derived>::operator[](IndexType index) const noexcept
     // Lets the compiler drop bounds/sign checks (0 <= elem_offset <= modulo by construction).
     // modulo() is read into a local first: clang ignores an assumption that
     // calls a function it cannot prove side-effect free (-Wassume).
-    [[maybe_unused]] const int chunk_mod = static_cast<int>(size_policy_.modulo());
+    [[maybe_unused]] const auto chunk_mod = static_cast<int>(size_policy_.modulo());
     CHUNK_ASSUME(chunk_index >= 0);
     CHUNK_ASSUME(elem_offset >= 0 && elem_offset <= chunk_mod);
     const auto& chunk_t = chunk_list_[chunk_index];
@@ -691,7 +715,7 @@ ArrayChunkBase<Derived>::element_proxy(IndexType index) noexcept
     // a renamed member must fail to compile, not fall back silently.
     if constexpr (std::is_same_v<ProxyType, zero_or_value::Proxy<T>>)
     {
-        val.arm_inf_array(derived().registry_mirror());
+        val.arm_array_info(derived().registry_mirror());
     }
 
     // No sync on the write entry: the read entries pull visibility
@@ -830,6 +854,26 @@ ArrayChunkBase<Derived>::sync_chunk(const ChunkType& chunk_t, int chunk_index, i
                 chunk_t.wait_for_availability(offset);
             }
         }
+    }
+}
+
+
+template <typename Derived>
+void ArrayChunkBase<Derived>::reset_regrown_tail(IndexType old_size, IndexType new_size, int old_chunk_count)
+{
+    if (new_size <= old_size)
+    {
+        return;
+    }
+    const auto csz = static_cast<IndexType>(this->chunk_size());
+    // In long long: old_chunk_count * csz may pass IndexType's range near its top.
+    const long long cover_ll = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
+    const IndexType old_cover =
+        cover_ll < static_cast<long long>(new_size) ? static_cast<IndexType>(cover_ll) : new_size;
+    const IndexType stale_end = new_size < old_cover ? new_size : old_cover;
+    for (IndexType i = old_size; i < stale_end; ++i)
+    {
+        derived()[i] = T{};
     }
 }
 

@@ -28,7 +28,7 @@
  *          method of its own:
  *
  *            scan_sources     what the old chunks under the new one hold
- *            install_const2     zero_any: one shared constant, installed, no buffer
+ *            install_second_value     zero_any: one shared constant, installed, no buffer
  *            read_span        bulk read of the old chunks into the buffer
  *            release_sources  free the old chunks once fully transcribed
  *            copy_range       fill the new chunk (the public bulk API)
@@ -120,7 +120,7 @@ template <typename Derived, typename ChunkType>
 
 /// @brief The FRESH array's second-value record (the fold writes it;
 ///        rechunk_seed_fresh() has declared it), or 0 as above. Deduced, not
-///        named: only zero_or_value::Array has InfArrayT, and a discarded
+///        named: only zero_or_value::Array has ArrayInfo, and a discarded
 ///        branch is never instantiated.
 template <typename Derived, typename ChunkType>
 [[nodiscard]] auto rechunk_second_info(const Derived& array) noexcept
@@ -149,11 +149,11 @@ namespace shrink_array
  *          exactly one thread, the reads are const, and the write path
  *          partitions allocator / compression state by thread rank.
  *
- *          Materialisation is tracked with is_const_val1() (values == the const1
+ *          Materialisation is tracked with is_first_value() (values == the first value
  *          sentinel), universal and index-free -- unlike written()/is_const_val()
  *          on zero_or_value, which need the second_value index. While filled,
- *          a chunk only goes const1 -> real buffer (never const2, a compression
- *          result), so "still const1" == "not yet materialised" for every variant.
+ *          a chunk only goes first value -> real buffer (never second value, a compression
+ *          result), so "still first value" == "not yet materialised" for every variant.
  */
 template <typename Derived>
 class RechunkSupport<Derived, true>::Refill
@@ -219,18 +219,18 @@ class RechunkSupport<Derived, true>::Refill
     struct Sources
     {
         /// Every source is still the first constant: nothing to rebuild.
-        bool all_const1 = true;
-        /// Every source is a compressed constant (const1 or const2): the new chunk,
+        bool all_first_value = true;
+        /// Every source is a compressed constant (first value or second value): the new chunk,
         /// once filled, holds only constants and can be folded back at once.
-        /// Tracked for zero_any and zero_or_value (non-bool); zero has const1
-        /// only (covered by all_const1).
+        /// Tracked for zero_any and zero_or_value (non-bool); zero has the first value
+        /// only (covered by all_first_value).
         bool all_folded = true;
-        /// zero_any: some source is const1.
-        bool any_const1 = false;
-        /// zero_any: every const2 source points at the SAME shared array (same value).
-        bool same_const2 = true;
-        /// zero_any: the first const2 source's values pointer.
-        const T* const2 = nullptr;
+        /// zero_any: some source is at the first value.
+        bool any_first_value = false;
+        /// zero_any: every second-value source points at the SAME shared array (same value).
+        bool same_second_value = true;
+        /// zero_any: the first second-value source's values pointer.
+        const T* second_values_ptr = nullptr;
     };
 
     /// @brief Slices of the refill: 16 with releases_sources + fast allocator (fewer
@@ -252,7 +252,7 @@ class RechunkSupport<Derived, true>::Refill
 
     /// @brief zero_any: all sources are the same second constant -> install it
     ///        on the new chunk without a buffer. @return true if installed.
-    bool install_const2(int new_chunk, const Span& span, const Sources& sources, Tally& tally);
+    bool install_second_value(int new_chunk, const Span& span, const Sources& sources, Tally& tally);
 
     /// @brief Read the elements of @p span from the old chunks into @p buf.
     void read_span(int new_chunk, const Span& span, std::vector<T>& buf) const;
@@ -289,7 +289,7 @@ class RechunkSupport<Derived, true>::Refill
     const bool trace_mem_on_; ///< memory=debug
     const bool slice_trace_;  ///< rechunk=trace
 
-    // zero_or_value's const2 predicate and its compress() both need the array's
+    // zero_or_value's second-value predicate and its compress() both need the array's
     // second-value registry entry; the lookups are hoisted here, once per
     // re-chunk.
     [[maybe_unused]] const int        idx_old2_; ///< src_'s second-value index (the scan)
@@ -311,7 +311,7 @@ class RechunkSupport<Derived, true>::Refill
 
     // Slice boundaries run INSIDE the slice's region (see run_slice()): the
     // team drain's scratch lives across them, and so do the trace timers.
-    typename ManagerT::TeamDrainScratch team_drain_; ///< the team drain's scratch
+    ManagerT::TeamDrainScratch team_drain_; ///< the team drain's scratch
     /// The ranks the team holds at a boundary (each recycles its own slabs,
     /// one thread the others').
     std::vector<unsigned char> recycle_held_;

@@ -59,8 +59,8 @@ class BenchChart:
         self.bc_cmp.currentIndexChanged.connect(self.load_bench_points)
         self.bc_log = QCheckBox("Échelle log")
         self.bc_log.toggled.connect(self.draw_bench)
-        bref = QPushButton("Rafraîchir")
-        bref.clicked.connect(self.load_bench_points)
+        refresh_btn = QPushButton("Rafraîchir")
+        refresh_btn.clicked.connect(self.load_bench_points)
         row = QHBoxLayout()
         for lab, w in (("Config", self.bc_config), ("Mesure", self.bc_metric)):
             row.addWidget(QLabel(lab))
@@ -68,7 +68,7 @@ class BenchChart:
         row.addWidget(self.bc_log)
         row.addWidget(QLabel("Comparer avec"))
         row.addWidget(self.bc_cmp, 1)
-        row.addWidget(bref)
+        row.addWidget(refresh_btn)
         self.bc_view = ScatterView()
         row.addWidget(self.chart_save_button(self.bc_view, self.bench_image_name))
         self.bc_note = TLabel("")
@@ -188,12 +188,12 @@ class BenchChart:
         def word(g):
             pct = abs(g - 1) * 100
             if metric == "temps":
-                sens = "plus lent" if g > 1 else "plus rapide"
+                direction = "plus lent" if g > 1 else "plus rapide"
             elif metric == "mémoire":
-                sens = "de mémoire en plus" if g > 1 else "de mémoire en moins"
+                direction = "de mémoire en plus" if g > 1 else "de mémoire en moins"
             else:
-                sens = "de speedup en plus" if g > 1 else "de speedup en moins"
-            return f"×{g:.3f} ({pct:.1f} % {sens})"
+                direction = "de speedup en plus" if g > 1 else "de speedup en moins"
+            return f"×{g:.3f} ({pct:.1f} % {direction})"
 
         g_all = geomean([vb[k] / va[k] for k in common])
         here = [k for k in common if k[0] == config]

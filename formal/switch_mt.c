@@ -25,9 +25,9 @@
  *   steal_mark(X)                    -- release
  *   start(): announce + full barrier, then wait until no writer flag names a
  *            marked chunk             -- the window (acquire loads)
- *   fill_list_to_compress(X):
- *     is_not_cst_val1()   -- load 1
- *     is_cst_val2()       -- load 2 (a second load of values)
+ *   classify_candidate(X):
+ *     is_not_first_value()   -- load 1
+ *     is_second_value()       -- load 2 (a second load of values)
  *     scan the buffer      -- load 3, must be BUF: the property
  *     clear_int_st         -- values = constant, the buffer freed
  *   steal_unmark(X)
@@ -126,12 +126,12 @@ static void* compressor(void* arg)
         ;
 #endif
 
-    /* fill_list_to_compress */
+    /* classify_candidate */
     const int v1 = atomic_load_explicit(&values, memory_order_acquire);
-    if (v1 != CST1) /* is_not_cst_val1 */
+    if (v1 != CST1) /* is_not_first_value */
     {
         const int v2 = atomic_load_explicit(&values, memory_order_acquire);
-        if (!is_cst2(v2)) /* is_cst_val2 */
+        if (!is_cst2(v2)) /* is_second_value */
         {
             const int v3 = atomic_load_explicit(&values, memory_order_acquire); /* the scan */
             assert(v3 == BUF && "the pass scans and clears a values word that is not a buffer");

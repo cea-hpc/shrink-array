@@ -130,7 +130,7 @@ void RechunkSupport<Derived, true>::Refill::run()
 
     // Parallel rebuild: each thread takes disjoint new chunks and drives the
     // write path on its own rank; the schedule (see
-    // internal::rebuild_schedule()) balances const1-skip (cheap) vs materialise
+    // internal::rebuild_schedule()) balances first-value skip (cheap) vs materialise
     // (costly). Geometry is per-array so no global race; only per-thread TLS
     // + per-rank allocator/compression state are touched.
     //
@@ -399,15 +399,15 @@ void RechunkSupport<Derived, true>::Refill::rebuild_one(int new_chunk, std::vect
                          .old_last  = static_cast<int>((end - 1) / old_size_)};
 
     const Sources sources = scan_sources(span);
-    if (sources.all_const1)
+    if (sources.all_first_value)
     {
         // Nothing to rebuild: the whole span was still the compressible
         // constant, so the new chunk stays compressed (work avoided).
         inc_chunk_rechunk_skipped<ChunkType>();
-        return; // fresh const1, leave it
+        return; // fresh first value, leave it
     }
     inc_chunk_rechunk_rebuilt<ChunkType>();
-    if (install_const2(new_chunk, span, sources, tally))
+    if (install_second_value(new_chunk, span, sources, tally))
     {
         return;
     }
@@ -444,45 +444,45 @@ auto RechunkSupport<Derived, true>::Refill::scan_sources(const Span& span) const
         const auto& och = src_.chunk_list_[static_cast<std::size_t>(oc)];
         if constexpr (is_zero_any_family_v<ChunkType>)
         {
-            if (och.is_const_val1())
+            if (och.is_first_value())
             {
-                sources.any_const1 = true;
+                sources.any_first_value = true;
             }
         }
-        if (och.is_const_val1())
+        if (och.is_first_value())
         {
             continue;
         }
-        sources.all_const1 = false;
+        sources.all_first_value = false;
         if constexpr (is_zero_any_family_v<ChunkType>)
         {
             if constexpr (has_motif_state_v<ChunkType>)
             {
-                // A motif chunk (pattern::Array): is_const_val2() for the write
+                // A motif chunk (pattern::Array): is_second_value() for the write
                 // engine, but no constant -- its elements are motif + offset.
                 if (ChunkType::is_motif_ptr(och.values_load()))
                 {
                     sources.all_folded = false;
                 }
             }
-            if (!och.is_const_val2())
+            if (!och.is_second_value())
             {
                 sources.all_folded = false;
             }
-            else if (sources.const2 == nullptr)
+            else if (sources.second_values_ptr == nullptr)
             {
-                sources.const2 = och.values_load();
+                sources.second_values_ptr = och.values_load();
             }
-            else if (och.values_load() != sources.const2)
+            else if (och.values_load() != sources.second_values_ptr)
             {
-                sources.same_const2 = false;
+                sources.same_second_value = false;
             }
         }
         else if constexpr (second_index)
         {
             // Same test as zero_any, with the second-value index
             // zero_or_value needs and zero_any carries implicitly.
-            if (!och.is_const_val2(idx_old2_))
+            if (!och.is_second_value(idx_old2_))
             {
                 sources.all_folded = false;
             }
@@ -496,10 +496,10 @@ auto RechunkSupport<Derived, true>::Refill::scan_sources(const Span& span) const
 }
 
 template <typename Derived>
-bool RechunkSupport<Derived, true>::Refill::install_const2([[maybe_unused]] int            new_chunk,
-                                                           [[maybe_unused]] const Span&    span,
-                                                           [[maybe_unused]] const Sources& sources,
-                                                           [[maybe_unused]] Tally&         tally)
+bool RechunkSupport<Derived, true>::Refill::install_second_value([[maybe_unused]] int            new_chunk,
+                                                                 [[maybe_unused]] const Span&    span,
+                                                                 [[maybe_unused]] const Sources& sources,
+                                                                 [[maybe_unused]] Tally&         tally)
 {
     // zero_any: all sources are the same second constant -> install it.
     // Filling a buffer and folding it back (fold_back) gives the same state,
@@ -509,7 +509,8 @@ bool RechunkSupport<Derived, true>::Refill::install_const2([[maybe_unused]] int 
     // chunk is reachable by no other thread until the swap, so no CAS.
     if constexpr (is_zero_any_family_v<ChunkType> && !std::is_same_v<T, bool>)
     {
-        if (sources.all_folded && sources.same_const2 && !sources.any_const1 && sources.const2 != nullptr)
+        if (sources.all_folded && sources.same_second_value && !sources.any_first_value &&
+            sources.second_values_ptr != nullptr)
         {
             set_thread_chunk_size(static_cast<unsigned int>(old_size_));
             // auto: SecondValueRef is not declared in every TU that
@@ -519,8 +520,8 @@ bool RechunkSupport<Derived, true>::Refill::install_const2([[maybe_unused]] int 
             auto&      nch   = tmp_.chunk_list_[static_cast<std::size_t>(new_chunk)];
             const auto psv   = ProxyType::BaseSpec::get_array_second_value(tmp_.array_id_, new_chunk);
             ConstSlot* ptc   = &ProxyType::array_type_const_val[tmp_.array_id_][new_chunk];
-            (void)nch.find_or_set_idx_const_val2(value, psv);
-            ChunkType::set_const_val_to_const_val2(ptc);
+            (void)nch.find_or_register_second_value(value, psv);
+            ChunkType::set_to_second_value(ptc);
             nch.init_values_const_val(ptc, psv);
             ++tally.folded;
             ++tally.installed;
@@ -550,10 +551,10 @@ void RechunkSupport<Derived, true>::Refill::read_span([[maybe_unused]] int new_c
     // chunk is freed once every span reading it is done.
     //
     // Per source chunk, the same decision element_at_unguarded() makes per
-    // element, on the same single load: a zero_any const2 pointer names an
+    // element, on the same single load: a zero_any second-value pointer names an
     // identifier region that was never written -> fill with the constant;
-    // anything else (materialised buffer, const1 sentinel, zero_or_value's
-    // filled const2 array) is readable as is -> memcpy. bool / Bit keep the
+    // anything else (materialised buffer, first-value sentinel, zero_or_value's
+    // filled second-value array) is readable as is -> memcpy. bool / Bit keep the
     // per-element path (bit-packed storage).
     if constexpr (std::is_trivially_copyable_v<T> && !is_bool_like_v<T>)
     {
@@ -573,7 +574,7 @@ void RechunkSupport<Derived, true>::Refill::read_span([[maybe_unused]] int new_c
             const T* const  vals    = och.values_load();
             if constexpr (is_zero_any_family_v<ChunkType>)
             {
-                if (och.is_const_val2_ptr_of(vals))
+                if (och.is_second_value_ptr_of(vals))
                 {
                     std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(pos), src_len,
                                 och.second_value_from_ptr(vals));
@@ -677,10 +678,10 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
     // Each variant's release_st() frees the buffer and points the chunk at the
     // first constant without counting a compression -- exactly what "already
     // transcribed" means here. zero_or_value / zero_any's go through their
-    // compression's own block_clear_common(0, ...) (type slot to const1, second-
+    // compression's own block_clear_common(0, ...) (type slot to the first value, second-
     // value slot reset, CAS, free_block_to_pool), which is sound on the source:
     // quiescent, so the CAS cannot lose, and torn down right after the swap,
-    // where a const1 chunk owns nothing. Only materialised chunks are released:
+    // where a first-value chunk owns nothing. Only materialised chunks are released:
     // a chunk at a second constant points at a shared array, never freed.
     if constexpr (releases_sources)
     {
@@ -714,14 +715,14 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
             // compression (CHUNK_STATS counted every rebuilt chunk as one).
             if constexpr (chunk_config::use_zero)
             {
-                if (!och.is_const_val1())
+                if (!och.is_first_value())
                 {
                     och.release_st(thr, old_size_);
                 }
             }
             else if constexpr (is_zero_any_family_v<ChunkType>)
             {
-                // written(): neither const1 nor a const2 (a pattern motif included).
+                // written(): neither first value nor a second value (a pattern motif included).
                 if (och.written())
                 {
                     och.release_st(&ProxyType::array_type_const_val[src_.array_id_][oc],
@@ -730,7 +731,7 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
             }
             else
             {
-                // owns_live_buffer(): neither const1 nor the second constant.
+                // owns_live_buffer(): neither first value nor the second constant.
                 if (och.owns_live_buffer())
                 {
                     och.release_st(idx_old2_, thr);
@@ -750,7 +751,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
     // copy_range materialises the new chunk whatever its content. When every
     // source chunk was a compressed constant (all_folded), the buffer holds
     // only constants; leaving it for the next end-of-phase sweep keeps the
-    // WHOLE array's const2 share materialised until then (it can double the
+    // WHOLE array's second-value share materialised until then (it can double the
     // process RSS).
     //
     // So run the variant's own compress() on the chunk right here, on this
@@ -760,12 +761,12 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
     // nothing synthesised. The transient is bounded to one chunk per thread.
     // If the constants differ across the span the scan refuses and the chunk
     // stays materialised. The candidate the arming write queued stays in the
-    // list; the sweep finds a const1/const2 chunk and skips it (compress() guards
-    // on is_not_const_val1(); the scan on a const2 chunk re-derives the same
+    // list; the sweep finds a first/second value chunk and skips it (compress() guards
+    // on is_not_first_value(); the scan on a second-value chunk re-derives the same
     // state).
     //
     // Wired for zero_any (compress() by chunk_index, array_id) and zero_or_value
-    // (by the array's inf_array record). bool registers no second value
+    // (by the array's array_info record). bool registers no second value
     // (get_idx_second_value aborts) and is bit-packed: never this path.
     if constexpr (is_zero_any_family_v<ChunkType>)
     {
@@ -778,7 +779,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
             // Every source chunk WAS a constant here, so a refusal means the
             // span merged constants that differ -- the genuine cost of
             // coarsening, the one the forecast has to carry.
-            if (!nch.is_const_val1() && !nch.is_const_val2())
+            if (!nch.is_first_value() && !nch.is_second_value())
             {
                 ++tally.refused;
             }
@@ -788,7 +789,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
     // return in rebuild_one(), and scanning every other rebuilt chunk for
     // zeros folds almost none for a full buffer scan each; the end-of-phase
     // sweep handles chunks that actually became zero. Chunk<T>::compress()
-    // keeps the guard that a second visit to a const1 chunk must not park the
+    // keeps the guard that a second visit to a first-value chunk must not park the
     // zero sentinel -- load-bearing for the sweep regardless of this loop.
     //
     // zero_or_value: bool has no second value to fold to (second_index is
@@ -807,7 +808,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
             auto& nch = tmp_.chunk_list_[static_cast<std::size_t>(new_chunk)];
             nch.compress(get_thr_rank_fast(), inf_new2_,
                          /*apply=*/true, static_cast<unsigned int>(new_size_));
-            if (!nch.is_const_val1() && !nch.is_const_val2(inf_new2_.idx))
+            if (!nch.is_first_value() && !nch.is_second_value(inf_new2_.idx))
             {
                 ++tally.refused;
             }
@@ -842,14 +843,14 @@ void RechunkSupport<Derived, true>::Refill::log_census() const
     for (int c = 0; c < n_new_; ++c)
     {
         const auto& ch         = tmp_.chunk_list_[static_cast<std::size_t>(c)];
-        bool        compressed = ch.is_const_val1();
+        bool        compressed = ch.is_first_value();
         if constexpr (is_zero_any_family_v<ChunkType>)
         {
-            compressed = compressed || ch.is_const_val2();
+            compressed = compressed || ch.is_second_value();
         }
         else if constexpr (second_index)
         {
-            compressed = compressed || ch.is_const_val2(inf_new2_.idx);
+            compressed = compressed || ch.is_second_value(inf_new2_.idx);
         }
         if (!compressed)
         {

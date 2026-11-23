@@ -49,8 +49,8 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& arr, const Options& opt)
     , nc_(arr.chunk_count_)
     , len_(arr.chunk_count_ * static_cast<int64_t>(arr.chunk_size()))
     , second_value_idx_(second_value_index(arr))
-    , const1_value_(ChunkT::first_value)
-    , const2_value_(const1_value_)
+    , first_value_(ChunkT::first_value)
+    , second_value_(first_value_)
     , cand_(candidate_sizes(arr.chunk_size(), opt))
     , n_cand_(static_cast<int>(cand_.size()))
 {
@@ -58,8 +58,8 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& arr, const Options& opt)
     // designated (otherwise only first_value: the conservative answer).
     if constexpr ((chunk_config::use_zero_or_value || is_zero_any_family_v<ChunkT>) && requires { arr.second_value(); })
     {
-        const2_value_ = arr.second_value();
-        has_const2_   = !same_value(const2_value_, const1_value_);
+        second_value_     = arr.second_value();
+        has_second_value_ = !same_value(second_value_, first_value_);
     }
     for (const uint32_t cand_sz : cand_)
     {
@@ -112,7 +112,7 @@ template <typename Arr>
 int ChunkSizeScan<Arr>::second_value_index([[maybe_unused]] const Arr& arr)
 {
     // bool / Bit: one second value, `true`, no index -- get_idx_second_value()
-    // aborts for them; classify() asks the unindexed is_const_val2().
+    // aborts for them; classify() asks the unindexed is_second_value().
     // A zero_any-family array in a zero_or_value build (pattern::Array): no
     // index, the zero_any branches of classify().
     if constexpr (chunk_config::use_zero_or_value && !is_zero_any_family_v<ChunkT> && !is_bool_like_v<T>)
@@ -143,11 +143,11 @@ bool ChunkSizeScan<Arr>::compressible_value([[maybe_unused]] const T& elem) cons
     }
     else
     {
-        if (same_value(elem, const1_value_))
+        if (same_value(elem, first_value_))
         {
             return true;
         }
-        return has_const2_ && same_value(elem, const2_value_);
+        return has_second_value_ && same_value(elem, second_value_);
     }
 }
 
@@ -155,13 +155,13 @@ template <typename Arr>
 int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
 {
     key = nullptr;
-    if (chunk.is_const_val1())
+    if (chunk.is_first_value())
     {
-        return kind_const1;
+        return kind_first_value;
     }
     if constexpr (has_motif_state_v<ChunkT>)
     {
-        // A motif chunk (pattern::Array): is_const_val2() for the write engine,
+        // A motif chunk (pattern::Array): is_second_value() for the write engine,
         // but no constant, and no buffer of its own: a kind of its own,
         // counted and forecast apart (forecast_motifs()), never sampled as data.
         if (ChunkT::is_motif_ptr(chunk.values_load()))
@@ -172,31 +172,31 @@ int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
     // The family, not the build (as compressible_value).
     if constexpr (is_zero_any_family_v<ChunkT>)
     {
-        if (chunk.is_const_val2())
+        if (chunk.is_second_value())
         {
             key = static_cast<const void*>(chunk.values_load());
-            return kind_const2;
+            return kind_second_value;
         }
     }
     else if constexpr (chunk_config::use_zero_or_value)
     {
-        bool is_const2 = false;
+        bool is_second = false;
         if constexpr (is_bool_like_v<T>)
         {
-            is_const2 = chunk.is_const_val2();
+            is_second = chunk.is_second_value();
         }
         else
         {
-            is_const2 = second_value_idx_ >= 0 && chunk.is_const_val2(second_value_idx_);
+            is_second = second_value_idx_ >= 0 && chunk.is_second_value(second_value_idx_);
         }
-        if (is_const2)
+        if (is_second)
         {
-            static constexpr int const2_sentinel = 0; // one address: array-level, all const2 equal
-            key                                  = &const2_sentinel;
-            return kind_const2;
+            static constexpr int second_value_sentinel = 0; // one address: array-level, all second values equal
+            key                                        = &second_value_sentinel;
+            return kind_second_value;
         }
     }
-    // zero: const1 or mat only.
+    // zero: first value or mat only.
     return kind_mat;
 }
 
@@ -342,8 +342,8 @@ void ChunkSizeScan<Arr>::merge_parts()
     Run open = {0, 0, kind_none, nullptr};
     for (int64_t p = 0; p < n_parts_; ++p)
     {
-        const Run& first = part_first_[static_cast<std::size_t>(p)];
-        if (open.kind == first.kind && open.key == first.key && open.end == first.start)
+        if (const Run& first = part_first_[static_cast<std::size_t>(p)];
+            open.kind == first.kind && open.key == first.key && open.end == first.start)
         {
             open.end = first.end;
         }
@@ -371,7 +371,9 @@ void ChunkSizeScan<Arr>::merge_parts()
     sampling_ = any_sampled_ && mat0_ > 0;
     if (sampling_)
     {
-        stride_ = mat0_ > opt_.max_mat_scans ? (mat0_ + opt_.max_mat_scans - 1) / opt_.max_mat_scans : 1;
+        // At least one chunk read: max_mat_scans = 0 (or less) divided by zero here.
+        const int64_t max_scans = std::max<int64_t>(opt_.max_mat_scans, 1);
+        stride_                 = mat0_ > max_scans ? (mat0_ + max_scans - 1) / max_scans : 1;
     }
 }
 
@@ -385,8 +387,8 @@ void ChunkSizeScan<Arr>::pick_part(int64_t part)
     auto&   mine = part_picks_[static_cast<std::size_t>(part)];
     for (int64_t j = j0; j < j1; ++j)
     {
-        const void* key = nullptr;
-        if (classify(array_.chunk_list_[j], key) != kind_mat) // skip const1 / const2 (only mat has data)
+        // skip first value / second value (only mat has data)
+        if (const void* key = nullptr; classify(array_.chunk_list_[j], key) != kind_mat)
         {
             continue;
         }
@@ -596,8 +598,7 @@ bool ChunkSizeScan<Arr>::part_value(int64_t          cc,
 {
     const auto& ch  = array_.chunk_list_[cc];
     const void* key = nullptr;
-    const int   kc  = classify(ch, key);
-    if (kc != kind_mat && kc != kind_motif)
+    if (const int kc = classify(ch, key); kc != kind_mat && kc != kind_motif)
     {
         part = ch.read_value_scan(0); // the constant (a scan read: no app stats)
         return true;
@@ -758,8 +759,7 @@ bool ChunkSizeScan<Arr>::motif_window_key(int64_t win, uint32_t cand_sz, std::ui
             first = v0;
         }
         h = mix(h, cnt);
-        h = mix(h,
-                static_cast<std::uint64_t>(static_cast<typename ChunkT::UnsignedT>(ChunkT::wrapping_sub(v0, first))));
+        h = mix(h, static_cast<std::uint64_t>(static_cast<ChunkT::UnsignedT>(ChunkT::wrapping_sub(v0, first))));
     }
     key = h;
     return has_motif;

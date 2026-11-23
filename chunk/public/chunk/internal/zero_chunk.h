@@ -31,7 +31,7 @@
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/pool_release.h"        // release_chunk_pools, shutdown_runtime
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_const_val)
 
 namespace shrink_array
@@ -54,7 +54,7 @@ class TypeStateRegistry;
  *        the thread model.
  *
  * @tparam Enabled build_config::threaded.
- * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING (as on
+ * @tparam Registry    The TypeStateRegistry facade. LOAD-BEARING (as on
  *                 RuntimeParallelInterface, runtime.h): it keeps the
  *                 bodies TEMPLATES, so a build instantiates only its own, and
  *                 the calls DEPENDENT, so phase-1 lookup does not resolve them
@@ -66,12 +66,12 @@ class TypeStateRegistry;
  *       guard; those with nothing to do in a model are no-ops.
  * @see release_chunk_pools(), the verb for "let go of the reuse pools" in any build.
  */
-template <bool Enabled = build_config::threaded, typename AllT = TypeStateRegistry>
+template <bool Enabled = build_config::threaded, typename Registry = TypeStateRegistry>
 struct ChunkPoolParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the pools are per-rank.
-template <typename AllT>
-struct ChunkPoolParallelInterface<true, AllT>
+template <typename Registry>
+struct ChunkPoolParallelInterface<true, Registry>
 {
     /// @return True as soon as the per-rank free lists are unbalanced enough to
     ///         be worth a pass.
@@ -91,8 +91,8 @@ struct ChunkPoolParallelInterface<true, AllT>
 };
 
 /// @brief Serial builds: one allocator, no per-rank lists to balance or clear.
-template <typename AllT>
-struct ChunkPoolParallelInterface<false, AllT>
+template <typename Registry>
+struct ChunkPoolParallelInterface<false, Registry>
 {
     /// @return Always false: there is a single free list, so nothing to balance.
     [[nodiscard]] static bool need_load_balance_list_block_free()
@@ -210,7 +210,7 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
 
     using Base::derived;
     using Base::init_block;
-    using Base::is_const_val1;
+    using Base::is_first_value;
     using Base::self;
     using Base::values_;
 
@@ -256,7 +256,7 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
      * @param n_elems  THIS chunk's element count, carried by the candidate
      *                 tuple; using the ambient size instead overflows a buffer
      *                 allocated at another geometry
-     * @note The queue consumer's per-chunk step (Chunk::compress_chunk_to_compress).
+     * @note The queue consumer's per-chunk step (Chunk::compress_queued).
      */
     void compress(int thr_rank, unsigned int n_elems);
 
@@ -343,7 +343,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
 {
   public:
     // 4th element: the chunk's OWN geometry, captured at enqueue by
-    // push_to_compress_list. compress() must scan exactly that many elements,
+    // push_candidate. compress() must scan exactly that many elements,
     // NOT alloc_chunk_count() (the CONSUMING thread's ambient size, may differ).
     using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
@@ -365,7 +365,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
      * @param max_thr number of threads whose candidate lists are scanned
      * @return true as soon as one non-empty list is found
      */
-    static bool have_chunk_to_compress(int max_thr);
+    static bool has_queued(int max_thr);
 
   private:
     constexpr static T zero{};
@@ -378,14 +378,14 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
      *                  chunk_tuples.h's note on the field it is carried in
      */
-    void fill_list_to_compress(CandidateTuples& ll_compt, int chunk_index, int array_id, unsigned int n_elems);
+    void classify_candidate(CandidateTuples& ll_compt, int chunk_index, int array_id, unsigned int n_elems);
 
     /**
      * @brief Scan @p thr's queued candidates and collect those now compressible.
      * @param thr      rank whose candidate list is scanned
      * @param ll_compt out: the chunks found compressible, with their geometry
      */
-    static void fill_list_chunk_to_compress_in_par(int thr, CandidateTuples& ll_compt);
+    static void classify_rank_candidates(int thr, CandidateTuples& ll_compt);
 };
 
 /**
@@ -406,19 +406,17 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
     static void make_block_compression(int /*thr*/, const Proxy<T>* /*proxy*/) {}
 
     /// No candidate lists exist in this mode, so there is never anything queued.
-    static bool have_chunk_to_compress(int /*max_thr*/)
+    static bool has_queued(int /*max_thr*/)
     {
         return false;
     }
 
   private:
     /// @brief No candidate list to fill in this mode.
-    static void fill_list_chunk_to_compress_in_par(int /*thr*/, CandidateTuples& /*ll_compt*/) {}
-    /// @copydoc fill_list_chunk_to_compress_in_par
-    static void fill_list_to_compress(CandidateTuples& /*ll_compt*/,
-                                      int /*chunk_index*/,
-                                      int /*array_id*/,
-                                      unsigned int /*n_elems*/)
+    static void classify_rank_candidates(int /*thr*/, CandidateTuples& /*ll_compt*/) {}
+    /// @copydoc classify_rank_candidates
+    static void
+    classify_candidate(CandidateTuples& /*ll_compt*/, int /*chunk_index*/, int /*array_id*/, unsigned int /*n_elems*/)
     {
     }
 };
@@ -426,9 +424,9 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
  * @brief One chunk of a ChunkArray: a block of chunk-size elements that collapses to zero.
  *
  * @details The simplest of the three variants. A chunk holds either a real
- *          buffer or, once every element is zero, the shared const_val1 constant
+ *          buffer or, once every element is zero, the shared first_value constant
  *          -- so `values` doubles as the state flag: written() is just
- *          "values != const_val1". zero_or_value and zero_any extend this with a second
+ *          "values != first_value". zero_or_value and zero_any extend this with a second
  *          constant, shared or per-chunk respectively.
  *
  *          Three policies supply what depends on the build, so this class holds
@@ -465,9 +463,9 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     using Base::allocate_chunk_internal;
     using Base::first_value;
 
+    using Base::first_value_buffer_;
     using Base::init_block;
-    using Base::is_const_val1;
-    using Base::m_ptr_const_val1;
+    using Base::is_first_value;
     using Base::values_;
     using Base::values_load;
     using Base::values_store;
@@ -499,20 +497,20 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /// @brief Point this chunk at the shared zero constant (compressed state).
     void init_values_const_val()
     {
-        values_ = Base::get_const_val1();
+        values_ = Base::first_value_ptr();
     }
 
     /// @brief Does this chunk hold a real buffer?
-    /// @return false while it is compressed to const_val1
+    /// @return false while it is compressed to first_value
     [[nodiscard]] bool written() const noexcept
     {
-        return values_ != Base::get_const_val1();
+        return values_ != Base::first_value_ptr();
     }
 
     /// @brief Materialise storage if the chunk is still compressed.
     void alloc_chunk()
     {
-        if (is_const_val1())
+        if (is_first_value())
         {
             this->create_value();
         }
@@ -530,9 +528,9 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
      * @param apply true: compress the candidates found constant; false: walk
      *        the lists only (zero ignores it: its pass always compresses)
      */
-    static void compress_chunk_to_compress(bool apply);
+    static void compress_queued(bool apply);
 
-    /// @brief One rank's share of compress_chunk_to_compress(): the body its
+    /// @brief One rank's share of compress_queued(): the body its
     ///        region runs on each thread. Public for TypeStateRegistry's single
     ///        sweep region (TypeState::sweep_rank).
     /// @param thr rank whose candidate list to drain

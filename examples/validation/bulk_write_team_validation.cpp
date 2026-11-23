@@ -35,13 +35,10 @@
 
 #include <forward_list> // std::forward_list (assign from a forward iterator)
 #include <mutex>        // std::mutex, std::scoped_lock (the in-region arrays, one at a time)
-#include <type_traits>  // std::conditional_t
 #include <utility>      // std::as_const
 #include <vector>       // std::vector
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
@@ -52,6 +49,7 @@
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name
 
 namespace validation::bulk_write_team_validation
 {
@@ -63,28 +61,6 @@ namespace
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
               "bulk_write_team_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 /// @brief Runs of zero, runs of 7 and varied values, by blocks of 1000.
 template <typename T>

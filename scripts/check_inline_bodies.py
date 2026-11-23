@@ -970,7 +970,7 @@ def main():
             print(f"{len(moved)} member function bodies longer than {a.threshold} lines are defined in their class;")
             print(f"run `python3 {CHECK_SCRIPT} --apply` from the repository root to move them:")
             for h, name, n_items, comp in moved:
-                print(f"  {h}: {name} ({nb} lines)")
+                print(f"  {h}: {name} ({n_items} lines)")
             sys.exit(1)
         print(f"check_inline_bodies: no member function body longer than {a.threshold} lines in a class")
         return

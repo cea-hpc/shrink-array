@@ -25,7 +25,7 @@
 //                  of 64, is_valid_chunk_size),
 //   * chunk_of(i) / offset_of(i) — i / size() and i % size(), the split of an
 //                  element index (a shift and a mask for a power of two),
-//   * modulo()   — size - 1, the last offset in a chunk; decalage() is
+//   * modulo()   — size - 1, the last offset in a chunk; shift() is
 //                  log2(size), meaningful for a power of two only.
 //
 //   * StaticChunkSize  — compile-time geometry (-DCHUNK_SIZE), every accessor
@@ -262,7 +262,7 @@ struct StaticChunkSize
         return static_chunk_size;
     }
     /// @brief log2(size()): the shift that turns an element index into a chunk index.
-    static constexpr unsigned int decalage() noexcept
+    static constexpr unsigned int shift() noexcept
     {
         return static_chunk_shift;
     }
@@ -311,9 +311,9 @@ class DynamicChunkSize
         return size_;
     }
     /// @brief log2(size()): the shift that turns an element index into a chunk index.
-    [[nodiscard]] unsigned int decalage() const noexcept
+    [[nodiscard]] unsigned int shift() const noexcept
     {
-        return decalage_;
+        return shift_;
     }
     /// @brief size() - 1: the mask that turns an element index into an offset in its chunk.
     [[nodiscard]] unsigned int modulo() const noexcept
@@ -338,7 +338,7 @@ class DynamicChunkSize
   private:
     // A new array adopts the process-wide active size (default static_chunk_size).
     unsigned int  size_        = g_active_chunk_size;
-    unsigned int  decalage_    = static_cast<unsigned int>(log2int(static_cast<std::size_t>(g_active_chunk_size)));
+    unsigned int  shift_       = static_cast<unsigned int>(log2int(static_cast<std::size_t>(g_active_chunk_size)));
     unsigned int  modulo_      = g_active_chunk_size - 1u;
     bool          pow2_        = true; ///< size() is a power of two: chunk_of / offset_of shift and mask
     std::uint64_t m32_         = 0;    ///< chunk_of's multiplier, 32-bit index (set_divider)
@@ -358,9 +358,9 @@ class DynamicChunkSize
 // -----------------------------------------------------------------------------
 using ActiveSizePolicy = std::conditional_t<build_config::chunk_dynamic, DynamicChunkSize, StaticChunkSize>;
 
-// Extent of the shared constant buffers (m_ptr_const_val1 / const_val2): a constant
+// Extent of the shared constant buffers (first_value_buffer_ / second_value): a constant
 // chunk is read as buffer[elem_offset], so it MUST be >= every runtime chunk size. Not
-// the type ceiling (65535): one buffer per DISTINCT const2 value accumulates
+// the type ceiling (65535): one buffer per DISTINCT second value accumulates
 // (const_buffer_size * sizeof(T) each). Override with
 // -DCHUNK_DYN_MAX_SIZE=<power-of-two>; rechunk_to refuses a larger size
 // (array_chunk_rechunk_inline.h).

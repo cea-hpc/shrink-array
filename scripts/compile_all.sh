@@ -195,7 +195,11 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
   --jobs=N         Build at most N configurations at once (default 4). The core
                    budget is split across them, so this bounds the total number
                    of compiler processes instead of multiplying it. Use 1 to
-                   serialise when a build gets OOM-killed.
+                   serialise when a build gets OOM-killed. With ninja >= 1.13
+                   the budget is a shared jobserver instead: a build that ends
+                   leaves its cores to the ones still running (CHUNK_NINJA=<a
+                   ninja >= 1.13> configures with it; CHUNK_JOBSERVER=off: the
+                   fixed shares only).
   --no-hardening   Do not add -DCHUNK_GLIBCXX_ASSERTIONS=ON to Debug/sanitizer builds,
                    nor -DCHUNK_UBSAN=ON to the address-sanitizer builds (default: added).
   --llvm-cs=<N>    Also build an llvm RelWithDebInfo variant with CHUNK_SIZE=N (power of two).
@@ -870,7 +874,7 @@ if skip_release; then
    echo "[debug-only] skipping llvm release-stats build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
    launch_build "$build_root/cmake-build-omp-llvm-stats/$arch"
 fi
@@ -1016,7 +1020,7 @@ if skip_release; then
     echo "[debug-only] skipping llvm non-omp release-stats build"
 else
     if [ "$BUILD_ONLY" = false ]; then
-       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-llvm-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-llvm-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=OFF $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
     launch_build "$build_root/cmake-build-llvm-stats/$arch"
 fi

@@ -27,7 +27,7 @@
 #include "chunk/config.h"                            // build_config::chunk_dynamic, chunk_config::use_zero*
 #include "chunk/internal/invariant_check.h"          // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/type_state.h"               // TypeState<ChunkT, T>
-#include "chunk/internal/singleton.h"                // SingletonChk<TypeStateRegistry>, for ensure_manager
+#include "chunk/internal/singleton.h"                // Singleton<TypeStateRegistry>, for ensure_manager
 #include "chunk/internal/chunk_traits.h"             // the variants' declarations initialize<Types> names
 #include "chunk/internal/link_check.h"               // CHUNK_LINK_CHECK: the program's settings, the library's
 // Not the chunk definitions: register_manager<> is instantiated in the TU that
@@ -59,7 +59,7 @@ void TypeStateRegistry::register_manager()
     auto manager = std::make_unique<ManagerT>();
 
     // The whole per-type setup, before the manager is published.
-    manager->resize_chunk_to_compress_potentially();
+    manager->resize_candidate_lists();
     init_manager(*manager, block_size_);
     if constexpr (build_config::chunk_dynamic)
     {
@@ -81,7 +81,7 @@ void TypeStateRegistry::ensure_manager()
     {
         link_check::CHUNK_LINK_CHECK(); // links only against a library built with this TU's settings
         ensure_ready();                 // init(true) if the program has not run it
-        SingletonChk<TypeStateRegistry>::get_ref().register_manager<ManagerT>();
+        Singleton<TypeStateRegistry>::get_ref().register_manager<ManagerT>();
         return true;
     }();
 }

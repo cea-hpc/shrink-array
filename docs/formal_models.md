@@ -66,7 +66,7 @@ name in the model stands for one place in the source, with the same memory order
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h`: `start()`, `finish()`; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h`: `steal_mark_` and its three verbs |
 | `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h`: `values`, `values_load()`, `compare_and_swap_gen()`; `zero_any_chunk.h`: `try_mark_const_and_get_old()` |
-| `materialise()`, the scan, the element store | `zero_any_chunk_inline.h`: `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()`; `relaxed_element.h` |
+| `materialise()`, the scan, the element store | `zero_any_chunk_inline.h`: `create_value()`, `wait_before_materialise()`, `classify_candidate()`; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h`: `write_with_optional_lock_impl()` |
 
 Three properties are asserted: **P1**, a writer never stores into a buffer the pass has returned
@@ -86,7 +86,9 @@ the default is an all-zero buffer, a candidate for the pass), `BOUNDED_COMPRESSO
 ## 4. The calibration
 
 Every line below is one `run_genmc.sh` case; the verdicts are those of GenMC 0.19 under RC11 and
-under IMM (identical). "Executions" is the number of complete executions the checker explored.
+under IMM (identical), and GenMC 0.20 gives the same verdicts and execution counts (checked
+2026-11-19, against LLVM 21). "Executions" is the number of complete executions the checker
+explored.
 
 | case | expected | verdict | executions |
 |---|---|---|---|
@@ -202,7 +204,7 @@ read sections and the buffer's free are checked as in section 6.
 | `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()`; `internal/proxy_base_inline.h` `read_values_at()`; `pattern_chunk.h` `Chunk::motif_offset()` |
 | `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, the motif branch |
 | `pass()`, a motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
-| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_set_idx_const_val2_release()` |
+| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_register_second_value_release()` |
 
 | case | expected | verdict | executions |
 |---|---|---|---|
@@ -255,8 +257,8 @@ chunk -- this writer's. The writer spins on the mark, the compressor on the flag
 the compressor's wait is bounded (`CHUNK_COMPRESS_MAX_YIELDS`, 10,000 yields of 1,000 pauses):
 not a deadlock, but a stall of both threads for that whole budget, after which the pass is
 abandoned (the gate counter of aborts on an overly long wait, in the `CHUNK_STATS` report, counts these). It needs a
-chunk that is at a constant while sitting in a candidate list -- the case `fill_list_to_compress()`
-guards against with `is_not_const_val1()` -- so it is rare, not impossible.
+chunk that is at a constant while sitting in a candidate list -- the case `classify_candidate()`
+guards against with `is_not_first_value()` -- so it is rare, not impossible.
 
 The fix follows from the handshake itself: a fast-path writer holds its flag and has passed
 check no. 2, so a mark it sees now belongs to a compressor that is **parked** on that flag;
@@ -355,7 +357,7 @@ slot is stable there.
 ### 8.7 F6: a chunk made constant during a pass's hand-back was never queued (fixed)
 
 The model is `formal/queue_handback.c`; it checks a protocol, not a memory ordering: the "queued"
-flag of a chunk (`array_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
+flag of a chunk (`candidate_flags`) and the pass's mark. A pass hands each
 candidate back with `steal_unmark()`, then resets its flag (the end of `make_block_compression()`;
 the order is kept on purpose: once the flag is down another pass may queue and mark the chunk,
 and a late unmark would erase its claim). It used to reset the flag to 0. Between the two, a
@@ -370,7 +372,7 @@ The fix (`chunk/internal/queue_flag.h`): as soon as the pass has scanned a candi
 its mark still keeps the writers out, the candidate's flag goes from 1 to 2, "handed back"
 (`queue_flag::hand_back`, in the scan itself, before the scan releases the mark of a chunk it
 drops, in the three variants); a writer whose marking finds 2 turns it into 3, "written meanwhile",
-rather than giving up (`queue_flag::try_queue`, every writer's site: `add_to_compression_list()`,
+rather than giving up (`queue_flag::try_queue`, every writer's site: `queue_as_candidate()`,
 its async form, the range writes through it); the pass then resets 2 -> 0 by CAS and, on a 3,
 queues the chunk again in its own rank's list (`queue_flag::release`). In the passes of `zero`,
 `zero_or_value` and `zero_any` (with `pattern`'s motif commit), threaded builds; the serial
@@ -429,10 +431,21 @@ last 7 to 0 just after A's release, finds the flag free and queues the chunk; pa
 passes start(); A's late unmark erases B's mark; W2 announces, finds no mark and goes on; B finds
 the chunk constant, clears it and frees the buffer; W2 stores into it, and its value is lost. With
 the source's order, A's unmark comes while the flag is still 2 or 3: nothing can queue the chunk
-before it. The GenMC verdicts (`run_genmc.sh`, three lines more) are still to be taken: the native
-runs above force that one interleaving with sleeps (`-DDEMO_SCHEDULE`: the test
-`formal_native_queue_handback_two_passes_schedule`, next to the free two-pass runs); they are an
-oracle for it, not an exhaustive check.
+before it. The native runs above force that one interleaving with sleeps (`-DDEMO_SCHEDULE`: the
+test `formal_native_queue_handback_two_passes_schedule`, next to the free two-pass runs): an oracle
+for it, not an exhaustive check. GenMC explores them all (`run_genmc.sh`, three lines more; GenMC
+0.20):
+
+| case | expected | verdict RC11 | verdict IMM | executions |
+|---|---|---|---|---|
+| source, two passes (liveness checked) | pass | pass | pass | 3161 |
+| `MUT_RELEASE_BEFORE_UNMARK`, one pass | pass | pass | pass | 12 |
+| `MUT_RELEASE_BEFORE_UNMARK`, two passes | fail | fail: **unordered writes** to `mark` | fail: **access to freed memory** | 5; 229 |
+
+Under RC11 the checker stops one step earlier, on the cause: pass B's mark and pass A's late unmark
+are two writes of `mark` that nothing orders -- GenMC 0.20's in-place revisiting treats that
+warning as an error. With `--disable-ipr` it goes on to the same access to the freed buffer as
+under IMM (229 executions).
 
 ### 8.8 F7: two threads filling the two ends of one chunk could both leave it unqueued (fixed)
 

@@ -36,27 +36,22 @@
 #include <cstdio>      // std::printf, std::fprintf
 #include <exception>   // std::exception (main)
 #include <sstream>     // std::ostringstream (os << a[i])
-#include <type_traits> // std::conditional_t, std::is_same_v
+#include <type_traits> // std::is_same_v
 #include <utility>     // std::move
 #include <vector>      // std::vector (push_back / emplace_back)
 
-#include "chunk/zero_array.h"          // zero::Array
-#include "chunk/zero_or_value_array.h" // zero_or_value::Array
-#include "chunk/zero_any_array.h"      // zero_any::Array
-#include "chunk/config.h"              // chunk_config::use_zero_or_value*, build_config::strict_element_ref
+#include "chunk/config.h"              // build_config::strict_element_ref
 #include "chunk/runtime.h"             // Runtime::init
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "chunk/print.h"               // shrink_array::println
+#include "validation_variant.h"        // Array
 
 using namespace shrink_array;
 
 namespace
 {
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
+
+using validation::Array;
 
 int fails = 0;
 
@@ -145,7 +140,7 @@ int usage()
     expect("int %, ~, <<=", ints[2] + ints[3] + ints[4], 1 - 8 + 8);
 
     // Copy-list-initialisation, as for a std::vector: the constructor is not explicit.
-    Array<double> listed = {1.0, 2.5, 4.0};
+    Array<double> listed = {1.0, 2.5, 4.0}; // NOSONAR(cpp:S6012): Array is a std::conditional_t alias, no CTAD
     expect("a = {1, 2.5, 4}: size", listed.size(), 3);
     expect("a = {1, 2.5, 4}: a[1]", static_cast<double>(listed[1]), 2.5);
 

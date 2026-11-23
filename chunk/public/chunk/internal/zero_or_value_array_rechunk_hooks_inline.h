@@ -44,8 +44,8 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_drop_candidates()
         const int array_id = ProxyType::array_registry->get_array_id(self().registry_key());
         if constexpr (Derived::is_not_bool && build_config::threaded)
         {
-            const auto inf = self().get_info_second_value();
-            const int  thr = get_thr_rank_fast();
+            const auto array_info = self().get_info_second_value();
+            const int  thr        = get_thr_rank_fast();
             shrink_array::set_thread_chunk_size(self().size_policy_.size());
             for (const auto& per_rank : ManagerType::zero_or_value_candidates_map_thr)
             {
@@ -59,7 +59,7 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_drop_candidates()
                     {
                         if (std::get<2>(tup) == array_id)
                         {
-                            std::get<0>(tup)->compress(thr, inf, /*apply=*/true, std::get<3>(tup).count());
+                            std::get<0>(tup)->compress(thr, array_info, /*apply=*/true, std::get<3>(tup).count());
                         }
                     }
                 }
@@ -88,7 +88,7 @@ template <typename Derived>
 void zero_or_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(InT<value_type> state)
 {
     // On the FRESH array before refill. Not value_type{}: that is already its
-    // state, and re-declaring it would make a degenerate const_val2 == const_val1 buffer.
+    // state, and re-declaring it would make a degenerate second_value == first_value buffer.
     if constexpr (Derived::is_not_bool)
     {
         if (!same_value(state, value_type{}))
@@ -105,7 +105,7 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(InT<value_ty
 template <typename Derived>
 bool zero_or_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
-    // The array_id, idx_const_val2_ and inf_array MEMBERS are NOT swapped: the
+    // The array_id, second_value_idx_ and array_info MEMBERS are NOT swapped: the
     // identity comes from array_registry, and the members may be
     // uninitialized (swapping would read indeterminate values). The mirrors are
     // re-read in rechunk_reown_after_swap().
@@ -120,11 +120,11 @@ bool zero_or_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& 
 template <typename Derived>
 void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<value_type> state)
 {
-    // Re-own the registration of `state`: map_inf_array_[state] points at
-    // &tmp.inf_array, which dangles once the stack tmp dies, and the next
-    // compression of `state` would dereference it. Copy tmp's (value, idx) and
-    // re-point the map at this array's member. Only when the fresh array
-    // registered a value (state != value_type{}).
+    // Take tmp's registration of `state`: copy its (value, idx) into this
+    // array's mirror (tmp ran set_second_value, this array's mirror predates
+    // it). array_info_map_ holds its own record of the value, so re-registering
+    // it is only a refresh. Only when the fresh array registered a value
+    // (state != value_type{}).
     if constexpr (chunk_config::use_fast_block_compression)
     {
         if constexpr (Derived::is_not_bool)
@@ -133,9 +133,9 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Derive
             {
                 Derived& arr = self();
 
-                arr.inf_array_      = tmp.inf_array_; // tmp's is valid (set_second_value ran)
-                arr.idx_const_val2_ = tmp.idx_const_val2_;
-                ProxyType::array_registry->insert(state, &arr.inf_array_);
+                arr.array_info_       = tmp.array_info_; // tmp's is valid (set_second_value ran)
+                arr.second_value_idx_ = tmp.second_value_idx_;
+                ProxyType::array_registry->insert(state, &arr.array_info_);
             }
         }
     }
@@ -144,7 +144,7 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Derive
         (void)state;
     }
 
-    // Write proxies are armed with the inf_array member's address: re-read both
+    // Write proxies are armed with the array_info member's address: re-read both
     // mirrors from the swapped registry (tmp's teardown uses it too). All build
     // modes, bool included.
     self().sync_registry_mirror();

@@ -150,7 +150,18 @@ ALLOWED = {
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
     "is_cst_val_new_value_is_other_cst_val",  # now passes_mark_pre_check()
+    # const_val1 / const_val2 -> first_value / second_value (CHANGELOG.md, Unreleased, Changed)
+    "const_val1", "const_val2", "is_const_val1", "is_const_val2", "get_const_val1", "get_const_val2",
+    "ArrayConstVal2Holder", "find_or_set_idx_const_val2", "find_or_set_ind_cst_val2",
+    "const2_registry_validation", "const2_reclaim_validation", "chunk/internal/array_const_val2_holder.h",
+    "ProxySpec::armed_inf_array",  # now armed_array_info() (inf_array -> array_info)
+    # the *_to_compress* names, now the candidate names (candidate_flags, compress_queued...)
+    "array_is_inside_chunk_list_to_compress", "add_to_compression_list_async",
+    "compress_chunk_to_compress_in_par", "Chunk::compress_chunk_to_compress",
+    # removed: the names before 0.3.0 (CHANGELOG.md, Unreleased, Removed)
+    "CHUNK_CST_VAL2_ID_LIMIT", "CHUNK_CST2_RECLAIM",
     "is_power_of_two",  # pow2.h's, never called: removed (lint lot 4)
+    "zero_or_value_dyn",  # a bench configuration the CHANGELOG cites; its last literal was in python/multi_launch_stress_gdb.py, removed
     # the developer settings fixed after the Milan measurements, and CHUNK_THP's functions
     "CHUNK_RECHUNK_KEEP_RECYCLED_MB", "alloc_config::thp_advise", "thp_never", "advise_thp_region",
     # the rechunk decider's former environment variables (now RechunkPolicy fields and
@@ -172,6 +183,17 @@ ALLOWED = {
     "scripts/diag_zero_rechunk_slowdown.py",
     # removed with the four phase fences it switched off (CHANGELOG.md, Unreleased)
     "CHUNK_PHASE_FENCES",
+    # the former names removed in 0.4 (CHANGELOG.md, Unreleased, Removed), which CHANGELOG.md and
+    # the migration table of docs/api.md cite: the 0.2 headers and C++ names deprecated in 0.3,
+    # the second-value settings' CHUNK_CONST_VAL2_* names, the switches of before CHUNK_LOG, the
+    # option names without CHUNK_, CHUNK_BUILD_REP, omp_speedup.py (shrink_gui reads its old runs)
+    "chunk/manage_ompt.h", "chunk/param_chunk.h", "chunk/array_chunk_bits.h", "chunk/array_chunk_range_ops.h",
+    "array_chunk_range_ops.h", "ParamChunk", "ParamChunk::init_indexes()", "init_indexes",
+    "ParamChunk::set_decalage_chunk()", "set_decalage_chunk", "build_config::has_not_ompt",
+    "ArrayChunkBits", "get_nb_chunk_written()", "CHUNK_CONST_VAL2_ID_LIMIT", "CHUNK_CONST2_RECLAIM",
+    "CHUNK_CONST_VAL2_MAX_IDS", "CHUNK_CONST_VAL2_REGION_BYTES", "CHUNK_CONST_VAL2_INDEX_LOG2",
+    "FAST_ALLOC_TRACE", "CHUNK_ARENA_REPORT", "CHUNK_LEDGER_REPORT", "CHUNK_OMPT_STATS", "CHUNK_CST2_PROBE",
+    "USE_LIBCXX", "CHUNK_BUILD_REP", "python/omp_speedup.py", "omp_speedup.py",
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)
@@ -179,7 +201,7 @@ ALLOWED = {
     "ChunkOmpPolicy", "CompressionManagerOmpPolicy",
     # internal names with an old variant label, renamed 2026-11 (CHANGELOG.md, Unreleased)
     "TChunkComp", "TChunk2Comp", "MapTypeChunk2P", "TChunk2AComp", "IsChunk2", "IsChunk2OrZeroAnyFamily",
-    "Base2",
+    "Base2", "is_v1_v", "is_v2_v", "is_v2a_family_v", "PointerMapChunk", "PointerMapChunk2A",
     # called by the CHUNK_DO_CHECK write paths but defined nowhere, removed by 47d082fe
     "global_check_write_nan",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)

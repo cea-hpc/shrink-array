@@ -2,7 +2,7 @@
 
 > English version: [shrink_gui.md](shrink_gui.md).
 
-> Novembre 2026, `shrink_gui` 0.17 (prototype). Une fenêtre sur le portable pour soumettre
+> Novembre 2026, `shrink_gui` 0.19 (prototype). Une fenêtre sur le portable pour soumettre
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
@@ -221,10 +221,10 @@ barre d'état dit lesquelles et pourquoi. Il en va de même pour un run seul. Le
 
 | bouton | effet |
 |---|---|
-| Arrêter | `ccc_mdel` du job, ou arrêt de `ccc_mprun` en mode détaché |
+| Arrêter | `ccc_mdel` du job, ou arrêt de `ccc_mprun` en mode détaché ; refusé pour un run terminé (son PID ou son numéro de job ne sont plus les siens) |
 | Récupérer les résultats | copie dans « Résultats (local) » le dossier du run et les fichiers de résumé du programme (CSV, log, erreurs ; jamais les `output_*`) |
 | Reprendre ses options | remet dans le formulaire le programme, la partition et les options du run |
-| Supprimer | supprime le dossier du run (run terminé seulement) ; au choix, aussi les sorties propres à ce run (dans un dossier de sortie partagé, `bench_results/<arch>` : les fichiers qu'il a écrits, jamais ceux des runs plus anciens ni `oracle/`) et la copie locale |
+| Supprimer | supprime le dossier du run (run terminé seulement : le calculateur le revérifie, et un run dont l'état ne peut pas être connu d'ici -- lancé depuis un autre nœud de login, pas de `squeue` -- demande une seconde confirmation) ; au choix, aussi les sorties propres à ce run (dans un dossier de sortie partagé, `bench_results/<arch>` : les fichiers qu'il a écrits entre sa soumission et sa fin, jamais ceux des runs plus anciens ou plus récents ni `oracle/` ; un dossier qui lui est propre ne part en entier que si aucun autre run n'écrit dedans ou dessous) et la copie locale |
 
 ### Cette machine
 
@@ -239,9 +239,11 @@ Il ne dépend pas de la fenêtre : la fermer laisse le run continuer, comme un j
   gestionnaire de jobs : masquées.
 - **Soumission** : « en arrière-plan sur cette machine ». `launch.sh` lance `run.sh`, sous
   `timeout` quand une durée max est donnée (code 124 au-delà).
-- **Lanceur** : un préfixe de `run.sh`, mémorisé. Pour plafonner la mémoire d'un run, et
-  qu'un run trop gourmand ne fasse pas tomber WSL :
-  `systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0`.
+- **Lanceur** : un préfixe de `run.sh`, mémorisé. Par défaut, là où `systemd-run --user`
+  fonctionne, `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` : un run qui
+  dépasse 90 % de la RAM est tué seul au lieu de faire tomber WSL (vide là où systemd-run ne
+  fonctionne pas, et tel qu'il a été mémorisé si le lanceur l'a été avant la 0.18). Un plafond
+  fixe convient aussi : `-p MemoryMax=16G`.
 - **Dépôt, Runs** : distincts de ceux du calculateur (par défaut `~/shrink-array` et
   `~/shrink_runs` de cette machine) ; passer de l'un à l'autre garde les deux.
 - **Démarrage, Builds à jour, Arrêter, Récupérer, Supprimer** : comme sur le calculateur.

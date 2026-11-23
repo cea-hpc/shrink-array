@@ -37,6 +37,7 @@ class ShrinkArray(CMakePackage):
     version("develop", branch="develop")
     version("main", branch="main")
     version("cpp23", branch="cpp23")
+    version("0.4.0", tag="v0.4.0", commit="8300626e89f0a8a8a29565de9fdf426d0f842483")
     version("0.3.0", tag="v0.3.0", commit="7c979b1bf831fee3d452627cd9f3bcf73c181d8f")
     version("0.2.1", tag="v0.2.1", commit="0a524305e7f4e94713c993f14bb83040dc3fc09b")
     version("0.2.0", tag="v0.2.0", commit="061d2fd77e2c78f7417bf9e5ca1755a2f929d317")
@@ -123,7 +124,12 @@ class ShrinkArray(CMakePackage):
     conflicts("%gcc@:13", when="@cpp23", msg="the cpp23 branch needs GCC 14 or later (C++23)")
     conflicts("%clang@:17", msg="shrink-array needs Clang 18 or later")
     conflicts("%nvhpc", when="@cpp23", msg="nvc++ has no C++23")
-    conflicts("threads=std", when="@:0.1.2", msg="the std backend comes after 0.1.2")
+    # CHUNK_THREADS and CHUNK_WITH_TBB come with 0.2.0, CHUNK_STATS with 0.1.2:
+    # an earlier version ignores the option and would install something else
+    # than the spec says (serial libraries for threads=std, no statistics).
+    conflicts("threads=std", when="@:0.1.3", msg="the std backend comes with 0.2.0")
+    conflicts("+tbb", when="@:0.1.3", msg="the TBB examples come with 0.2.0")
+    conflicts("+stats", when="@:0.1.1", msg="the statistics option comes with 0.1.2")
     conflicts("+tbb", when="~examples", msg="+tbb builds TBB examples only: add +examples")
     conflicts("+tbb", when="threads=openmp", msg="the TBB examples need threads=std")
     conflicts("+tbb", when="threads=serial", msg="the TBB examples need threads=std")

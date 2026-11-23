@@ -136,7 +136,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *          - rechunk_swap_identity(tmp) -> bool — swap array_id member (if any)
      *            + registry entry (swap_keys/entries)
      *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_or_value
-     *            re-owns its map_inf_array_ entry so it doesn't dangle when tmp dies)
+     *            re-owns its array_info_map_ entry so it doesn't dangle when tmp dies)
      *
      * @param new_size the new chunk size (a power of two or a multiple of 64)
      * @warning Restores the previously active geometry on exit; see
@@ -156,7 +156,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *          chunks its span covers, in parallel over the new chunks (schedule
      *          guided,16) and, for zero with the fast allocator
      *          under OpenMP, in slices with a drain between them
-     *          (16). A span whose sources are all const1 stays
+     *          (16). A span whose sources are all at the first value stays
      *          compressed; a zero_any span whose sources are all the same second
      *          constant gets that constant installed without a buffer; the others
      *          are read from *this at OLD and filled through copy_range() at NEW,
@@ -175,7 +175,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *       (the lazy per-chunk pointers: ptr_second_value, compression
      *       bookkeeping), which copy_range() does; an unarmed chunk is double-freed
      *       by the later compression/clear (only at scale: rechunk_validation is
-     *       too small to show it). The skipped const1 spans need no arming, and the
+     *       too small to show it). The skipped first-value spans need no arming, and the
      *       zero_any install commits what a type-2 compression does, with no buffer.
      */
     void rechunk_refill(Derived& tmp, int old_size, int new_size, unsigned int old_key);

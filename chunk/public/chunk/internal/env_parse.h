@@ -91,25 +91,6 @@ inline void warn_invalid_env(const char* name, const char* value) noexcept
 }
 
 /**
- * @brief The variable to read: @p name, or @p former_name -- its former name,
- *        deprecated -- when only that one is set, with a warning on the log
- *        (channel env).
- */
-[[nodiscard]] inline const char* env_name_or_former(const char* name, const char* former_name) noexcept
-{
-    if (const char* now = std::getenv(name); now != nullptr && *now != '\0')
-    {
-        return name;
-    }
-    if (const char* before = std::getenv(former_name); before != nullptr && *before != '\0')
-    {
-        CHUNK_LOG(warn, env, "{} is deprecated: set {} (taken from it this time)", former_name, name);
-        return former_name;
-    }
-    return name;
-}
-
-/**
  * @brief The number in environment variable @p name, or @p fallback.
  * @return @p fallback when the variable is unset or empty, and when its value
  *         is not a number of type T (with a warning on the log, channel env:
@@ -123,8 +104,7 @@ template <typename T>
     {
         return fallback;
     }
-    T value{};
-    if (parse_number(env, value))
+    if (T value{}; parse_number(env, value))
     {
         return value;
     }
@@ -139,8 +119,7 @@ template <typename T>
 template <typename T>
 [[nodiscard]] inline T arg_number(const char* text, T fallback, const char* what) noexcept
 {
-    T value{};
-    if (parse_number(text, value))
+    if (T value{}; parse_number(text, value))
     {
         return value;
     }

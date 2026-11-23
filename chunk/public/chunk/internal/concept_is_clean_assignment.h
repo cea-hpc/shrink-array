@@ -47,6 +47,27 @@ struct get_base<T>
 template <typename T>
 using BaseT = get_base<T>::type;
 
+/// @brief The operand of `a[i] = operand` as the write takes it: the operand
+///        itself, or -- a proxy of another array -- the value it reads NOW.
+/// @details `a[i] = b[j]` reads b[j], then writes a[i]. Handing the write the
+///          proxy itself read b[j] inside a[i]'s write session and, when the
+///          write was deferred, kept a copy of the proxy: the replay read
+///          b[j] at the end of the phase -- its value by then, or the freed
+///          storage of an array resized meanwhile.
+template <typename U>
+    requires(!IsProxy<U>)
+[[nodiscard]] constexpr const U& assigned_value(const U& operand) noexcept
+{
+    return operand;
+}
+
+/// @copydoc assigned_value
+template <IsProxy U>
+[[nodiscard]] BaseT<U> assigned_value(const U& operand) noexcept
+{
+    return static_cast<BaseT<U>>(operand);
+}
+
 // --- 2. Simple Complex Detection ---
 /// @brief Is T a std::complex? No by default.
 template <typename T>

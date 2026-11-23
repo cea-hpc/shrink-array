@@ -44,9 +44,9 @@ pattern::Array<T, IntType>& pattern::Array<T, IntType>::operator=(Array&& other)
 template <ArrayChunkElement T, typename IntType>
 bool pattern::Array<T, IntType>::install_motif(int chunk_index, const T* elems)
 {
-    using ChunkT = typename Array::ChunkType;
+    using ChunkT = typename Array::ChunkType; // GCC needs typename: ChunkType is a dependent base's
     auto& chunk  = this->chunk_list_[static_cast<std::size_t>(chunk_index)];
-    if (!chunk.is_const_val1())
+    if (!chunk.is_first_value())
     {
         return false;
     }
@@ -78,7 +78,7 @@ std::size_t pattern::Array<T, IntType>::reclaim_second_values()
 template <ArrayChunkElement T, typename IntType>
 std::size_t pattern::Array<T, IntType>::reclaim_motifs()
 {
-    using ChunkT = typename Array::ChunkType;
+    using ChunkT = typename Array::ChunkType; // GCC needs typename: ChunkType is a dependent base's
     std::vector<std::uint8_t> referenced(MotifRegion<T>::ids_carved() + 1, 0);
     Array::ProxyType::array_registry->for_each_key(
         [&referenced](ArrayKey<ChunkT> arr)

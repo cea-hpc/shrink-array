@@ -59,7 +59,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     }
 
     // A power of two or a multiple of 64, and at most const_buffer_size: the
-    // shared constant buffers (const_val1 / const_val2) are that wide, and a wider
+    // shared constant buffers (first_value / second_value) are that wide, and a wider
     // chunk would read them out of bounds (chunk_size_error). Refused, with a
     // message in EVERY build: a caller bug, on a cold path.
     if (const auto err = chunk_size_error(new_size)) [[unlikely]]
@@ -164,7 +164,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    std::swap hands to *this unchanged (buffer swap, no move);
         //  - they carry tmp's array_id, and rechunk_swap_identity() makes that
         //    *this's identity (member swap for zero/zero_any, registry swap for
-        //    zero_or_value), so the sweep's reset_array_inside_list_to_compress(array_id,
+        //    zero_or_value), so the sweep's clear_candidate_flag(array_id,
         //    chunk_index) lands on the row allocated for tmp at new_size;
         //  - tmp's own destruction removes candidates by ITS post-swap array_id
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()
@@ -210,7 +210,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         (void)ok;
 
         // Variant finalisation after the swap (zero_or_value re-owns its
-        // map_inf_array_ entry so it does not dangle when tmp dies).
+        // array_info_map_ entry so it does not dangle when tmp dies).
         self().rechunk_reown_after_swap(tmp, state);
 
         // Restore the active geometry BEFORE tmp is destroyed, so tmp (now

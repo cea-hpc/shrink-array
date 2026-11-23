@@ -81,7 +81,7 @@ La taille de chunk est portée **par chaque tableau** (`size_policy_`, voir
 L'indice global `i` se décompose en deux opérations d'un cycle :
 
 ```cpp
-const int chunk_index = i >> size_policy_.decalage();   // numéro du chunk
+const int chunk_index = i >> size_policy_.shift();   // numéro du chunk
 const int elem_offset       = i &  size_policy_.modulo();     // position dans le chunk
 ```
 
@@ -96,13 +96,13 @@ le chunk est dans l'un de trois états :
 
 | état | `values` pointe vers | test |
 |---|---|---|
-| compressé à la première valeur | le tampon constant `const_val1` (que des 0) | `is_const_val1()` |
-| compressé à la seconde valeur | le tampon constant `const_val2[idx]` | `is_const_val2(idx)` |
+| compressé à la première valeur | le tampon constant `first_value_buffer_` (que des 0) | `is_first_value()` |
+| compressé à la seconde valeur | le tampon constant `second_value_buffers[idx]` | `is_second_value(idx)` |
 | matérialisé | un tampon privé, alloué pour ce chunk | `written(idx)` |
 
 Les tampons constants sont **alloués une seule fois** et partagés par tous les chunks
 concernés. Leur taille est `const_buffer_size` (la taille de chunk en géométrie fixe,
-`chunk_dyn_max_size` en géométrie dynamique). Il existe un tampon `const_val2` par seconde
+`chunk_dyn_max_size` en géométrie dynamique). Il existe un tampon `second_value_buffer_` par seconde
 valeur déclarée, repéré par un **indice** `idx`.
 
 > Attention : `zero_or_value::Chunk::written()` **sans argument** est réservé à `bool` et renvoie `false`
@@ -114,21 +114,21 @@ valeur déclarée, repéré par un **indice** `idx`.
 
 La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le registre partagé
 <tt>zero_or_value::Proxy\<T\>\::array_registry</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
-triplet `InfArrayT` :
+triplet `ArrayInfo` :
 
 ```
 (second_value, idx, array_id)
 ```
 
-- `idx` : l'indice du tampon constant `const_val2` de cette valeur ;
+- `idx` : l'indice du tampon constant `second_value_buffer_` de cette valeur ;
 - `array_id` : le numéro du tableau, qui indexe les tables de métadonnées par tableau
   (par exemple les drapeaux « déjà candidat à la compression »).
 
 Le registre reste la source de vérité, mais chaque tableau en garde un **miroir**
-(`zero_or_value::Array::inf_array`), relu (`sync_registry_mirror()`) après les trois seuls endroits qui
+(`zero_or_value::Array::array_info`), relu (`sync_registry_mirror()`) après les trois seuls endroits qui
 écrivent le registre : `create()`, `set_second_value()` et l'échange d'identité du rechunk.
 L'`operator[]` d'écriture **arme chaque proxy avec l'adresse de ce miroir**
-(`registry_mirror()`, `arm_inf_array()`) : le chemin d'écriture copie le triplet au lieu de
+(`registry_mirror()`, `arm_array_info()`) : le chemin d'écriture copie le triplet au lieu de
 chercher dans le registre. En build de vérification (`any_check`), chaque lecture du miroir
 est comparée au registre.
 
@@ -141,7 +141,7 @@ L'opérateur de lecture renvoie une **valeur**, jamais une référence :
 ```cpp
 CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndexType i) const noexcept
 {
-    const int chunk_index = i >> size_policy_.decalage();
+    const int chunk_index = i >> size_policy_.shift();
     const int elem_offset       = i & size_policy_.modulo();
     const auto& chunk_t = chunk_list[chunk_index];
     sync_chunk(chunk_t, chunk_index, elem_offset);      // barrière de lecture (OpenMP)
@@ -173,11 +173,11 @@ le tampon : **à n'utiliser que sur un chunk matérialisé**, puisqu'il contourn
 ```cpp
 ProxyType operator[](IndexType i) noexcept
 {
-    const int chunk_index = i >> size_policy_.decalage();
+    const int chunk_index = i >> size_policy_.shift();
     const int elem_offset       = i & size_policy_.modulo();
     const ProxyType& val = chunk_list[chunk_index][elem_offset];
     val.set_this_and_chunk_index(&derived(), chunk_index, array_id);   // tableau, chunk, array_id
-    val.arm_inf_array(derived().registry_mirror());                // zero_or_value : le miroir
+    val.arm_array_info(derived().registry_mirror());                // zero_or_value : le miroir
     return val;
 }
 ```
@@ -193,15 +193,15 @@ il n'y a rien à faire, et surtout rien à allouer.
 const T* values_loc = chunk.values_load();
 
 // 1. first_value sur un chunk déjà à first_value : rien à faire
-if (is_const_val1_and_v_equal_first_value(values_loc, v)) return v;
+if (is_first_value_equal_to(values_loc, v)) return v;
 
 set_info_second_value_idx();   // second_value et idx, depuis le miroir
 
-// 2. second_value sur un chunk à const_val2, ou sur un élément qui la contient déjà :
+// 2. second_value sur un chunk à second_value_buffer_, ou sur un élément qui la contient déjà :
 //    rien à faire -- sauf si des écritures différées sont en attente sur le chunk
 //    (une ancienne opération appliquée plus tard écraserait la valeur laissée en place)
 if (!chunk.pending_any())
-    if (v == second_value && (values_loc == chunk.get_const_val2(idx) || values_loc[elem_offset] == second_value))
+    if (v == second_value && (values_loc == chunk.second_value_ptr(idx) || values_loc[elem_offset] == second_value))
         return v;
 
 // 3. sinon : le corps de l'écriture, confié au moteur d'écriture
@@ -212,7 +212,7 @@ if (deferred) { /* capturer l'opération pour l'appliquer plus tard (7.3) */ }
 
 ### 6.3 Le corps : `perform_core_assignment`
 
-- **seconde valeur écrite dans un chunk à `const_val1`** : on matérialise le chunk
+- **seconde valeur écrite dans un chunk à `first_value_buffer_`** : on matérialise le chunk
   (`create_value()`, pré-rempli de 0), puis on écrit la valeur ;
 - **chunk compressé (l'une ou l'autre constante) et valeur différente** : on matérialise le
   chunk, pré-rempli **avec la constante qu'il quitte**, puis on écrit ;
@@ -331,10 +331,10 @@ for (long i = 0; i < n; ++i)
     arr[i] = second_value;
 ```
 
-À la construction, tous les chunks sont à `const_val1`. La première écriture de chaque chunk
+À la construction, tous les chunks sont à `first_value_buffer_`. La première écriture de chaque chunk
 le **matérialise** (il contient alors `1 0 0 0 …`). Sans compression pendant l'exécution, la
 boucle finirait avec **tout le tableau alloué**, alors que chaque chunk est redevenu uniforme.
-La compression en vol rend ces chunks à `const_val2` au fil de l'eau.
+La compression en vol rend ces chunks à `second_value_buffer_` au fil de l'eau.
 
 ### 8.2 Les listes de candidats
 
@@ -368,7 +368,7 @@ placés avant :
   avant la CAS du drapeau du chunk, car un refus après elle laisserait le drapeau levé et le
   chunk ne serait plus jamais mis en file.
 
-Un drapeau atomique par chunk (« déjà candidat », `array_is_inside_chunk_list_to_compress`,
+Un drapeau atomique par chunk (« déjà candidat », `candidate_flags`,
 indexé par `array_id`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
 passe suivante.
 
@@ -393,18 +393,18 @@ parallèle.
 flowchart TD
     A["items (rang, second_value)"] --> B["protocole du compresseur<br/>(CompressionManager::start)"]
     B --> C["pour chaque entrée : figer la taille<br/>du chunk (n_elems de l'entrée)"]
-    C --> D["fill_list_to_compress : parcourir le chunk"]
+    C --> D["classify_candidate : parcourir le chunk"]
     D -->|"tout = first_value"| E["items ll_compt1"]
     D -->|"tout = second_value"| F["items ll_compt2"]
     D -->|"sinon"| G["rien (drapeau remis à zéro)"]
-    E --> H["clear : rendre le tampon,<br/>values -> const_val1"]
-    F --> I["clear : rendre le tampon,<br/>values -> const_val2[idx]"]
+    E --> H["clear : rendre le tampon,<br/>values -> first_value_buffer_"]
+    F --> I["clear : rendre le tampon,<br/>values -> second_value_buffers[idx]"]
     H --> J["remettre les drapeaux à zéro,<br/>vider la items, finish()"]
     I --> J
     G --> J
 ```
 
-Le **parcours** (`fill_list_to_compress`) ne concerne que les chunks matérialisés. Il
+Le **parcours** (`classify_candidate`) ne concerne que les chunks matérialisés. Il
 compare chaque élément aux deux constantes et s'arrête dès que les deux hypothèses sont
 réfutées. Un chunk uniforme à 0 va dans `ll_compt1`, un chunk uniforme à la seconde valeur
 dans `ll_compt2`.
@@ -546,7 +546,7 @@ morceau qui couvre tout le chunk avec une seule valeur. Les formes à un seul th
 **Les valeurs fausses de septembre 2026.** Avec le chemin direct ouvert à `zero_or_value`,
 `bench_and_test.py` a signalé sur Grace des valeurs fausses **après compression** :
 `rechunk_validation_zero_or_value_dyn` (`scale-64-to-tgt`, POST-FAIL) et le mode check de
-`shrink_bench_zero_or_value_256` (« is_const_val2 should be not »). Ce n'était pas une course entre
+`shrink_bench_zero_or_value_256` (« is_second_value should be not »). Ce n'était pas une course entre
 threads : le test de re-chunk échoue à l'identique sur un seul cœur dans le build serial Debug,
 et les configurations en échec sur Grace étaient les serial. La cause était les compteurs du
 troisième point ci-dessus : les chemins directs (`fill_range`, `copy_range`, qu'utilise la

@@ -35,8 +35,8 @@ namespace shrink_array
  */
 enum class ConstSlot : std::uint8_t
 {
-    first  = 0, ///< the first constant (const_val1)
-    second = 1, ///< the chunk's second constant (const_val2)
+    first  = 0, ///< the first constant (first_value)
+    second = 1, ///< the chunk's second constant (second_value)
     motif  = 2, ///< a shared motif plus the chunk's offset (pattern::Array: has_motif_state_v)
 };
 

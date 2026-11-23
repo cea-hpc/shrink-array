@@ -61,12 +61,12 @@
 #include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // build_config::needs_explicit_phases, build_config::use_openmp
+#include "chunk/config.h"                // build_config::use_openmp
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
-#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, begin_phase / end_phase
 
 namespace validation::zero_or_value_foreign_key_validation
 {
@@ -83,22 +83,6 @@ constexpr long   chunks_a = 512;  ///< chunks of `a`
 constexpr long   chunks_b = 4096; ///< chunks of `b`
 constexpr double val_a    = 1.0;  ///< `a`'s second value
 constexpr double val_b    = 2.0;  ///< `b`'s second value, and what `a` holds
-
-void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-
-void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
 
 struct Xorshift
 {

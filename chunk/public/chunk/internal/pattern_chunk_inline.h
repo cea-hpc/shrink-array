@@ -59,7 +59,7 @@ void pattern::Chunk<T>::compress_to_motif(int thr, int chunk_index, int array_id
     using ProxyT = ChunkTraits<Chunk>::ProxyType;
     if (const auto [motif, offset] = find_motif(size); motif != nullptr)
     {
-        // The geometry pin is the caller's (compress_chunk_to_compress_in_par()).
+        // The geometry pin is the caller's (compress_rank_queue()).
         const SecondValueRef<T> slot = ProxyT::BaseSpec::get_array_second_value(array_id, chunk_index);
         block_clear_motif(&ProxyT::array_type_const_val[array_id][chunk_index], slot, motif, offset, thr);
     }

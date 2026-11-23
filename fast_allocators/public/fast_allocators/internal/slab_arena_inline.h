@@ -146,10 +146,10 @@ template <typename Slab>
 void EmptySlabSweep<Slab>::advise_runs() noexcept
 {
     const auto n_runs = static_cast<long>(runs_.size());
-    const int  nthr   = detail::reclaim_sweep_threads();
     // No nested team (the sweep is meant for a quiescent, serial point),
     // and not for a handful of runs: a team costs more than it saves.
-    if (pmp::threaded && nthr > 1 && !pmp::in_parallel() && n_runs >= 4L * nthr)
+    if (const int nthr = detail::reclaim_sweep_threads();
+        pmp::threaded && nthr > 1 && !pmp::in_parallel() && n_runs >= 4L * nthr)
     {
         const Run* runs = runs_.data();
         pmp::parallel_for(0L, n_runs, pmp::Options{.num_threads = nthr, .sched = pmp::Schedule::dynamic(16)},

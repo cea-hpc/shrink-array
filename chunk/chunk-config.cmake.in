@@ -6,7 +6,11 @@ if(@CHUNK_OMP@)
   find_dependency(OpenMP)
 endif()
 if(NOT @CHUNK_STD_ALLOC@)
-  find_dependency(fast_allocators @CHUNK_FAST_ALLOCATORS_VERSION@)
+  # The fast_allocators installed with this package first: found through
+  # shrink_array_DIR alone (no CMAKE_PREFIX_PATH), and never another
+  # installation's, built with other options, that comes earlier on the path.
+  find_dependency(fast_allocators @CHUNK_FAST_ALLOCATORS_VERSION@
+                  HINTS "${CMAKE_CURRENT_LIST_DIR}/../../fast_allocators/cmake")
 endif()
 
 @PACKAGE_INIT@
@@ -35,17 +39,5 @@ set(chunk_OMPT "@CHUNK_HAVE_OMPT@")
 set(chunk_STD_ALLOC "@CHUNK_STD_ALLOC@")
 
 include("${CMAKE_CURRENT_LIST_DIR}/chunk-targets.cmake")
-
-# zero_or_value was zero_one_value until 0.3: the former names of its targets,
-# each linking the new one, with a message when a project links it.
-foreach(_chunk_former IN ITEMS "" "_dyn" _@_chunk_static_suffixes@)
-  if(TARGET chunk::chunk_zero_or_value${_chunk_former} AND NOT TARGET chunk::chunk_zero_one_value${_chunk_former})
-    add_library(chunk::chunk_zero_one_value${_chunk_former} INTERFACE IMPORTED)
-    set_target_properties(chunk::chunk_zero_one_value${_chunk_former} PROPERTIES
-                          INTERFACE_LINK_LIBRARIES chunk::chunk_zero_or_value${_chunk_former}
-                          DEPRECATION "renamed chunk::chunk_zero_or_value${_chunk_former}")
-  endif()
-endforeach()
-unset(_chunk_former)
 
 check_required_components(chunk)

@@ -18,7 +18,7 @@ add_library(fast_allocators)
 add_library(fast_allocators::fast_allocators ALIAS fast_allocators)
 
 set(ALLOCATORS_MAJOR_VERSION 2)  # inc. when incompatible change (reset to 0 others)
-set(ALLOCATORS_MINOR_VERSION 4)  # inc. when compatible change (also reset patch vers.)
+set(ALLOCATORS_MINOR_VERSION 5)  # inc. when compatible change (also reset patch vers.)
 set(ALLOCATORS_PATCH_VERSION 0)  # inc. when just fixing bug
 
 set(ALLOCATORS_VERSION
@@ -92,7 +92,14 @@ if (NOT DEFINED CHUNK_DEBUG)
 endif()
 # The library runs threads: every backend but serial (top level: CHUNK_THREADS).
 if (NOT DEFINED ALLOCATORS_THREADED)
-  set(ALLOCATORS_THREADED ${ALLOCATORS_OMP})
+  # The std backend runs threads too: built alone with it
+  # (-DALLOCATORS_THREADS_BACKEND=std), the library took "not threaded" from
+  # ALLOCATORS_OMP and stopped on alloc_config.h's static_assert.
+  if (ALLOCATORS_OMP OR "${ALLOCATORS_THREADS_BACKEND}" STREQUAL "std")
+    set(ALLOCATORS_THREADED ON)
+  else()
+    set(ALLOCATORS_THREADED OFF)
+  endif()
 endif()
 if ("${ALLOCATORS_THREADS_BACKEND}" STREQUAL "std")
   set(ALLOCATORS_STD_THREADS ON)

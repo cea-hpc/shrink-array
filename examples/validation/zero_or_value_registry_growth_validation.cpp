@@ -25,7 +25,7 @@
 // THE DEFECT
 //
 //   Every distinct value given to zero_or_value::Array::set_second_value() gets a
-//   constant array in zero_or_value::Chunk<T>::array_m_ptr_const_val2, and a chunk compressed to
+//   constant array in zero_or_value::Chunk<T>::second_value_buffers, and a chunk compressed to
 //   it stores that array's address as its `values`. The table was a
 //   std::vector<std::array<T, const_buffer_size>> grown by resize(): past its
 //   capacity the vector MOVED every array and freed the old storage. Every
@@ -56,12 +56,11 @@
 #include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // build_config::needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, begin_phase / end_phase
 
 namespace validation::zero_or_value_registry_growth_validation
 {
@@ -76,22 +75,6 @@ using Index = Arr::IndexType;
 
 constexpr int n_chunks = 64; ///< chunks of `a`
 constexpr int n_others = 40; ///< arrays declaring a new second value each: several vector growths
-
-void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-
-void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
 
 /// @brief Write @p value everywhere from a region, then compress from a region.
 void fill_and_compress(Arr& arr, double value)

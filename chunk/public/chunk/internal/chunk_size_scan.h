@@ -130,11 +130,11 @@ class ChunkSizeScan
     /// @brief classify()'s kinds. A motif chunk (pattern::Array) has a kind of
     ///        its own; for the other variants, which have none, kind_motif is
     ///        kind_mat and every test on it folds away.
-    static constexpr int kind_none   = -1;
-    static constexpr int kind_const1 = 0;                                        ///< the first constant
-    static constexpr int kind_const2 = 1;                                        ///< a second constant
-    static constexpr int kind_mat    = 2;                                        ///< materialised
-    static constexpr int kind_motif  = has_motif_state_v<ChunkT> ? 3 : kind_mat; ///< a motif chunk
+    static constexpr int kind_none         = -1;
+    static constexpr int kind_first_value  = 0;                                        ///< the first constant
+    static constexpr int kind_second_value = 1;                                        ///< a second constant
+    static constexpr int kind_mat          = 2;                                        ///< materialised
+    static constexpr int kind_motif        = has_motif_state_v<ChunkT> ? 3 : kind_mat; ///< a motif chunk
 
     /// @brief Chunks from which the passes run in a team.
     static constexpr int64_t team_min_chunks = 16384;
@@ -199,7 +199,7 @@ class ChunkSizeScan
     {
         int64_t     start;
         int64_t     end;
-        int         kind; // kind_none, kind_const1, kind_const2, kind_mat, kind_motif
+        int         kind; // kind_none, kind_first_value, kind_second_value, kind_mat, kind_motif
         const void* key;
     };
 
@@ -218,7 +218,7 @@ class ChunkSizeScan
     ///        const_buffer_size: rechunk_to would refuse it.
     [[nodiscard]] static std::vector<uint32_t> candidate_sizes(uint32_t chunk_sz, const Options& opt);
 
-    /// @brief The key zero_or_value gives its const2 chunks: the array-level
+    /// @brief The key zero_or_value gives its second-value chunks: the array-level
     ///        second-value index, fetched once (0 for bool / Bit, which have
     ///        one second value and no index; -1 for the other variants).
     [[nodiscard]] static int second_value_index(const Arr& arr);
@@ -229,7 +229,7 @@ class ChunkSizeScan
     ///        value, when designated. zero_any: any value.
     [[nodiscard]] bool compressible_value(const T& elem) const;
 
-    /// @brief @p chunk's kind; two kind_const2 chunks merge iff same @p key
+    /// @brief @p chunk's kind; two kind_second_value chunks merge iff same @p key
     ///        (zero_any: the buffer pointer; zero_or_value: one sentinel).
     [[nodiscard]] int classify(const ChunkT& chunk, const void*& key) const;
 
@@ -336,10 +336,10 @@ class ChunkSizeScan
     int64_t        nc_;       ///< its chunks
     int64_t        len_;      ///< nc_ * chunk_sz_: the extent the windows cut
 
-    int    second_value_idx_;   ///< second_value_index()
-    InT<T> const1_value_;       ///< the first constant
-    bool   has_const2_ = false; ///< a second value is designated, distinct from the first
-    T      const2_value_;       ///< ... that value
+    int    second_value_idx_;         ///< second_value_index()
+    InT<T> first_value_;              ///< the first constant
+    bool   has_second_value_ = false; ///< a second value is designated, distinct from the first
+    T      second_value_;             ///< ... that value
 
     std::vector<uint32_t> cand_;                ///< candidate_sizes()
     int                   n_cand_      = 0;     ///< their count

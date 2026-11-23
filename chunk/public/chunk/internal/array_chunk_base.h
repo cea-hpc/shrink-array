@@ -427,12 +427,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     [[nodiscard]] int written_chunk_count() const;
 
-    /// @brief Former name of written_chunk_count().
-    [[deprecated("renamed written_chunk_count()")]] [[nodiscard]] int get_nb_chunk_written() const
-    {
-        return written_chunk_count();
-    }
-
     /**
      * @brief Calculate the filling rate of written chunks.
      * @return Percentage of modified chunks.
@@ -735,7 +729,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param index global element index (unchecked)
      * @return the element value, after the read gate has been honoured
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(IndexType index) const noexcept;
+    CHUNK_FLATTEN T operator()(IndexType index) const noexcept;
 
     /**
      * @brief Raw reference access: arr(i) = value.
@@ -744,29 +738,39 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] otherwise.
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(IndexType index) noexcept
+    CHUNK_FLATTEN T& operator()(IndexType index) noexcept;
+
+    /**
+     * @brief alloc_chunk() allocates in THIS array's geometry and allocator
+     *        set, as every proxy materialisation does
+     *        (ensure_writable_storage()).
+     * @details The buffer is sized and routed by the calling thread's ambient
+     *          chunk size, which the last array it served left, or the
+     *          process-wide one on a thread that served none: a smaller
+     *          buffer is overrun by the stores that follow. Dynamic builds.
+     */
+    void pin_alloc_geometry() const noexcept
     {
-        const int   chunk_index = chunk_index_of(index);
-        const int   elem_offset = offset_in_chunk(index);
-        const auto& chunk_t     = chunk_list_[chunk_index];
-
-        sync_chunk(chunk_t, chunk_index, elem_offset);
-
-        return chunk_t(elem_offset);
+        if constexpr (build_config::chunk_dynamic)
+        {
+            shrink_array::set_thread_chunk_size(this->chunk_size());
+            shrink_array::set_thread_alloc_key(this->alloc_key());
+        }
     }
 
     /**
      * @brief Unchecked read access (hot path).
      *
-     * @details Force-inlined: GCC otherwise leaves it out-of-line, where it costs
-     *          a large share of a many-thread profile. CHUNK_FORCE_INLINE is plain
-     *          `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
+     * @details Force-inlined (CHUNK_FORCE_INLINE on the definition, in
+     *          array_chunk_base_inline.h): GCC otherwise leaves it out-of-line,
+     *          where it costs a large share of a many-thread profile.
+     *          CHUNK_FORCE_INLINE is plain `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
      *          -DSHRINK_AGGRESSIVE_INLINE, never nvc++) pulls the whole read path in.
      *
      * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndexType index) const noexcept;
+    CHUNK_FLATTEN T operator[](IndexType index) const noexcept;
 
     /**
      * @brief Unchecked write access: THE write entry of the container.
@@ -785,7 +789,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          the same kind of proxy. The ElementRef wrapper makes a use of
      *          `auto v = a[i];` fail to compile (internal/element_ref.h).
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](IndexType index) noexcept;
+    CHUNK_FLATTEN reference operator[](IndexType index) noexcept;
 
     /**
      * @brief The write proxy of element @p index, in every build: operator[]'s
@@ -794,7 +798,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the write proxy for that element, armed as operator[]'s
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(IndexType index) noexcept;
+    CHUNK_FLATTEN ProxyType element_proxy(IndexType index) noexcept;
 
   protected:
     // The core's members, named here so this class and the derived arrays use
@@ -816,6 +820,24 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param who the call, for the message ("resize", "reserve", ...)
      */
     static void check_length(IndexType count, const char* who);
+
+    /**
+     * @brief The end of a growing resize(): std::vector semantics for the
+     *        regrown range [@p old_size, @p new_size), which reads T{}.
+     * @details The chunks the resize added are fresh, but the one holding the
+     *          OLD end keeps its tail: after a shrink, the values written there
+     *          would come back on the next growth. The tail is reset through the
+     *          normal write path, after the reallocations, up to the end of the
+     *          OLD chunk count: chunks_for() keeps a chunk past the last element,
+     *          so when @p old_size falls on a chunk boundary that spare chunk
+     *          holds stale values too. Serial: at most one chunk, and inside a
+     *          region an `omp for` would cover 1/N of it. Nothing when the array
+     *          did not grow.
+     * @param old_size the element count before the resize
+     * @param new_size the element count after it
+     * @param old_chunk_count the chunk count before it
+     */
+    void reset_regrown_tail(IndexType old_size, IndexType new_size, int old_chunk_count);
 
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
     /// @note Protected, not private with `friend Derived`: zero_or_value and zero_any
@@ -1015,7 +1037,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param offset Offset within the chunk.
      * @note Compiles to nothing in a serial build (`if constexpr (threaded)`).
      */
-    CHUNK_FORCE_INLINE void sync_chunk(const ChunkType& chunk_t, int chunk_index, int offset) const noexcept;
+    void sync_chunk(const ChunkType& chunk_t, int chunk_index, int offset) const noexcept;
 
     /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).
     static void rechunk_thunk(Core& core, unsigned int new_size)

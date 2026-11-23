@@ -39,7 +39,7 @@
  *   materialise()                 zero_any_chunk_inline.h          create_value() + wait_before_materialise()
  *   cas_install()                 chunk_base.h                  compare_and_swap_gen()
  *   steal()                       zero_any_chunk.h                 try_mark_cst_and_get_old()
- *   scan                          zero_any_chunk_inline.h          fill_list_to_compress() / scan_constants
+ *   scan                          zero_any_chunk_inline.h          classify_candidate() / scan_constants
  *   element store / load          relaxed_element.h             store_element_relaxed / load_element_relaxed
  *   writer()                      proxy_base_inline.h           write_with_optional_lock_impl()
  *
@@ -381,7 +381,7 @@ static void* compressor(void* arg)                      /* make_block_compressio
         return NULL;
     }
 
-    /* fill_list_to_compress(): the scan, relaxed element loads */
+    /* classify_candidate(): the scan, relaxed element loads */
     atomic_int* vals = values_load();
     if (vals != cst1)
     {

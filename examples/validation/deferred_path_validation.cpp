@@ -91,78 +91,29 @@
 #include <complex>     // std::complex<double> (the return-contract region)
 #include <cstring>     // std::memcmp (the return-contract region)
 #include <thread>      // std::this_thread::yield
-#include <type_traits> // std::is_same_v, std::conditional_t, std::is_integral_v
+#include <type_traits> // std::is_same_v, std::is_integral_v
 #include <utility>     // std::forward (the returns lambdas: an element proxy is a temporary), std::as_const
 #include <vector>      // std::vector
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::force_defer_every / needs_explicit_phases
-#include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
-#include "chunk/print.h"              // shrink_array::println
+#include "chunk/config.h"                // build_config::force_defer_every
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
+#include "chunk/print.h"                 // shrink_array::println
 #if CHUNK_OPT_STATS
     #include "chunk/internal/chunk_stats.h" // chunk_stats_n_variant, reduce_chunk_stats
 #endif
 
 #include "chunk/internal/test_hooks.h" // force_defer_every
 #include "validation_harness.h"        // run() is called by validation_driver.cpp
+#include "validation_variant.h"        // Array, variant_name, begin_phase / end_phase, maybe_set_second_value
 
 namespace validation::deferred_path_validation
 {
 
 using namespace shrink_array;
-
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-static void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
-template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& arr, const Val& value)
-{
-    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
-    {
-        arr.set_second_value(value);
-    }
-}
 
 // Runs of run_len elements alternate constant 0 / second constant / varied, so
 // that the pass between regions has blocks to collapse.
@@ -797,6 +748,75 @@ static int run_resize(const char* label, long count)
     return fails ? 1 : 0;
 }
 
+// ── a deferred `a[i] = b[i]` across element types assigns b[i]'s value THEN ──
+
+/**
+ * @brief `dst[i] = src[i]` between arrays of two element types, every such
+ *        write deferred, then `src[i] = 0` before the phase ends: dst holds
+ *        what src held when the statement ran.
+ * @details `a[i] = b[j]` reads b[j], then writes a[i] (docs/api.md, section
+ *          4). Between two proxies of one type the value is read at once;
+ *          between two types the assignment took the source PROXY as its
+ *          operand, and a deferred write kept a copy of that proxy: the
+ *          replay read src[i] at the end of the phase -- its value by then,
+ *          or freed storage if src had been resized.
+ * @return 0 if every element of dst has src's value at the time, 1 otherwise.
+ */
+template <typename D, typename S>
+static int run_cross_type_assign(const char* label, long count)
+{
+    if constexpr (!build_config::use_openmp || !test_hooks::force_defer_compiled)
+    {
+        return 0;
+    }
+    Array<D> dst(count);
+    Array<S> src(count);
+
+    const unsigned int every      = test_hooks::force_defer_every;
+    test_hooks::force_defer_every = 0U; // src is written directly
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < count; ++i)
+        {
+            src[i] = static_cast<S>((i % 7) + 1);
+        }
+#pragma omp single
+        test_hooks::force_defer_every = 1U; // every dst[i] = src[i] takes the deferred exit
+#pragma omp for
+        for (long i = 0; i < count; ++i)
+        {
+            dst[i] = src[i];
+        }
+#pragma omp single
+        test_hooks::force_defer_every = 0U;
+#pragma omp for
+        for (long i = 0; i < count; ++i)
+        {
+            src[i] = S{}; // before the replays, which run at the end of the phase
+        }
+    }
+    end_phase();
+    test_hooks::force_defer_every = every;
+
+    long wrong = 0;
+    for (long i = 0; i < count; ++i)
+    {
+        wrong += (static_cast<D>(std::as_const(dst)[i]) != static_cast<D>((i % 7) + 1)) ? 1 : 0;
+        wrong += (static_cast<S>(std::as_const(src)[i]) != S{}) ? 1 : 0;
+    }
+    dst.clear();
+    src.clear();
+    if (wrong != 0)
+    {
+        println("[{}/cross-type-assign] FAIL: {} wrong values of {}", label, wrong, count);
+        return 1;
+    }
+    println("[{}/cross-type-assign] OK", label);
+    return 0;
+}
+
 // ── a replayed write that makes a chunk uniform queues it ───────────────────
 
 /**
@@ -938,6 +958,9 @@ int run(int argc, char** argv)
     fails += run_resize<int>("int", count);
     fails += run_resize<double>("double", count);
     fails += run_resize<bool>("bool", count);
+
+    fails += run_cross_type_assign<double, int>("double = int", count);
+    fails += run_cross_type_assign<long, int>("long = int", count);
 
     fails += run_replay_marks<int>("int", count);
     fails += run_replay_marks<double>("double", count);

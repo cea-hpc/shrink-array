@@ -122,11 +122,12 @@
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero_any, build_config::needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, begin_phase
 
 namespace validation::pattern_validation
 {
@@ -136,14 +137,6 @@ using namespace shrink_array;
 static_assert(chunk_config::use_zero_any, "pattern_validation runs in the zero_any build: link chunk_zero_any_<size>");
 
 static int fails = 0;
-
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
 
 /// @brief End a write phase. Serial zero_any has no between-region pass: run
 ///        the writers' pass of @p Arr.
@@ -953,24 +946,34 @@ int run(int argc, char** argv)
     }
 
     against_zero_any<int>("int", nch);
-    against_zero_any<long>("long", nch);
+    // long: a motif chunk keeps its offset in the second-value slot, which
+    // CHUNK_SECOND_VALUE_INDEXED turns into a 4-byte identifier for a type
+    // wider than 4 bytes -- pattern::Chunk refuses such a type (pattern_chunk.h).
+    if constexpr (!SecondValueTraits<long>::indexed)
+    {
+        against_zero_any<long>("long", nch);
+        motif_state<long>("long", nch);
+        motif_compression<long>("long", nch);
+        advisor_agrees<long>("long", nch);
+        advisor_motif_forecast<long>("long", nch < 2048 ? 2048 : nch);
+    }
+    else
+    {
+        println("--- long skipped: CHUNK_SECOND_VALUE_INDEXED (pattern::Array holds types of at most 4 bytes there)");
+    }
     against_zero_any<unsigned>("unsigned", nch);
     against_zero_any<short>("short", nch);
     shared_registry(nch / 4 > 0 ? nch / 4 : 1);
     motif_state<int>("int", nch);
-    motif_state<long>("long", nch);
     motif_state<unsigned>("unsigned", nch);
     motif_state<short>("short", nch);
     fill_over_motifs<int>("int", nch);
     fill_over_motifs<short>("short", nch);
     motif_compression<int>("int", nch);
-    motif_compression<long>("long", nch);
     motif_compression<unsigned>("unsigned", nch);
     motif_compression<short>("short", nch);
     advisor_agrees<int>("int", nch);
-    advisor_agrees<long>("long", nch);
     advisor_motif_forecast<int>("int", nch < 2048 ? 2048 : nch);
-    advisor_motif_forecast<long>("long", nch < 2048 ? 2048 : nch);
 
     release_chunk_pools();
     Runtime::shutdown();

@@ -161,7 +161,7 @@ Partitioners and `task_arena`s work as with TBB itself; an arena wider than the 
 the program links it.
 
 ```cmake
-find_package(shrink_array 0.3 REQUIRED)
+find_package(shrink_array 0.4 REQUIRED)
 find_package(TBB REQUIRED)
 target_link_libraries(my_app PRIVATE shrink_array::zero_any TBB::tbb)
 ```
@@ -344,7 +344,7 @@ cmake --install build
 Then, in your project:
 
 ```cmake
-find_package(shrink_array 0.3 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(shrink_array 0.4 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
 target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
@@ -451,7 +451,7 @@ exists in French ([docs/README.md](docs/README.md)); the changes from one versio
 
 ## Status and contributing
 
-shrink-array is at version 0.3: before 1.0, a minor release may change the interface
+shrink-array is at version 0.4: before 1.0, a minor release may change the interface
 ([versioning policy](CHANGELOG.md)). Every push runs the source checks, the GCC 14 builds
 (OpenMP, serial and std threads with oneTBB), the validation harnesses, the std backend under
 ThreadSanitizer and the GenMC models, the OpenMP build on x86-64 and on AArch64, a project that

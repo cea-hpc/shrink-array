@@ -63,26 +63,22 @@
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every element of
 // every type round-trips and the teardown returned.
 
-#include <array>       // std::array
-#include <cstdint>     // std::int16_t
-#include <cstdlib>     // std::strtol
-#include <type_traits> // std::conditional_t
-#include <utility>     // std::as_const
-#include <vector>      // std::vector
+#include <array>   // std::array
+#include <cstdint> // std::int16_t
+#include <cstdlib> // std::strtol
+#include <utility> // std::as_const
+#include <vector>  // std::vector
 
 #include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
-#include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_or_value_array.h"        // zero_or_value::Array
-#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/runtime.h"                    // Runtime::init, register_chunk_size
 #include "chunk/internal/zero_chunk.h"        // release_chunk_pools, Runtime::shutdown
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::chunk_dynamic / needs_explicit_phases
-#include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/print.h"              // shrink_array::println
+#include "chunk/config.h"                     // chunk_config::use_zero_or_value*, build_config::chunk_dynamic
+#include "chunk/internal/pmp_chunk.h"         // CHUNK_PMP_MAX_THREADS
+#include "chunk/print.h"                      // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name, begin_phase / end_phase, maybe_set_second_value
 
 namespace validation::open_types_validation
 {
@@ -137,52 +133,6 @@ struct Pair16
 
     std::int16_t b;
 };
-
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-static void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
-template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& arr, const Val& value)
-{
-    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
-    {
-        arr.set_second_value(value);
-    }
-}
 
 // A multiple of every geometry the harness is built at: a run is a whole
 // number of chunks.
@@ -394,7 +344,7 @@ int run(int argc, char** argv)
         cp[3] = Point3{-1., -1., -1.};
         check(std::as_const(pts)[3] == Point3{3., 0.5, 0.} && std::as_const(cp)[3] == Point3{-1., -1., -1.},
               "deep copy: a write in the copy leaves the source alone");
-        Array<Pair16> cells{Pair16{1, 5}, Pair16{2, 6}, Pair16{}};
+        Array<Pair16> cells{Pair16{1, 5}, Pair16{2, 6}, Pair16{}}; // NOSONAR(cpp:S6012): a conditional_t alias, no CTAD
         check(cells.size() == 3 && std::as_const(cells)[1] == Pair16{2, 6} && std::as_const(cells)[2] == Pair16{},
               "initializer-list constructor");
         std::vector   src(500, Pair16{7, 1});

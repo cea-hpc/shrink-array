@@ -48,7 +48,7 @@ message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${
 # a variant left out are not built nor registered as tests. A build that checks
 # one variant's option (CHUNK_SECOND_VALUE_INDEXED is zero_any's) needs only that
 # one; trim it during development too. The former names chunk, chunk2, chunk2a
-# are refused, with the new name in the message.
+# and zero_one_value are refused, with the new name in the message.
 set(CHUNK_VARIANTS "zero;zero_or_value;zero_any" CACHE STRING
     "Semicolon list of the variants to build: zero, zero_or_value, zero_any.")
 set(_chunk_variants_read "")
@@ -60,8 +60,7 @@ foreach(_v IN LISTS CHUNK_VARIANTS)
     message(FATAL_ERROR "CHUNK_VARIANTS: '${_v}' is the former name of '${_new}': write '${_new}'")
   endif()
   if (_v STREQUAL "zero_one_value")
-    message(DEPRECATION "CHUNK_VARIANTS: 'zero_one_value' is 'zero_or_value' now (the former name goes at the next minor version)")
-    set(_v zero_or_value)
+    message(FATAL_ERROR "CHUNK_VARIANTS: 'zero_one_value' is the former name of 'zero_or_value': write 'zero_or_value'")
   endif()
   if (NOT _v MATCHES "^(zero|zero_or_value|zero_any)$")
     message(FATAL_ERROR "CHUNK_VARIANTS: unknown variant '${_v}' (zero, zero_or_value, zero_any)")
@@ -401,7 +400,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/proxy_operators.h
         public/chunk/internal/rechunk_cost_model.h
         public/chunk/internal/rechunk_decider_inline.h
-        public/chunk/internal/array_const_val2_holder.h
+        public/chunk/internal/second_value_registry.h
         public/chunk/internal/write_compress_sync_policy.h
         public/chunk/internal/pmp_chunk.h
         public/chunk/internal/type_state_registry.h
@@ -451,8 +450,9 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/second_value_info.h
         public/chunk/internal/stable_table.h
         public/chunk/internal/stable_table_inline.h
-        public/chunk/internal/array_const_val2_holder_inline.h
+        public/chunk/internal/second_value_registry_inline.h
         public/chunk/internal/array_users.h
+        public/chunk/internal/teardown_park.h
         public/chunk/internal/teardown_probe.h
         public/chunk/internal/test_hooks.h
         public/chunk/internal/value_less.h
@@ -466,20 +466,15 @@ set(CHUNK_INTERNAL_HEADERS
 set(CHUNK_PUBLIC_HEADERS
         public/chunk/zero_array.h
         public/chunk/zero_or_value_array.h
-        public/chunk/zero_one_value_array.h
         public/chunk/zero_any_array.h
         public/chunk/pattern_array.h
         public/chunk/bit_array.h
-        public/chunk/array_chunk_bits.h
         public/chunk/bit.h
         public/chunk/range_ops.h
-        public/chunk/array_chunk_range_ops.h
         public/chunk/vector_range_ops.h
         public/chunk/chunk_exchange.h
         public/chunk/runtime.h
-        public/chunk/param_chunk.h
         public/chunk/phases.h
-        public/chunk/manage_ompt.h
         public/chunk/tbb_adaptor.h
         public/chunk/chunk_size_advisor.h
         public/chunk/rechunk_decider.h
@@ -555,11 +550,9 @@ function(chunk_add_variant target_name variant_define size is_dyn)
 
   # The OMPT tool (chunk/build_options.h, CHUNK_OPT_OMPT).
   if (CHUNK_HAVE_OMPT)
-    # The OpenMP runtime finds the tool with dlsym("ompt_start_tool") in the
-    # EXECUTABLE: its symbols must be in the dynamic symbol table, which an
-    # executable does not export by default. Without this the runtime silently
-    # runs without the tool (phases.h's warning says so at start-up).
-    target_link_options(${target_name} INTERFACE -rdynamic)
+    # The options that let the runtime find the tool in the executable (the
+    # top-level CMakeLists.txt, "OMPT detection"; its probe links with them too).
+    target_link_options(${target_name} INTERFACE ${CHUNK_OMPT_TOOL_LINK_OPTIONS})
   endif()
 
   # Per-declination geometry: dynamic (runtime size) vs fixed compile-time size.
@@ -634,9 +627,18 @@ function(chunk_add_variant target_name variant_define size is_dyn)
           $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party>
           $<INSTALL_INTERFACE:include>)
 
+  # The soname says what find_package() says (_chunk_compatibility below): at
+  # 0.x a MINOR release may break, so 0.3 and 0.4 must not share
+  # lib<name>.so.0 -- a program linked against one, with its header-only
+  # engine inlined, would load the other without a word from the loader.
+  if (CHUNK_MAJOR_VERSION EQUAL 0)
+    set(_chunk_soversion ${CHUNK_MAJOR_VERSION}.${CHUNK_MINOR_VERSION})
+  else()
+    set(_chunk_soversion ${CHUNK_MAJOR_VERSION})
+  endif()
   set_target_properties(${target_name} PROPERTIES
           VERSION ${CHUNK_VERSION}
-          SOVERSION ${CHUNK_MAJOR_VERSION}
+          SOVERSION ${_chunk_soversion}
   )
 endfunction()
 
@@ -684,7 +686,7 @@ endforeach()
 # The examples link the bare names chunk_zero / chunk_zero_or_value / chunk_zero_any; forward
 # them to the default static size. NOTE: a raw (unknown) name given to
 # target_link_libraries is silently treated by CMake as a system library
-# (-lchunk_v1), so no usage requirement (-I, PUBLIC defines) propagates and
+# (-lchunk_zero), so no usage requirement (-I, PUBLIC defines) propagates and
 # the failure only shows up at compile time — hence these explicit wrappers.
 # INTERFACE wrappers (not ALIASes) so usage requirements propagate reliably
 # across directory scopes.
@@ -742,17 +744,6 @@ foreach(_t IN LISTS _chunk_install_targets)
   if (NOT TARGET chunk::${_t})
     add_library(chunk::${_t} ALIAS ${_t})
   endif()
-  # zero_or_value was zero_one_value until 0.3: the former names of its targets,
-  # plain and under both namespaces, for a project that takes this one in.
-  if (_t MATCHES "^chunk_zero_or_value")
-    string(REPLACE "zero_or_value" "zero_one_value" _former "${_t}")
-    string(REGEX REPLACE "^chunk_" "" _former_short "${_former}")
-    foreach(_alias IN ITEMS ${_former} chunk::${_former} shrink_array::${_former_short})
-      if (NOT TARGET ${_alias})
-        add_library(${_alias} ALIAS ${_t})
-      endif()
-    endforeach()
-  endif()
   # ... and under the project's name, the one of find_package(shrink_array):
   # shrink_array::zero_any_256 for chunk_zero_any_256.
   string(REGEX REPLACE "^chunk_" "" _short "${_t}")
@@ -764,7 +755,7 @@ endforeach()
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).
 # fast_allocators/CMakeLists.txt, configured after this file, checks it against
 # its own ALLOCATORS_VERSION through this global property.
-set(CHUNK_FAST_ALLOCATORS_VERSION 2.4.0)
+set(CHUNK_FAST_ALLOCATORS_VERSION 2.5.0)
 set_property(GLOBAL PROPERTY CHUNK_FAST_ALLOCATORS_VERSION ${CHUNK_FAST_ALLOCATORS_VERSION})
 
 install(TARGETS ${_chunk_install_targets}
@@ -789,18 +780,24 @@ install(FILES ${CHUNK_GENERATED_INCLUDE_DIR}/chunk/build_options.h
         COMPONENT chunk-devel)
 
 # A std-alloc build installs no fast_allocators, yet chunk's headers include
-# its svalloc.h, singleton.h, log_core.h, fatal.h, raw_memory.h and the backend's pmp_*.h:
-# install those with chunk then.
+# its svalloc.h, singleton.h, log_core.h, fatal.h, raw_memory.h, the backend's
+# pmp_*.h, and what those include in turn (append_text.h, the *_inline.h
+# bodies): install those with chunk then. The list is the closure of the
+# includes chunk's headers reach outside their CHUNK_OPT_FAST_ALLOC blocks;
+# scripts/check_tracked.py (rule 6) recomputes it and fails when one is missing.
 if (CHUNK_STD_ALLOC)
-  install(FILES ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/svalloc.h
-                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/singleton.h
-                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/log_core.h
+  install(FILES ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/append_text.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/fatal.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/log_core.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_loops.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_loops_inline.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_runtime.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std_inline.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std_state.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/raw_memory.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/singleton.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/svalloc.h
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fast_allocators/internal
           COMPONENT chunk-devel)
 endif()
@@ -826,9 +823,6 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/licenses/
 
 include(CMakePackageConfigHelpers)
 
-# "_256;_1024" written "256 _1024" after the "_" of the template: the suffixes of the
-# static sizes, for the former target names the two config files declare.
-string(REPLACE ";" " _" _chunk_static_suffixes "${CHUNK_STATIC_SIZES}")
 configure_package_config_file(chunk-config.cmake.in chunk-config.cmake
         INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
 

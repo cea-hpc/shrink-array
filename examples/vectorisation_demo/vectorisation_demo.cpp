@@ -22,7 +22,6 @@
 #include <iostream>  // std::cout, std::cerr
 #include <random>    // std::mt19937, std::uniform_int_distribution, std::default_random_engine
 #include <array>     // std::array
-#include <fstream>   // std::ifstream, std::ofstream
 #include <algorithm> // For std::shuffle
 #include <string>    // std::string, std::to_string
 
@@ -33,87 +32,14 @@
 #include <vector> // std::vector
 #include <format> // std::format (the filling rates)
 
-
 #include "chunk/runtime.h"    // Runtime, Runtime::shutdown
 #include "chunk/zero_array.h" // zero::Array
 #include "chunk/threads.h"    // shrink_array::max_threads
 #include "chunk/config.h"     // chunk_config::stats
 
+#include "example_utils.h" // initialize_rng, report_memory_mib
 
 using namespace shrink_array;
-
-
-double convert_memory(double memory_value)
-{
-    const double byte_to_kb = 1.0 / 1024;
-    const double kb_to_mb   = 1.0 / 1024;
-
-    const double kilobytes = memory_value * byte_to_kb;
-    const double megabytes = kilobytes * kb_to_mb;
-
-    if (std::ofstream out_file("memory_mo.txt"); out_file.is_open())
-    {
-        out_file << megabytes;
-        out_file.close();
-    }
-    else
-    {
-        std::cerr << "Error: cannot open the file.\n";
-    }
-
-    return megabytes;
-}
-
-// Save seed to file
-void save_seed_to_file(unsigned seed, const std::string& filename)
-{
-    std::cout << "\nSave seed in file\n";
-
-    if (std::ofstream file(filename); file.is_open())
-    {
-        file << seed;
-        file.close();
-    }
-    else
-    {
-        std::cerr << "Unable to open file for saving seed." << '\n';
-    }
-}
-
-// Load seed from file
-unsigned load_seed_to_file(const std::string& filename)
-{
-    unsigned seed = 0;
-    if (std::ifstream file(filename); file.is_open())
-    {
-        file >> seed;
-        file.close();
-    }
-    else
-    {
-        std::cerr << "Unable to open file for loading seed. --> create new one" << '\n';
-    }
-    std::cout << "\nLoad seed in file\n";
-
-    return seed;
-}
-
-// Initialize random number generator with saved or new seed
-void initialize_rng(std::mt19937& rng, const std::string& seed_file_name)
-{
-    // Try to load seed from file
-    unsigned seed = load_seed_to_file(seed_file_name);
-    if (seed == 0)
-    {
-        // If loading failed, generate a new seed
-        std::random_device rd;
-        seed = rd();
-        // Save the new seed to file
-        save_seed_to_file(seed, seed_file_name);
-    }
-    // Initialize RNG with the seed
-    rng.seed(seed);
-}
 
 constexpr int iter_max = 10000;
 
@@ -121,8 +47,8 @@ template <typename V>
 void init(int                              start0,
           int                              end0,
           int                              iter,
-          const std::array<int, iter_max>& array_nba1,
-          const std::array<int, iter_max>& array_nba2,
+          const std::array<int, iter_max>& array_threshold1,
+          const std::array<int, iter_max>& array_threshold2,
           V&                               arr1,
           V&                               arr2,
           V&                               arr3)
@@ -131,11 +57,11 @@ void init(int                              start0,
     for (int i = start0; i < end0; ++i)
     {
         arr1[i] = std::sqrt(double(i));
-        if (i > array_nba1[iter])
+        if (i > array_threshold1[iter])
         {
             arr2[i] = std::cos(double(2 * i));
         }
-        if (i > array_nba2[iter])
+        if (i > array_threshold2[iter])
         {
             arr3[i] = std::sin(arr1[i] + arr2[i]);
         }
@@ -240,7 +166,7 @@ try
     const std::string str            = std::to_string(iter_max);
     const std::string seed_file_name = "seed" + str + ".txt"; // File to store the seed
     std::mt19937      rng;                                    // Random number generator
-    initialize_rng(rng, seed_file_name);
+    example_utils::initialize_rng(rng, seed_file_name);
 
     // Create a uniform distribution for interval sizes
     std::uniform_int_distribution size_distribution(1, interval);
@@ -252,8 +178,8 @@ try
 
     std::array<int, iter_max> array_size{};
     std::array<int, iter_max> array_start{};
-    std::array<int, iter_max> array_nba1{};
-    std::array<int, iter_max> array_nba2{};
+    std::array<int, iter_max> array_threshold1{};
+    std::array<int, iter_max> array_threshold2{};
 
     for (int k = 0; k < iter_max; ++k)
     {
@@ -264,8 +190,8 @@ try
         array_start[k]   = start0;
 
         std::uniform_int_distribution uni1(start0, end0);
-        array_nba1[k] = uni1(rng);
-        array_nba2[k] = uni1(rng);
+        array_threshold1[k] = uni1(rng);
+        array_threshold2[k] = uni1(rng);
     }
 
     end             = std::chrono::steady_clock::now();
@@ -351,8 +277,8 @@ try
             {
                 // To simulate behavior of a code where we read more than we write
 
-                init(start0, end0, k, array_nba1, array_nba2, arr1, arr2, arr3);
-                init(start0, end0, k, array_nba1, array_nba2, array_chunk1, array_chunk2, array_chunk3);
+                init(start0, end0, k, array_threshold1, array_threshold2, arr1, arr2, arr3);
+                init(start0, end0, k, array_threshold1, array_threshold2, array_chunk1, array_chunk2, array_chunk3);
 
                 for (int p = 0; p < 5; ++p)
                 {
@@ -409,7 +335,8 @@ try
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
         const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
-        std::cout << "\nMemory consumption : " << convert_memory(static_cast<double>(rss * 1024)) << " Mo \n\n";
+        std::cout << "\nMemory consumption : " << example_utils::report_memory_mib(static_cast<double>(rss * 1024))
+                  << " Mo \n\n";
     }
     else
     {

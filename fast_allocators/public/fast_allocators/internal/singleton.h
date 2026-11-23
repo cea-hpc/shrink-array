@@ -40,7 +40,7 @@ namespace fast_alloc
  * @brief Process-wide lazily-constructed instance of T, shared by every thread.
  * @details Created on the first get_instance() and never destroyed unless
  *          delete_instance() is called: an intentional leak, marked for LSan.
- *          The chunk library reaches it as shrink_array::SingletonChk
+ *          The chunk library reaches it as shrink_array::Singleton
  *          (chunk/internal/singleton.h). delete_instance() is for outside code only.
  * @tparam T The type to host; default-constructible.
  */

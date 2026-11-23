@@ -617,7 +617,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     // heavy write load the window may never open, and an unbounded spin livelocks every
     // compressing thread in sched_yield. Past the yield budget, return false: the caller
     // skips compression WITHOUT touching P, the chunks stay queued and are retried on the
-    // next pass, and the between-phase compress_chunk_to_compress region (no concurrent
+    // next pass, and the between-phase compress_queued region (no concurrent
     // writers, no start() barrier) drains them for good. Deferring loses no compression.
     int spin   = 0;
     int yields = 0;
@@ -637,7 +637,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     // With the per-chunk marks the window is "no writer on a chunk this pass MARKED" (other
     // chunks' writers are neither waited for nor steered away); without them, "no writer
     // anywhere".
-    const auto window_shut = [max_thr]
+    const auto window_shut = [max_thr] // NOSONAR(cpp:S1481): a run-time bound in threaded builds
     {
         if constexpr (chunk_config::use_chunk_steal_mark)
         {

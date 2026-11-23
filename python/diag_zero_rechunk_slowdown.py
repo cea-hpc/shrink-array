@@ -98,7 +98,7 @@ CHURN_RE = re.compile(r"churn (.+?) S=(\d+): (\d+) materialisations over (\d+) p
                       r"resident materialised (-?\d+) -> (-?\d+)")
 # The perf report's groups of symbols: a label, the symbols (regex on the line).
 PASS_SYMBOLS = [
-    ("compression pass", r"make_block_compression|fill_list_to_compress|clear_int_st"),
+    ("compression pass", r"make_block_compression|classify_candidate|clear_int_st"),
     ("window start/finish", r"Compression\w*<.*>::(?:start|finish)\b"),
     ("materialisation", r"create_value|alloc_chunk"),
     ("OpenMP barrier", r"__kmp_\w*barrier|__kmp_hyper|gomp_\w*barrier|gomp_team_barrier"),

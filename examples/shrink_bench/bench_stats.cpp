@@ -66,21 +66,21 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         const Int ssz = arr.size();
 
         // `omp parallel for schedule(static) reduction(+ : ...)` with OpenMP.
-        const auto census = shrink_array::pmp::parallel_sum<Int, 3>(Int{0}, ssz, shrink_array::pmp::Options{},
-                                                                    [&](Int k, auto& acc)
-                                                                    {
-                                                                        auto& nbz = acc[0];
-                                                                        auto& nbv = acc[1];
-                                                                        auto& n   = acc[2];
+        const auto census   = shrink_array::pmp::parallel_sum<Int, 3>(Int{0}, ssz, shrink_array::pmp::Options{},
+                                                                      [&](Int k, auto& acc)
+                                                                      {
+                                                                        auto& n_zero   = acc[0];
+                                                                        auto& n_values = acc[1];
+                                                                        auto& n        = acc[2];
                                                                         if constexpr (is_complex)
                                                                         {
                                                                             if (arr[k] == zero_complex)
                                                                             {
-                                                                                nbz++;
+                                                                                n_zero++;
                                                                             }
                                                                             else if (arr[k] == sec_val)
                                                                             {
-                                                                                nbv++;
+                                                                                n_values++;
                                                                             }
                                                                             else
                                                                             {
@@ -94,11 +94,11 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                             // have no conversion from Int.
                                                                             if (arr[k] == value_type{})
                                                                             {
-                                                                                nbz++;
+                                                                                n_zero++;
                                                                             }
                                                                             else if (arr[k] == sec_val)
                                                                             {
-                                                                                nbv++;
+                                                                                n_values++;
                                                                             }
                                                                             else
                                                                             {
@@ -109,23 +109,23 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                         {
                                                                             if (arr[k] == 0)
                                                                             {
-                                                                                nbz++;
+                                                                                n_zero++;
                                                                             }
                                                                             else
                                                                             {
-                                                                                nbv++;
+                                                                                n_values++;
                                                                             }
                                                                         }
-                                                                    });
-        const Int  nbz    = census[0];
-        const Int  nbv    = census[1];
-        const Int  n      = census[2];
+                                                                      });
+        const Int  n_zero   = census[0];
+        const Int  n_values = census[1];
+        const Int  n        = census[2];
 
         // Over the array's own size: array_float and array_char hold 2 * sz
         // elements, array_short sz / 2, array_mask mask_scale * sz, array_conn whole rows.
         const double pc  = double(n) / double(ssz);
-        const double pcz = double(nbz) / double(ssz);
-        const double pcv = double(nbv) / double(ssz);
+        const double pcz = double(n_zero) / double(ssz);
+        const double pcv = double(n_values) / double(ssz);
 
         // std::format, not std::fixed / std::setw: std::cout's flags stay as
         // they were for what the bench prints next.
@@ -143,7 +143,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         {
             line("Numbers of values", n, pc * 100);
         }
-        line("Numbers of 0", nbz, pcz * 100);
+        line("Numbers of 0", n_zero, pcz * 100);
 
         // Second output line: build the label dynamically with a suffix.
         std::ostringstream oss;
@@ -158,7 +158,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
             oss << sec_val;
         }
 
-        line(oss.str(), nbv, pcv * 100);
+        line(oss.str(), n_values, pcv * 100);
     };
 
     if constexpr (chunk_config::is_shrink_enabled)
@@ -172,21 +172,22 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     {
         const Int ssz = arr.size();
 
-        // `omp parallel for schedule(static) reduction(+ : nbz)` with OpenMP.
-        const Int nbz = shrink_array::pmp::parallel_sum<Int, 1>(Int{0}, ssz, shrink_array::pmp::Options{},
-                                                                [&](Int k, auto& acc)
-                                                                {
-                                                                    if (arr[k] == 0.0)
-                                                                    {
-                                                                        acc[0]++;
-                                                                    }
-                                                                })[0];
-        const Int n   = ssz - nbz;
+        // `omp parallel for schedule(static) reduction(+ : n_zero)` with OpenMP.
+        const Int n_zero = shrink_array::pmp::parallel_sum<Int, 1>(Int{0}, ssz, shrink_array::pmp::Options{},
+                                                                   [&](Int k, auto& acc)
+                                                                   {
+                                                                       if (arr[k] == 0.0)
+                                                                       {
+                                                                           acc[0]++;
+                                                                       }
+                                                                   })[0];
+        const Int n      = ssz - n_zero;
 
         constexpr int name_width   = 20;
         const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
         std::cout << std::string(static_cast<std::size_t>(name_padding), ' ') << "\nstatistics " << name << "\n";
-        std::cout << std::format("{:<22}:{:>10}{:>10.2f} %\n", "Numbers of 0", nbz, 100.0 * double(nbz) / double(ssz));
+        std::cout << std::format("{:<22}:{:>10}{:>10.2f} %\n", "Numbers of 0", n_zero,
+                                 100.0 * double(n_zero) / double(ssz));
         std::cout << std::format("{:<22}:{:>10}{:>10.2f} %\n", "Numbers of levels != 0", n,
                                  100.0 * double(n) / double(ssz));
     };

@@ -36,7 +36,7 @@
  *   model                         source (chunk/public/chunk/)
  *   ---------------------------   ----------------------------------------------------------
  *   values                        internal/chunk_base.h  ChunkBase::values_ (values_load(): acquire)
- *   slot                          the chunk's second-value slot (internal/tab_cst_val2_holder.h
+ *   slot                          the chunk's second-value slot (internal/second_value_registry.h
  *                                 SecondValueRef<T>::slot): the offset of a motif chunk, the
  *                                 second value of a constant one
  *   motif_a, motif_b              internal/motif_region.h  MotifRegion<T> entries (never freed here)
@@ -48,9 +48,9 @@
  *   writer()                      internal/zero_any_chunk_inline.h  create_value(), the motif
  *                                 branch: fill from motif + slot, CAS against the motif pointer
  *   pass(), TARGET_MOTIF(_SAME)   internal/pattern_chunk_inline.h  block_clear_motif()
- *   pass(), TARGET_CST1           internal/second_value_chunk_base_inline.h block_clear_common():
+ *   pass(), TARGET_FIRST_VALUE    internal/second_value_chunk_base_inline.h block_clear_common():
  *                                 ptr_second_value.reset(), then the CAS
- *   pass(), TARGET_CST2           internal/zero_any_chunk_inline.h  find_or_set_ind_cst_val2()
+ *   pass(), TARGET_SECOND_VALUE   internal/zero_any_chunk_inline.h  find_or_register_second_value()
  *                                 (set_from_array() on the slot), then block_clear()
  *
  * PROPERTIES (asserted):
@@ -63,8 +63,8 @@
  * TARGETS (what the writer leaves, hence what the pass compresses to):
  *   -DTARGET_MOTIF (default)  {20, 27}: another motif, B = {0, 7}, offset 20;
  *   -DTARGET_SAME_MOTIF       {20, 25}: motif A again, offset 20 (the pointer comes back: ABA);
- *   -DTARGET_CST1             {0, 0}: zero_any's first constant, the slot reset to 0;
- *   -DTARGET_CST2             {30, 30}: zero_any's second constant, the slot set to 30.
+ *   -DTARGET_FIRST_VALUE      {0, 0}: zero_any's first constant, the slot reset to 0;
+ *   -DTARGET_SECOND_VALUE     {30, 30}: zero_any's second constant, the slot set to 30.
  *
  * THE SOURCE MODELLED (the fix of F5, docs/formal_models.md section 8.6):
  *   reader: load `values`; a motif: load the slot ACQUIRE, load `values` again; if it moved,
@@ -111,7 +111,13 @@
 #define POISON   77                                      /* a value the chunk never holds */
 #define MAXTRY   (NELEMS + 2)                            /* P3: `values` changes twice at most */
 
-#if !defined(TARGET_MOTIF) && !defined(TARGET_SAME_MOTIF) && !defined(TARGET_CST1) && !defined(TARGET_CST2)
+/* The former names (TARGET_CST1/2, and TARGET_CONST1/2 that run_genmc.sh passed but this file
+   never read) would silently fall back to TARGET_MOTIF: refuse them. */
+#if defined(TARGET_CST1) || defined(TARGET_CST2) || defined(TARGET_CONST1) || defined(TARGET_CONST2)
+    #error "TARGET_CST1/2 and TARGET_CONST1/2 are TARGET_FIRST_VALUE / TARGET_SECOND_VALUE"
+#endif
+#if !defined(TARGET_MOTIF) && !defined(TARGET_SAME_MOTIF) && !defined(TARGET_FIRST_VALUE) \
+    && !defined(TARGET_SECOND_VALUE)
     #define TARGET_MOTIF 1
 #endif
 
@@ -122,10 +128,10 @@
 #elif defined(TARGET_SAME_MOTIF)
     #define W0 20
     #define W1 25
-#elif defined(TARGET_CST1)
+#elif defined(TARGET_FIRST_VALUE)
     #define W0 0
     #define W1 0
-#else /* TARGET_CST2 */
+#else /* TARGET_SECOND_VALUE */
     #define W0 30
     #define W1 30
 #endif
@@ -154,7 +160,7 @@ static _Atomic(atomic_int*) freed_buffer;
 #endif
 
 static bool is_motif(atomic_int* p) { return p == motif_a || p == motif_b; } /* MotifRegion::contains() */
-static bool is_cst(atomic_int* p) { return p == cst1 || p == cst2; }       /* is_cst_val2_ptr_of() and cst1 */
+static bool is_cst(atomic_int* p) { return p == cst1 || p == cst2; }       /* is_second_value_ptr_of() and cst1 */
 
 /* ───────────────────────── read sections (read_reclaim.h, as reader_reclaim.c) ───────────────────────── */
 

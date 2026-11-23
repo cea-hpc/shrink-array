@@ -20,16 +20,13 @@ chunk_require_cxx20(vectorisation_demo PRIVATE)
 # shape of the library) while this example instantiates zero::Array<double>
 # itself -- the same mismatch multi_mat had (its allocators and lists never
 # set up: SIGSEGV in create_value from the first parallel write).
-target_link_libraries(vectorisation_demo PRIVATE chunk_zero_${CHUNK_DEFAULT_SIZE})
+target_link_libraries(vectorisation_demo PRIVATE chunk_zero_${CHUNK_DEFAULT_SIZE} shrink_examples_common)
 
 add_test(NAME vectorisation_demo COMMAND vectorisation_demo)
 set_property(TEST vectorisation_demo PROPERTY LABELS examples)
 # check builds it (cmake/shrink_build_stamp.cmake), as it builds the harnesses: ctest -L examples
 # finds it.
 set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS vectorisation_demo)
-
-set_property(TEST vectorisation_demo
-        PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 
 set_property(TEST vectorisation_demo
         PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)

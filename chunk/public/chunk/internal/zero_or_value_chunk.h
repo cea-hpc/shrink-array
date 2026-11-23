@@ -18,7 +18,7 @@
 
 #include <algorithm>   // std::fill_n
 #include <array>       // std::array
-#include <deque>       // array_m_ptr_const_val2: grows without moving its arrays
+#include <deque>       // second_value_buffers: grows without moving its arrays
 #include <cstddef>     // std::size_t
 #include <tuple>       // the candidate-list entries
 #include <type_traits> // std::is_same_v, std::conditional_t
@@ -39,9 +39,9 @@
 #include "chunk/internal/zero_or_value_proxy.h"                // zero_or_value::Proxy
 #include "chunk/internal/second_value_chunk_base.h"            // SecondValueChunkBase
 #include "chunk/internal/conditional_counter.h"                // ConditionalCounter, CounterValueT
-#include "chunk/internal/chunk_tuples.h"                       // VectorTuple4ChunkInt2 (the candidate lists)
+#include "chunk/internal/chunk_tuples.h"                       // CandidateList (the candidate lists)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (ArrayInfo)
 #include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (init_chunks_const_val)
 
 namespace shrink_array
@@ -60,7 +60,7 @@ namespace zero_or_value
 template <typename T>
 class Proxy;
 
-/// @brief Static table of the registered second-constant arrays of element type T (array_m_ptr_const_val2),
+/// @brief Static table of the registered second-constant arrays of element type T (second_value_buffers),
 ///        with the lookups and checks on it.
 template <typename T>
 class ChunkSpec
@@ -79,7 +79,7 @@ class ChunkSpec
      * \param idx Index of the second value.
      * \return Pointer to the constant value array.
      */
-    [[nodiscard]] static T* get_const_val2(int idx) noexcept;
+    [[nodiscard]] static T* second_value_ptr(int idx) noexcept;
     /*!
      * \brief Checks whether `values` IS the second constant's pointer at
      *        index `idx` (i.e. the chunk is currently compressed to it).
@@ -87,45 +87,45 @@ class ChunkSpec
      * \param idx Index of the second value.
      * \return True if values equals the second constant at idx.
      */
-    [[nodiscard]] bool is_const_val2(const T* values, int idx) const noexcept
+    [[nodiscard]] bool is_second_value(const T* values, int idx) const noexcept
     {
-        return values == get_const_val2(idx);
+        return values == second_value_ptr(idx);
     }
 
 
     /*!
      * \brief Fill a freshly materialised buffer with the second value
-     *        carried in `inf_array`.
+     *        carried in `array_info`.
      * \param values_loc Buffer to fill.
-     * \param inf_array (second_value, ...) tuple; only the value is used here.
+     * \param array_info (second_value, ...) tuple; only the value is used here.
      */
-    static void init_block_2nd_value(T* values_loc, const SecondValueInfo<T>& inf_array)
+    static void init_block_2nd_value(T* values_loc, const SecondValueInfo<T>& array_info)
     {
         // InT: fill_n takes a const T& anyway; no copy of a struct on the way.
-        const InT<T> value = inf_array.second_value;
+        const InT<T> value = array_info.second_value;
         std::fill_n(values_loc, alloc_chunk_count(), value);
     }
 
-    static inline constinit internal::LazyImmortal<VecArrayChunkSizeMax> array_m_ptr_const_val2;
+    static inline constinit internal::LazyImmortal<VecArrayChunkSizeMax> second_value_buffers;
 
-    // mm_protect mode only: element count allocated at (*array_m_ptr_const_val2)[idx] (a raw
+    // mm_protect mode only: element count allocated at (*second_value_buffers)[idx] (a raw
     // mmap'd T*; the plain mode uses fixed const_buffer_size arrays). Lets set_second_value's
     // reuse path (a known second_value registered at a LARGER geometry) grow an undersized
     // allocation instead of overrunning it. Declared but unused in the other builds.
-    static inline constinit internal::Immortal<std::vector<std::size_t>> array_m_ptr_const_val2_mm_elems_storage_{};
-    static inline std::vector<std::size_t>&                              array_m_ptr_const_val2_mm_elems =
-        array_m_ptr_const_val2_mm_elems_storage_.value;
+    static inline constinit internal::Immortal<std::vector<std::size_t>> second_value_buffers_mm_elems_storage_{};
+    static inline std::vector<std::size_t>&                              second_value_buffers_mm_elems =
+        second_value_buffers_mm_elems_storage_.value;
 
   protected:
     /*!
      * \brief Whether `vals` is ANY of the registered second-constant pointers,
      *        regardless of index. For teardown, where the chunk's own index is not
-     *        to hand: is_const_val2(vals, idx) with a wrong index would read the marker
+     *        to hand: is_second_value(vals, idx) with a wrong index would read the marker
      *        of a chunk compressed at another index as a live buffer.
      * \param vals Pointer to test.
      * \return True if vals matches the second constant at some index.
      */
-    [[nodiscard]] static bool is_const_val2_any(const T* vals) noexcept;
+    [[nodiscard]] static bool is_any_second_value(const T* vals) noexcept;
 
   private:
     static constexpr bool use_mm_protect = build_config::use_mm_protect;
@@ -137,9 +137,9 @@ class ChunkSpec
      * \return True if the chunk's own values pointer differs from the
      *         second constant at idx.
      */
-    [[nodiscard]] bool is_not_const_val2(int idx) const noexcept
+    [[nodiscard]] bool is_not_second_value(int idx) const noexcept
     {
-        return !is_const_val2(idx);
+        return !is_second_value(idx);
     }
 };
 
@@ -153,9 +153,9 @@ class ChunkSpec<T>
      * \brief Gets the pointer to the (single, shared) second constant value.
      * \return Pointer to the constant value array.
      */
-    [[nodiscard]] static T* get_const_val2() noexcept
+    [[nodiscard]] static T* second_value_ptr() noexcept
     {
-        return m_ptr_const_val2.data();
+        return second_value_buffer_.data();
     }
 
     /*!
@@ -164,9 +164,9 @@ class ChunkSpec<T>
      * \param values Pointer to compare.
      * \return True if values equals the second constant.
      */
-    [[nodiscard]] static bool is_const_val2(const T* values) noexcept
+    [[nodiscard]] static bool is_second_value(const T* values) noexcept
     {
-        return values == get_const_val2();
+        return values == second_value_ptr();
     }
 
     /*!
@@ -179,7 +179,7 @@ class ChunkSpec<T>
   protected:
     // Bit: every BIT set -- the buffer is read as 64-bit words, hence the
     // bytes 0xFF (a Bit{true} object is the byte 0x01) and the alignment.
-    alignas(bits::WordT) static inline std::array<T, const_buffer_size> m_ptr_const_val2 = []
+    alignas(bits::WordT) static inline std::array<T, const_buffer_size> second_value_buffer_ = []
     {
         std::array<T, const_buffer_size> arr{};
         if constexpr (is_packed_bit_v<T>)
@@ -195,13 +195,13 @@ class ChunkSpec<T>
 
   private:
     /*!
-     * \brief Negation of is_const_val2().
+     * \brief Negation of is_second_value().
      * \param values Pointer to compare.
      * \return True if values does NOT equal the second constant.
      */
-    [[nodiscard]] static bool is_not_const_val2(const T* values) noexcept
+    [[nodiscard]] static bool is_not_second_value(const T* values) noexcept
     {
-        return !is_const_val2(values);
+        return !is_second_value(values);
     }
 };
 
@@ -337,7 +337,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
     using Base      = SecondValueChunkBase<T, Derived>;
     using BaseSpec  = ChunkSpec<T>;
     using Manager   = TypeState<Chunk, T>;
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
     using Base::derived;
     using Base::first_value;
@@ -359,10 +359,10 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
      * \brief Materialise this chunk's buffer (allocate + init), for a
      *        specific thread. Non-bool only.
      * \param need_set_second_value True to pre-fill with the second value, false for first_value.
-     * \param inf_array (second_value, index, ...) tuple of the owning array.
+     * \param array_info (second_value, index, ...) tuple of the owning array.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    void create_value(bool need_set_second_value, const InfArrayT& inf_array, int thr_rank) noexcept;
+    void create_value(bool need_set_second_value, const ArrayInfo& array_info, int thr_rank) noexcept;
 
     /*!
      * \brief Bool specialization of create_value().
@@ -375,9 +375,9 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
      * \brief create_value() with the calling thread's rank (get_thr_rank_fast()).
      *        Non-bool only.
      * \param need_set_second_value True to pre-fill with the second value, false for first_value.
-     * \param inf_array (second_value, index, ...) tuple of the owning array.
+     * \param array_info (second_value, index, ...) tuple of the owning array.
      */
-    void create_value(bool need_set_second_value, const InfArrayT& inf_array) noexcept;
+    void create_value(bool need_set_second_value, const ArrayInfo& array_info) noexcept;
 
     /*!
      * \brief create_value_bool() with the calling thread's rank. Bool only.
@@ -481,7 +481,7 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
   public:
     using Base      = SecondValueChunkBase<T, Derived>;
     using BaseSpec  = ChunkSpec<T>;
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
     using Base::derived;
     using Base::first_value;
@@ -493,9 +493,9 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
      * \brief Materialise this chunk's buffer (allocate + init). Serial: no thr_rank.
      *        Non-bool only.
      * \param need_set_second_value True to pre-fill with the second value, false for first_value.
-     * \param inf_array (second_value, index, ...) tuple of the owning array.
+     * \param array_info (second_value, index, ...) tuple of the owning array.
      */
-    void create_value(bool need_set_second_value, const InfArrayT& inf_array) noexcept;
+    void create_value(bool need_set_second_value, const ArrayInfo& array_info) noexcept;
 
     /*!
      * \brief Bool specialization of create_value() (serial builds).
@@ -563,20 +563,20 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     // (chunk, chunk_index, array_id, n_elems) -- n_elems is the chunk's OWN geometry, carried
     // from the candidate queue so the clear loop can pin the thread to it before freeing.
     using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
-    using InfArrayT       = SecondValueInfo<T>;
+    using ArrayInfo       = SecondValueInfo<T>;
 
     /**
      * @brief Scans all threads to see if any chunk is marked for compression with a specific value.
      */
-    static bool have_chunk_to_compress(T second_value, int max_thr);
+    static bool has_queued(T second_value, int max_thr);
 
     /**
      * @brief Boolean specific version of the compression check.
      */
-    static bool have_chunk_to_compress_bool(int max_thr)
+    static bool has_queued_bool(int max_thr)
     {
         // bool's second value is always `true`.
-        return have_chunk_to_compress(static_cast<T>(true), max_thr);
+        return has_queued(static_cast<T>(true), max_thr);
     }
 
 
@@ -585,27 +585,27 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      *        to a newly materialised buffer.
      * @param values_loc New buffer to install on success.
      * @param idx Index used to resolve the expected second-value constant.
-     * @param expected_is_const_val2 Whether the expected current state is the
+     * @param expected_second_value Whether the expected current state is the
      *                             second constant (vs the first).
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap(T* values_loc, int idx, bool expected_is_const_val2) noexcept;
+    [[nodiscard]] bool compare_and_swap(T* values_loc, int idx, bool expected_second_value) noexcept;
 
     /**
      * @brief Bool path of compare_and_swap() -- no idx (bool has a single shared array).
      * @param values_loc New buffer to install on success.
-     * @param expected_is_const_val2 Whether the expected current state is the second constant.
+     * @param expected_second_value Whether the expected current state is the second constant.
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap_bool(T* values_loc, bool expected_is_const_val2) noexcept;
+    [[nodiscard]] bool compare_and_swap_bool(T* values_loc, bool expected_second_value) noexcept;
 
     /**
-     * @brief Compress every non-bool candidate chunk of (thr_rank, inf_array's second value).
+     * @brief Compress every non-bool candidate chunk of (thr_rank, array_info's second value).
      * @param thr_rank Thread whose candidate list to drain.
-     * @param inf_array (second_value, ...) identifying the candidate list.
+     * @param array_info (second_value, ...) identifying the candidate list.
      * @param proxy2 Owning proxy, or nullptr for the thread-only sweep.
      */
-    static void make_block_compression(int thr_rank, const InfArrayT& inf_array, Proxy<T>* proxy2);
+    static void make_block_compression(int thr_rank, const ArrayInfo& array_info, Proxy<T>* proxy2);
 
     /**
      * @brief Bool specialization of make_block_compression().
@@ -626,40 +626,40 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     /*!
      * \brief Drain the compression-candidate queue for the given second
      *        value, across all threads.
-     * \param inf_array (second_value, index, ...) identifying the candidate list.
+     * \param array_info (second_value, index, ...) identifying the candidate list.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress(const InfArrayT& inf_array, bool apply);
+    static void compress_queued(const ArrayInfo& array_info, bool apply);
 
     /*!
-     * \brief Bool specialization of compress_chunk_to_compress().
+     * \brief Bool specialization of compress_queued().
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_bool(bool apply);
+    static void compress_queued_bool(bool apply);
 
-    /// @brief One rank's share of compress_chunk_to_compress() for one second
+    /// @brief One rank's share of compress_queued() for one second
     ///        value: the body its region runs on each thread. Public for
     ///        TypeStateRegistry's single sweep region (TypeState::sweep_rank).
-    static void compress_sweep_rank(int thr_rank, const InfArrayT& inf_array, bool apply)
+    static void compress_sweep_rank(int thr_rank, const ArrayInfo& array_info, bool apply)
     {
-        compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);
+        compress_rank_queue(thr_rank, array_info, apply);
     }
     /// @brief Bool twin of compress_sweep_rank().
     static void compress_sweep_rank_bool(int thr_rank, bool apply)
     {
-        compress_chunk_to_compress_bool_in_par(thr_rank, apply);
+        compress_rank_queue_bool(thr_rank, apply);
     }
 
     /*!
-     * \brief Per-candidate step of compress_chunk_to_compress_in_par(): re-scans THIS
+     * \brief Per-candidate step of compress_rank_queue(): re-scans THIS
      *        chunk's live content (the queue entry alone is not trusted) and, when
      *        @p apply, compresses it via clear_int_st() if still uniform.
      * \param thr_rank Calling thread's rank (for clear_int_st()).
-     * \param inf_array (second_value, ...) identifying the constant and index to test.
+     * \param array_info (second_value, ...) identifying the constant and index to test.
      * \param apply The scan always runs; compression only when true.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void compress(int thr_rank, const InfArrayT& inf_array, bool apply, unsigned int n_elems);
+    void compress(int thr_rank, const ArrayInfo& array_info, bool apply, unsigned int n_elems);
 
   private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
@@ -668,7 +668,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     /**
      * @brief Checks if the per-thread compression candidate map is empty.
      */
-    [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
+    [[nodiscard]] static bool no_candidates() noexcept
     {
         return Manager::zero_or_value_candidates_map_thr.empty() ||
                Manager::zero_or_value_candidates_map_thr[0].empty();
@@ -681,8 +681,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * @param second_value The type-2 constant these chunks are candidates for.
      * @return Reference to the (thr, second_value) candidate list.
      */
-    static VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
-                                                                                      InT<T> second_value) noexcept;
+    static CandidateList<Chunk, T>& candidates_of_thread(int thr, InT<T> second_value) noexcept;
 
     /**
      * @brief Core compression sweep: drain the candidate list of one (thread,
@@ -705,23 +704,23 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
                                             ClearFunc&& clear_func);
 
     /*!
-     * \brief Per-thread half of compress_chunk_to_compress(): drain only
+     * \brief Per-thread half of compress_queued(): drain only
      *        thread `thr_rank`'s candidate queue for the given second value.
      * \param thr_rank Thread whose candidate queue to drain.
-     * \param inf_array (second_value, ...) identifying the candidate list.
+     * \param array_info (second_value, ...) identifying the candidate list.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_in_par(int thr_rank, const InfArrayT& inf_array, bool apply);
+    static void compress_rank_queue(int thr_rank, const ArrayInfo& array_info, bool apply);
 
     /*!
-     * \brief Bool specialization of compress_chunk_to_compress_in_par().
+     * \brief Bool specialization of compress_rank_queue().
      * \param thr_rank Thread whose candidate queue to drain.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_bool_in_par(int thr_rank, bool apply);
+    static void compress_rank_queue_bool(int thr_rank, bool apply);
 
     /**
-     * \brief Shared body of the two compress_chunk_to_compress_in_par entry
+     * \brief Shared body of the two compress_rank_queue entry
      *        points: they differ only in the map key and the per-chunk compress.
      *
      * The candidate is compressed BEFORE its "already queued" flag is cleared;
@@ -730,7 +729,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \tparam CompressFn callable (ChunkType*, ChunkElems count).
      */
     template <typename CompressFn>
-    static void compress_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, CompressFn&& compress_one);
+    static void compress_rank_queue_impl(int thr_rank, InT<T> key, CompressFn&& compress_one);
 
     /*!
      * \brief Bool specialization of compress().
@@ -751,78 +750,77 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     void compress_impl(bool apply, unsigned int n_elems, SecondValueFunc get_second_value, ClearFunc&& clear_one);
 
     /**
-     * \brief Shared body of the two fill_list_chunk_to_compress_in_par entry
+     * \brief Shared body of the two classify_rank_candidates entry
      *        points: they differ only in the map key and the per-chunk scan.
      * \tparam ScanFn callable (ChunkType*, chunk_index, array_id, ChunkElems count).
      */
     template <typename ScanFn>
-    static void fill_list_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, ScanFn&& scan_one);
+    static void classify_rank_candidates_impl(int thr_rank, InT<T> key, ScanFn&& scan_one);
 
     /*!
      * \brief Sort thread `thr_rank`'s queued candidates into the two
      *        make_block_compression_impl() buckets, each chunk re-assessing itself
-     *        (fill_list_to_compress()).
+     *        (classify_candidate()).
      * \param thr_rank Thread whose candidate list to distribute.
      * \param ll_compt1 Output: candidates confirmed uniform on the first constant.
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
-     * \param inf_array (second_value, ...) identifying the candidate list.
+     * \param array_info (second_value, ...) identifying the candidate list.
      */
-    static void fill_list_chunk_to_compress_in_par(int              thr_rank,
-                                                   CandidateTuples& ll_compt1,
-                                                   CandidateTuples& ll_compt2,
-                                                   const InfArrayT& inf_array);
+    static void classify_rank_candidates(int              thr_rank,
+                                         CandidateTuples& ll_compt1,
+                                         CandidateTuples& ll_compt2,
+                                         const ArrayInfo& array_info);
 
     /*!
-     * \brief Bool specialization of fill_list_chunk_to_compress_in_par().
+     * \brief Bool specialization of classify_rank_candidates().
      * \param thr_rank Thread whose candidate list to distribute.
      * \param ll_compt1 Output: candidates confirmed uniform on the first constant.
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      */
-    static void
-    fill_list_chunk_to_compress_bool_in_par(int thr_rank, CandidateTuples& ll_compt1, CandidateTuples& ll_compt2);
+    static void classify_rank_candidates_bool(int thr_rank, CandidateTuples& ll_compt1, CandidateTuples& ll_compt2);
 
     /*!
      * \brief Re-scan THIS chunk's live content and, if now uniform on the first and/or
      *        second constant, append it to the matching bucket. Called once per
-     *        candidate by fill_list_chunk_to_compress_in_par().
+     *        candidate by classify_rank_candidates().
      * \tparam SecondValueFunc Callable returning the second constant.
      * \param ll_compt1 Output bucket for "uniform on the first constant".
      * \param ll_compt2 Output bucket for "uniform on the second constant".
      * \param chunk_index This chunk's index within its array.
      * \param array_id Which array this chunk belongs to.
      * \param get_second_value Supplies the second constant to compare against.
-     * \param check_const_val2 Whether to test the second constant (skipped when the
+     * \param check_second_value Whether to test the second constant (skipped when the
      *                        chunk is already known to hold it).
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     template <typename SecondValueFunc>
-    void fill_list_to_compress_impl(CandidateTuples&  ll_compt1,
-                                    CandidateTuples&  ll_compt2,
-                                    int               chunk_index,
-                                    int               array_id,
-                                    SecondValueFunc&& get_second_value,
-                                    bool              check_const_val2,
-                                    unsigned int      n_elems);
+    void classify_candidate_impl(CandidateTuples&  ll_compt1,
+                                 CandidateTuples&  ll_compt2,
+                                 int               chunk_index,
+                                 int               array_id,
+                                 SecondValueFunc&& get_second_value,
+                                 bool              check_second_value,
+                                 unsigned int      n_elems);
 
     /*!
-     * \brief Non-bool wrapper around fill_list_to_compress_impl() that
-     *        supplies the second constant from `inf_array`.
+     * \brief Non-bool wrapper around classify_candidate_impl() that
+     *        supplies the second constant from `array_info`.
      * \param ll_compt1 Output bucket for "uniform on the first constant".
      * \param ll_compt2 Output bucket for "uniform on the second constant".
-     * \param inf_array (second_value, ...) tuple supplying the second constant.
+     * \param array_info (second_value, ...) tuple supplying the second constant.
      * \param chunk_index This chunk's index within its array.
      * \param array_id Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void fill_list_to_compress(CandidateTuples& ll_compt1,
-                               CandidateTuples& ll_compt2,
-                               const InfArrayT& inf_array,
-                               int              chunk_index,
-                               int              array_id,
-                               unsigned int     n_elems);
+    void classify_candidate(CandidateTuples& ll_compt1,
+                            CandidateTuples& ll_compt2,
+                            const ArrayInfo& array_info,
+                            int              chunk_index,
+                            int              array_id,
+                            unsigned int     n_elems);
 
     /*!
-     * \brief Bool wrapper around fill_list_to_compress_impl() (the second
+     * \brief Bool wrapper around classify_candidate_impl() (the second
      *        constant is always `true` for bool).
      * \param ll_compt1 Output bucket for "uniform on the first constant".
      * \param ll_compt2 Output bucket for "uniform on the second constant".
@@ -830,14 +828,14 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param array_id Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void fill_list_to_compress_bool(CandidateTuples& ll_compt1,
-                                    CandidateTuples& ll_compt2,
-                                    int              chunk_index,
-                                    int              array_id,
-                                    unsigned int     n_elems)
+    void classify_candidate_bool(CandidateTuples& ll_compt1,
+                                 CandidateTuples& ll_compt2,
+                                 int              chunk_index,
+                                 int              array_id,
+                                 unsigned int     n_elems)
     {
-        fill_list_to_compress_impl(
-            ll_compt1, ll_compt2, chunk_index, array_id, [] { return true; }, derived().is_not_const_val2(), n_elems);
+        classify_candidate_impl(
+            ll_compt1, ll_compt2, chunk_index, array_id, [] { return true; }, derived().is_not_second_value(), n_elems);
     }
 };
 
@@ -851,21 +849,21 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
     /// (chunk, chunk_index, array_id, n_elems); see the true specialisation.
     using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
     /// (second value, its index in the shared value table, array_id).
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
     /// @name No-op counterparts of the true specialization's queries and passes
     ///       (same pattern as ChunkFastCompPolicy<T, Derived, false>)
     /// @{
-    static bool have_chunk_to_compress(T /*second_value*/, int /*max_thr*/)
+    static bool has_queued(T /*second_value*/, int /*max_thr*/)
     {
         return false;
     }
-    static bool have_chunk_to_compress_bool(int /*max_thr*/)
+    static bool has_queued_bool(int /*max_thr*/)
     {
         return false;
     }
 
-    static void make_block_compression(int /*thr_rank*/, const InfArrayT& /*inf_array*/, Proxy<T>* /*proxy2*/) {}
+    static void make_block_compression(int /*thr_rank*/, const ArrayInfo& /*array_info*/, Proxy<T>* /*proxy2*/) {}
 
     static void make_block_compression_bool(int /*thr_rank*/, Proxy<T>* /*proxy2*/) {}
 
@@ -875,7 +873,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
   private:
     /// @name Empty candidate lists
     /// @{
-    [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
+    [[nodiscard]] static bool no_candidates() noexcept
     {
         return true;
     }
@@ -939,7 +937,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     // (second value, index, array_id). Redeclared here on purpose: the policy
     // bases declare the same name, and this one hides theirs so zero_or_value's own
     // members see one type. It must stay THEIR type -- checked below.
-    using InfArrayT = SecondValueInfo<T>;
+    using ArrayInfo = SecondValueInfo<T>;
 
     // Statistics variant tag (CHUNK_STATS): 1 = zero_or_value.
     static constexpr int stat_variant = 1;
@@ -990,11 +988,11 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Point this chunk's values at the shared first-constant buffer
-     *        (compress to const_val1).
+     *        (compress to first_value).
      */
-    void init_values_const_val1() noexcept
+    void init_to_first_value() noexcept
     {
-        values_ = Base::get_const_val1();
+        values_ = Base::first_value_ptr();
     }
 
     /*!
@@ -1021,12 +1019,13 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      *        real data, neither constant).
      * \return True if values differs from both the first and second constant.
      */
-    [[nodiscard]] bool written() const;
+    [[nodiscard]] bool written() const
+        requires is_bool_like_v<T>;
 
     /*!
      * \brief Whether this chunk owns a real heap buffer that must be
-     *        parked/freed at teardown, as opposed to pointing at const_val1 or
-     *        ANY const_val2 marker.
+     *        parked/freed at teardown, as opposed to pointing at first_value or
+     *        ANY second_value marker.
      * \note clear_core must key on THIS, not written(idx): a single index misclassifies
      *       chunks compressed at other indices, and their static markers would be
      *       parked/freed as if allocated.
@@ -1048,14 +1047,14 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \param idx Index of the second value.
      * \return True if values equals the second constant at idx.
      */
-    [[nodiscard]] bool is_const_val2(int idx) const noexcept;
+    [[nodiscard]] bool is_second_value(int idx) const noexcept;
 
     /*!
      * \brief Bool-only: checks whether the chunk IS currently compressed to
      *        the (single, shared) second constant.
      * \return True if values equals the second constant.
      */
-    [[nodiscard]] bool is_const_val2() const noexcept;
+    [[nodiscard]] bool is_second_value() const noexcept;
 
     /*!
      * \brief Checks that the chunk does NOT use the second constant at
@@ -1063,37 +1062,46 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \param idx Index of the second value.
      * \return True if values differs from the second constant at idx.
      */
-    [[nodiscard]] bool is_not_const_val2(int idx) const noexcept;
+    [[nodiscard]] bool is_not_second_value(int idx) const noexcept;
 
     /*!
-     * \brief Bool-only: negation of is_const_val2().
+     * \brief Bool-only: negation of is_second_value().
      * \return True if values does NOT equal the (single, shared) second constant.
      */
-    [[nodiscard]] bool is_not_const_val2() const noexcept;
+    [[nodiscard]] bool is_not_second_value() const noexcept;
 
     /*!
      * \brief Materialise this chunk if it is currently compressed to either
      *        constant; a no-op otherwise (already materialised).
-     * \param inf_array (second_value, ...) tuple describing the target state.
+     * \param array_info (second_value, ...) tuple describing the target state.
      */
-    void alloc_chunk(const InfArrayT& inf_array);
+    void alloc_chunk(const ArrayInfo& array_info);
+
+    /// @brief alloc_chunk(): is the chunk compressed to its array's second
+    ///        value (bool: to `true`) rather than to the first constant?
+    [[nodiscard]] bool alloc_from_second_value(const ArrayInfo& array_info) const noexcept;
+
+    /// @brief alloc_chunk(), counter builds: the chunk just materialised
+    ///        holds a full count of the constant it was filled with, as
+    ///        Proxy::ensure_writable_storage() records it.
+    void alloc_set_counter([[maybe_unused]] bool from_second) noexcept;
 
     /*!
      * \brief Per-thread variant of alloc_chunk().
-     * \param inf_array (second_value, ...) tuple describing the target state.
+     * \param array_info (second_value, ...) tuple describing the target state.
      * \param thr_rank Calling thread's rank (ignored in serial builds).
      */
-    void alloc_chunk(const InfArrayT& inf_array, [[maybe_unused]] int thr_rank);
+    void alloc_chunk(const ArrayInfo& array_info, [[maybe_unused]] int thr_rank);
 
     static_assert(
-        std::is_same_v<InfArrayT,
-                       typename ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>::InfArrayT>,
-        "zero_or_value::Chunk::inf_array_t must be the policies' inf_array_t");
+        std::is_same_v<ArrayInfo,
+                       typename ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>::ArrayInfo>,
+        "zero_or_value::Chunk::array_info_t must be the policies' array_info_t");
 
     // --- where the rest of zero_or_value lives ----------------------------------
     // Materialisation and clearing (create_value*, clear*, block_clear) are on
     // zero_or_value::ChunkThreadPolicy, one specialisation per mode; the queue-driven compression
-    // (compress*, fill_list*, compress_chunk_to_compress*) is on
+    // (compress*, fill_list*, compress_queued*) is on
     // zero_or_value::ChunkFastCompPolicy<T, zero_or_value::Chunk, true>, next to make_block_compression.
 
   private:
@@ -1107,9 +1115,9 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     void values_store(T* ptr) noexcept;
 
     /*!
-     * \brief Attempt to atomically compress the chunk to either const_val1 or
-     *        const_val2(idx).
-     * \param const_index 0 to target const_val1, non-zero for the second at `idx`.
+     * \brief Attempt to atomically compress the chunk to either first_value or
+     *        second_value(idx).
+     * \param const_index 0 to target first_value, non-zero for the second at `idx`.
      * \param idx Index of the second constant (unused when const_index == 0).
      * \return nullptr if the chunk was already compressed or another thread
      *         won the race (caller must not free anything); otherwise the
@@ -1119,14 +1127,14 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Bool-only: whether the chunk is currently compressed to EITHER
-     *        constant (const1 or const2).
+     *        constant (first value or second value).
      * \return true if the chunk is compressed to either constant.
      */
     [[nodiscard]] bool is_const_val() const noexcept;
 
     /*!
      * \brief Whether the chunk is currently compressed to EITHER constant
-     *        (const1 or const2). Valid for bool too: `idx` is then ignored.
+     *        (first value or second value). Valid for bool too: `idx` is then ignored.
      * \param idx Index of the second constant (used only for non-bool chunks).
      * \return true if the chunk is compressed to either constant.
      */

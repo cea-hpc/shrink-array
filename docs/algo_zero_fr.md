@@ -18,8 +18,8 @@
 
 | état | `values` pointe vers | test |
 |---|---|---|
-| compressé | le tampon constant partagé `const_val1`, rempli de zéros | `is_const_val1()` |
-| matérialisé | un tampon propre au chunk | `written()`, c'est-à-dire `values != const_val1` |
+| compressé | le tampon constant partagé `first_value_buffer_`, rempli de zéros | `is_first_value()` |
+| matérialisé | un tampon propre au chunk | `written()`, c'est-à-dire `values != first_value_buffer_` |
 
 Le pointeur `values` sert donc à la fois de données et d'état. Un chunk ne connaît pas son
 propre nombre d'éléments : la géométrie vit dans la politique de taille du tableau
@@ -41,7 +41,7 @@ environ 38 Go de ses 40 Go sont des données.
 ## 3. Lecture et écriture
 
 La lecture est celle de `zero_or_value` (§5 de [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md)) : une valeur,
-lue dans le tampon du chunk ou dans `const_val1`, après la barrière de lecture.
+lue dans le tampon du chunk ou dans `first_value_buffer_`, après la barrière de lecture.
 
 L'écriture passe par le proxy `Proxy<T>` :
 
@@ -65,12 +65,12 @@ flowchart TD
     C --> D{"revérification :<br/>compresseur ?"}
     D -->|oui| D1["end_write + écriture DIFFÉRÉE<br/>(lbd_equal_asynch)"]
     D -->|non| E["corps lbd_equal_core : lire old_value<br/>AVANT toute matérialisation"]
-    E --> F{"chunk à const_val1 ?<br/>(perform_core_assignment)"}
-    F -->|oui| G["create_value : tampon de la items de réutilisation,<br/>déjà à zéro, ou neuf et mis à zéro,<br/>CAS const_val1 -> tampon, un CAS perdu le recycle"]
+    E --> F{"chunk à first_value_buffer_ ?<br/>(perform_core_assignment)"}
+    F -->|oui| G["create_value : tampon de la items de réutilisation,<br/>déjà à zéro, ou neuf et mis à zéro,<br/>CAS first_value_buffer_ -> tampon, un CAS perdu le recycle"]
     F -->|non| H
     G --> H["store_value_at"]
     H --> I{"ancienne != 0 et nouvelle == 0, ou élément<br/>changé par un autre écrivain ?<br/>(mark_for_compression_core)"}
-    I -->|oui| J["add_to_compression_list :<br/>queue_flag::try_queue, puis ajout"]
+    I -->|oui| J["queue_as_candidate :<br/>queue_flag::try_queue, puis ajout"]
     I -->|non| K
     J --> K["end_write + entretien du 7.2<br/>(trigger_compression_if_needed)"]
 ```
@@ -105,10 +105,10 @@ Quand la liste d'un thread dépasse le seuil de déclenchement (§6), une passe
    de tours et doublait le temps du run ;
 2. chaque candidat est **réservé** (`steal_mark`), avant l'ouverture de la fenêtre de
    compression (`CompressionManager::start()`), dont la barrière publie les réservations ;
-3. `fill_list_to_compress` relit chaque candidat et ne garde que ceux qui sont **entièrement
+3. `classify_candidate` relit chaque candidat et ne garde que ceux qui sont **entièrement
    à zéro** ; les autres sont démarqués tout de suite, et le drapeau de file de chaque candidat
    parcouru est rendu (`queue_flag::hand_back`) ;
-4. chacun de ceux-là est compressé (`clear_int_st` : `values` repasse à `const_val1` par CAS, et
+4. chacun de ceux-là est compressé (`clear_int_st` : `values` repasse à `first_value_buffer_` par CAS, et
    le tampon rejoint la liste de réutilisation après la période de grâce des sections de
    lecture) ;
 5. les réservations restantes sont levées, puis les drapeaux de file (`queue_flag::release`) :
@@ -128,10 +128,10 @@ flowchart TD
     B -->|non| C["steal_mark de chaque candidat"]
     C --> D{"CompressionManager::start"}
     D -->|refusé| D1["steal_unmark de tous, renoncer"]
-    D -->|accepté| E["fill_list_to_compress à la taille n_elems de l'entrée :<br/>written et is_constant_to 0 ?<br/>puis queue_flag::hand_back"]
+    D -->|accepté| E["classify_candidate à la taille n_elems de l'entrée :<br/>written et is_constant_to 0 ?<br/>puis queue_flag::hand_back"]
     E -->|oui| F["items ll_compt"]
     E -->|non| G["steal_unmark tout de suite"]
-    F --> H["clear_int_st : CAS values -> const_val1,<br/>free_block_to_pool après une période de grâce,<br/>steal_unmark"]
+    F --> H["clear_int_st : CAS values -> first_value_buffer_,<br/>free_block_to_pool après une période de grâce,<br/>steal_unmark"]
     H --> I["chaque candidat : steal_unmark, puis queue_flag::release :<br/>écrit entre-temps -> remis en items"]
     G --> I
     I --> J["chunk déclencheur remis en items s'il est matérialisé,<br/>finish()"]
@@ -178,9 +178,11 @@ raisons à ce gain faible :
 
 - ses métadonnées sont déjà faibles, et c'est surtout sur elles que le grossissement fait
   gagner ;
-- après son rechunk, `zero` dynamique **ralentit** (1,5 à 2 fois par itération par rapport au
-  statique 1 024), pour une raison encore inconnue : un build dynamique démarré directement à
-  1 024 va aussi vite que le statique, et `zero_or_value` ne ralentit pas après ses rechunks.
+- un `zero` dynamique tourne environ 3 % moins vite par itération que le statique 1 024, rechunk
+  ou non, et l'advisor l'installe à 768 sur les tableaux du banc, qui se densifient : un peu plus
+  de va-et-vient (environ 2 %) et pas moins de mémoire qu'à 1 024 (mesuré en taille réelle en
+  novembre 2026 : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md), section 8). Le
+  ralentissement de 1,5 à 2 fois après son rechunk mesuré auparavant a disparu.
 
 Pour un cas comme celui du banc, un `zero` **statique** à la bonne taille reste aujourd'hui le
 meilleur choix.

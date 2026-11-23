@@ -15,7 +15,7 @@ def run_int64_check_phase(args, extra_ldpath, errors):
     """64-bit index checks: a few --mode check runs of the int64 binaries.
 
     INT64_CHECK_VARIANTS, once each, at --check-threads, in every config that
-    has both int64 binaries (the release OpenMP ones) and a complete oracle.
+    has both int64 binaries (the release OpenMP and stats ones) and a complete oracle.
     They run in that oracle, read-only, as the 32-bit checks do: the reference
     files are the 32-bit vector_check's, element values that do not depend on
     the index type, so an int64 binary must reproduce them. A failure is a

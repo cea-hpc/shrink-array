@@ -51,7 +51,7 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
 {
     const unsigned max_factor = pol_.max_coarsen_factor;
 
-    if (rep.best < 0 || rep.cur < 0 || max_factor <= 1)
+    if (rep.best < 0 || rep.cur < 0)
     {
         return rep.best;
     }
@@ -61,9 +61,16 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
     {
         return rep.best;
     }
+    // Before the "no cap" exit below: max_coarsen_factor <= 1 switches the
+    // cap off, not the ban -- with it, an array banned from coarsening went
+    // on being coarsened.
     if (banned) // this array already paid for one bad coarsening
     {
         return rep.cur;
+    }
+    if (max_factor <= 1) // no cap
+    {
+        return rep.best;
     }
     const unsigned cap_sz = cur_size * max_factor;
     if (best_sz <= cap_sz)
@@ -466,7 +473,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 // Fining is untouched: its model is exact.
                 if (pol_.coarsen_trust_ratio > 0. && ev.new_size > ev.old_size)
                 {
-                    const double predicted = ev.mem_before - ev.mem_pred;
+                    const double predicted = ev.mem_before - ev.mem_predicted;
                     // Drift-free when the table had the old size, else the
                     // before/after difference.
                     const double measured =
@@ -487,13 +494,13 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         const bool act = observe(&arr, tick, rep, name);
         if (act && !pol_.dry_run && rep.best >= 0)
         {
-            const int      eff_best = capped_best_index(rep, hist_[&arr].coarsen_banned);
-            const auto&    cur_e    = rep.table[static_cast<std::size_t>(rep.cur)];
-            const auto&    best_e   = rep.table[static_cast<std::size_t>(eff_best)];
-            const double   mem_bef  = cur_e.mem_bytes;  // model mem at OLD geometry
-            const double   mem_prd  = best_e.mem_bytes; // advisor's PREDICTION
-            const unsigned old_sz   = cur_e.size;
-            const unsigned new_sz   = best_e.size;
+            const int      eff_best      = capped_best_index(rep, hist_[&arr].coarsen_banned);
+            const auto&    cur_e         = rep.table[static_cast<std::size_t>(rep.cur)];
+            const auto&    best_e        = rep.table[static_cast<std::size_t>(eff_best)];
+            const double   mem_before    = cur_e.mem_bytes;  // model mem at OLD geometry
+            const double   mem_predicted = best_e.mem_bytes; // advisor's PREDICTION
+            const unsigned old_sz        = cur_e.size;
+            const unsigned new_sz        = best_e.size;
 
             const auto t0 = std::chrono::steady_clock::now();
             arr.rechunk_to(new_sz);
@@ -501,7 +508,8 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
 
             // "after" is measured at the NEXT tick; seed it with the prediction
             // for a run that ends before then.
-            log_.emplace_back(RechunkEvent{iter, std::string(name), old_sz, new_sz, mem_bef, mem_prd, mem_prd});
+            log_.emplace_back(
+                RechunkEvent{iter, std::string(name), old_sz, new_sz, mem_before, mem_predicted, mem_predicted});
             log_.back().seconds  = secs;
             pending_after_[&arr] = log_.size() - 1;
         }
@@ -530,7 +538,7 @@ inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
                          "(freed %6.1f MB, %6.1f at unchanged data; advisor predicted %6.1f) in %5.0f ms\n",
                          event.iter, event.name.c_str(), event.old_size, event.new_size, event.mem_before / 1e6,
                          event.mem_after / 1e6, d_meas / 1e6, (event.mem_after_old - event.mem_after) / 1e6,
-                         (event.mem_before - event.mem_pred) / 1e6, ms);
+                         (event.mem_before - event.mem_predicted) / 1e6, ms);
         }
         else
         {
@@ -538,7 +546,7 @@ inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
                          "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
                          "(freed %6.1f MB; advisor predicted %6.1f) in %5.0f ms\n",
                          event.iter, event.name.c_str(), event.old_size, event.new_size, event.mem_before / 1e6,
-                         event.mem_after / 1e6, d_meas / 1e6, (event.mem_before - event.mem_pred) / 1e6, ms);
+                         event.mem_after / 1e6, d_meas / 1e6, (event.mem_before - event.mem_predicted) / 1e6, ms);
         }
     }
 }

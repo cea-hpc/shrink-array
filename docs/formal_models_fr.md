@@ -70,7 +70,7 @@ tout à zéro. Chaque nom du modèle correspond à un endroit du source, avec le
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h` : `start()`, `finish()` ; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h` : `steal_mark_` et ses trois verbes |
 | `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `zero_any_chunk.h` : `try_mark_const_and_get_old()` |
-| `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()` ; `relaxed_element.h` |
+| `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `classify_candidate()` ; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h` : `write_with_optional_lock_impl()` |
 
 Le modèle vérifie trois propriétés : **P1**, un écrivain n'écrit jamais dans un tampon que la passe a
@@ -92,7 +92,9 @@ regard, puis abandon) et `NWRITERS`.
 ## 4. La calibration
 
 Chaque ligne ci-dessous est un cas de `run_genmc.sh` ; les verdicts sont ceux de GenMC 0.19 sous
-RC11 et sous IMM (identiques). « Exécutions » est le nombre d'exécutions complètes explorées.
+RC11 et sous IMM (identiques), et GenMC 0.20 donne les mêmes verdicts et les mêmes nombres
+d'exécutions (vérifié le 2026-11-19, avec LLVM 21). « Exécutions » est le nombre d'exécutions
+complètes explorées.
 
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
@@ -213,7 +215,7 @@ de lecture et la libération du tampon sont vérifiées comme en section 6.
 | `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()` ; `internal/proxy_base_inline.h` `read_values_at()` ; `pattern_chunk.h` `Chunk::motif_offset()` |
 | `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, la branche motif |
 | `pass()`, un motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
-| `pass()`, une constante | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`) ; `internal/zero_any_chunk_inline.h` `find_or_set_idx_const_val2_release()` |
+| `pass()`, une constante | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`) ; `internal/zero_any_chunk_inline.h` `find_or_register_second_value_release()` |
 
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
@@ -270,7 +272,7 @@ compresseur est bornée (`CHUNK_COMPRESS_MAX_YIELDS`, 10 000 yields de 1 000 pau
 interblocage, mais un arrêt des deux threads pendant tout ce budget, après quoi la passe est
 abandonnée (le compteur de porte des abandons sur attente trop longue, dans le rapport
 `CHUNK_STATS`, les compte). Il faut un chunk à une constante tout en étant dans une liste de
-candidats -- le cas contre lequel `fill_list_to_compress()` se prémunit avec `is_not_const_val1()` -- donc c'est
+candidats -- le cas contre lequel `classify_candidate()` se prémunit avec `is_not_first_value()` -- donc c'est
 rare, pas impossible.
 
 Le correctif découle du protocole lui-même : un écrivain du chemin rapide tient son drapeau et a
@@ -375,7 +377,7 @@ l'écart du chunk (protocole 1), la case y est donc stable.
 ### 8.7 F6 : un chunk rendu constant pendant la restitution d'une passe n'était jamais mis en file (corrigé)
 
 Le modèle est `formal/queue_handback.c` ; il ne vérifie aucun ordre mémoire, mais un protocole :
-le drapeau « en file » d'un chunk (`array_is_inside_chunk_list_to_compress`) et la marque de la
+le drapeau « en file » d'un chunk (`candidate_flags`) et la marque de la
 passe. Une passe restitue chaque candidat par `steal_unmark()`, puis remet son drapeau (la fin de
 `make_block_compression()` ; l'ordre est gardé exprès : une fois le drapeau baissé, une autre passe
 peut mettre le chunk en file et le marquer, et une levée de marque tardive effacerait sa
@@ -392,7 +394,7 @@ que sa marque tient encore les écrivains à l'écart, le drapeau du candidat pa
 « restitué » (`queue_flag::hand_back`, dans le parcours même, avant que le parcours lève la marque d'un
 chunk qu'il écarte, dans les trois variantes) ; un écrivain dont le marquage trouve 2 le change
 en 3, « écrit entre-temps », au lieu de renoncer (`queue_flag::try_queue`, à chaque site
-d'écrivain : `add_to_compression_list()`, sa forme asynchrone, les écritures par plage qui y
+d'écrivain : `queue_as_candidate()`, sa forme asynchrone, les écritures par plage qui y
 passent) ; la passe remet ensuite 2 -> 0 par CAS et, sur un 3, remet elle-même le chunk dans la
 liste de son rang (`queue_flag::release`). Dans les passes de `zero`, `zero_or_value` et
 `zero_any` (avec la validation des motifs de `pattern`), builds threadés ; le build série n'a pas
@@ -457,10 +459,21 @@ et met le chunk en file ; la passe B le marque et passe start() ; la baisse tard
 marque de B ; W2 s'annonce, ne trouve pas de marque et continue ; B trouve le chunk constant, le
 vide et libère le tampon ; W2 y écrit, et sa valeur est perdue. Dans l'ordre de la source, la baisse
 de A arrive quand le drapeau vaut encore 2 ou 3 : rien ne peut mettre le chunk en file avant elle.
-Les verdicts GenMC (`run_genmc.sh`, trois lignes de plus) restent à prendre : les runs natifs
-ci-dessus forcent cet entrelacement-là avec des pauses (`-DDEMO_SCHEDULE` : le test
-`formal_native_queue_handback_two_passes_schedule`, à côté des runs libres à deux passes) ; ce sont
-un oracle pour lui, pas une vérification exhaustive.
+Les runs natifs ci-dessus forcent cet entrelacement-là avec des pauses (`-DDEMO_SCHEDULE` : le test
+`formal_native_queue_handback_two_passes_schedule`, à côté des runs libres à deux passes) : un
+oracle pour lui, pas une vérification exhaustive. GenMC les explore tous (`run_genmc.sh`, trois
+lignes de plus ; GenMC 0.20) :
+
+| cas | attendu | verdict RC11 | verdict IMM | exécutions |
+|---|---|---|---|---|
+| source, deux passes (vivacité vérifiée) | succès | succès | succès | 3161 |
+| `MUT_RELEASE_BEFORE_UNMARK`, une passe | succès | succès | succès | 12 |
+| `MUT_RELEASE_BEFORE_UNMARK`, deux passes | échec | échec : **écritures non ordonnées** de `mark` | échec : **accès à la mémoire libérée** | 5 ; 229 |
+
+Sous RC11 le vérificateur s'arrête un pas plus tôt, sur la cause : la marque de la passe B et la
+baisse tardive de la passe A sont deux écritures de `mark` que rien n'ordonne -- le revisitage en
+place de GenMC 0.20 traite cet avertissement comme une erreur. Avec `--disable-ipr`, il va jusqu'au
+même accès au tampon libéré que sous IMM (229 exécutions).
 
 ### 8.8 F7 : deux threads remplissant les deux bouts d'un chunk pouvaient le laisser tous deux hors file (corrigé)
 

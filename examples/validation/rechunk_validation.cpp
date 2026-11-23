@@ -33,7 +33,7 @@
 // zero_or_value CONTRACT: the compression-candidate list is indexed by
 // second_value (zero_or_value_candidates_map_thr[thr][second_value]),
 // populated ONLY by set_second_value. A second_value must therefore be
-// declared BEFORE writing, otherwise get_vec_tuple_to_compress_potentially_thr
+// declared BEFORE writing, otherwise candidates_of_thread
 // asserts (vec == nullptr). This is what the bench does via
 // maybe_set_second_value; we reproduce it here for every case. zero_any / zero
 // don't need this (no-op).
@@ -53,19 +53,15 @@
 // ambient chunk size, the registries -- so they run in separate processes,
 // never side by side in one).
 
-#include <cstdio>      // std::fprintf, stderr
-#include <cstring>     // std::strcmp
-#include <functional>  // std::function
-#include <limits>      // std::numeric_limits (index-split)
-#include <string>      // std::string
-#include <vector>      // std::vector
-#include <cmath>       // std::floor, std::sin
-#include <type_traits> // std::conditional_t
+#include <cstdio>     // std::fprintf, stderr
+#include <cstring>    // std::strcmp
+#include <functional> // std::function
+#include <limits>     // std::numeric_limits (index-split)
+#include <string>     // std::string
+#include <vector>     // std::vector
+#include <cmath>      // std::floor, std::sin
 
 #include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
-#include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_or_value_array.h"        // zero_or_value::Array
-#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/runtime.h"                    // Runtime::register_chunk_size, init
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_zero*
@@ -78,6 +74,7 @@ using namespace shrink_array;
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h"        // Array, variant_name
 
 namespace validation::rechunk_validation
 {
@@ -181,31 +178,9 @@ static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk
               "rechunk_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY "
               "(re-chunk is chunk-only; no std::vector fallback here)");
 
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
 // set_second_value only exists on zero_or_value / zero_any: no-op elsewhere. REQUIRED
 // on zero_or_value before any write (see the contract at the top of the file); also
-// exercises the val2 path (second_value preservation + array_m_ptr_const_val2
+// exercises the second-value path (second_value preservation + second_value_buffers
 // queue on growth, for zero_or_value).
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
@@ -218,7 +193,7 @@ void maybe_set_second_value(Arr& arr, const Val& value)
 }
 
 // sv_value: the value declared as second_value. Choosing a value present in
-// the data makes val2 compression actually kick in (a stronger test); any
+// the data makes second-value compression actually kick in (a stronger test); any
 // value is enough to satisfy the zero_or_value contract (populate the map).
 template <typename T>
 int check_invariance(const char* label,
@@ -796,10 +771,10 @@ bool bool_runs(long i)
     }
 }
 
-/// double content for the sliced-val2 cases: runs of 0, runs of the second
+/// double content for the sliced second-value cases: runs of 0, runs of the second
 /// value 0.5 and varied data, 2600 elements each (several chunks at every
 /// geometry the cases use).
-double sliced_val2_mix(long i)
+double sliced_second_value_mix(long i)
 {
     switch ((i / 2600) % 5)
     {
@@ -874,7 +849,7 @@ static int run_body(int argc, char** argv)
     }
 
     const long count = 1000000;
-    // Each case declares a second_value present in its data (value -> val2
+    // Each case declares a second_value present in its data (value -> second value
     // compression actually kicks in). On zero_or_value this is REQUIRED; on zero_any / zero
     // it is a no-op. The first three start at 64 (the scale case grows it to
     // the target, as the perf bench does), the others at 512.
@@ -911,7 +886,7 @@ static int run_body(int argc, char** argv)
                  /*sv_value=*/1.0);
          }},
         // 4096, not 8192: rechunk_to() refuses anything above const_buffer_size
-        // (CHUNK_DYN_MAX_SIZE, 4096 by default) because the shared const_val1/const_val2
+        // (CHUNK_DYN_MAX_SIZE, 4096 by default) because the shared first_value/second_value
         // buffers are sized to that ceiling and a wider chunk would read them out of
         // bounds. Asking for 8192 makes this case fail ("geometry 512 -> 512",
         // with rechunk_to's refusal on stderr). Raise the target here only
@@ -929,13 +904,14 @@ static int run_body(int argc, char** argv)
              return check_invariance<double>(
                  "all-different", 100000, 1024, [](long i) -> double { return double(i); }, /*sv_value=*/1.0);
          }},
-        // Growth 512 -> 2048 with val2: targets the array_m_ptr_const_val2 queue
+        // Growth 512 -> 2048 with a second value: targets the second_value_buffers queue
         // (zero_or_value) + the second_value round-trip.
-        {"val2-grow", 512,
+        {"second-value-grow", 512,
          [&]
          {
              return check_invariance<double>(
-                 "val2-grow", count, 2048, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0);
+                 "second-value-grow", count, 2048, [](long i) -> double { return double((i / 5000) % 3); },
+                 /*sv_value=*/2.0);
          }},
         // A size that is neither a power of two nor a multiple of 64: refused, nothing changed.
         {"invalid-size-refused", 512, [] { return check_non_pow2_refused("invalid-size-refused"); }},
@@ -943,12 +919,12 @@ static int run_body(int argc, char** argv)
         {"active-size-refused", 512, [] { return check_active_size_refused("active-size-refused"); }},
         {"multiple-of-64-chain", 256, [] { return check_multiple_of_64_chain("multiple-of-64-chain"); }},
         {"index-split", 256, [] { return check_index_split("index-split"); }},
-        // Shrink with val2 (queue never read past S', must pass).
-        {"val2-shrink", 512,
+        // Shrink with a second value (queue never read past S', must pass).
+        {"second-value-shrink", 512,
          [&]
          {
              return check_invariance<double>(
-                 "val2-shrink", count, 256, [](long i) -> double { return double((i / 1000) % 2); },
+                 "second-value-shrink", count, 256, [](long i) -> double { return double((i / 1000) % 2); },
                  /*sv_value=*/1.0);
          }},
         // The zero refill's SLICED path (fast-alloc OpenMP builds): it slices
@@ -974,7 +950,7 @@ static int run_body(int argc, char** argv)
         {"bool-uneven", 512,
          [] { return check_invariance<bool>("bool-uneven-512-to-768", 1000000L, 768, bool_runs, /*sv_value=*/true); }},
         // Array<bool> through the SLICED path (fast-alloc threaded builds): 4M
-        // bools 64 -> 256, 16384 new chunks, 4 slices. Sources at false (const1),
+        // bools 64 -> 256, 16384 new chunks, 4 slices. Sources at false (first value),
         // at true (the second constant: a shared array, never released) and
         // live ones, released during the copy; then rewritten and recompressed.
         {"bool-sliced", 64,
@@ -1007,16 +983,18 @@ static int run_body(int argc, char** argv)
         // freed). Grown 64 -> 256 (aligned, 4 slices), and shrunk 512 -> 192,
         // a size the old one does not divide: new chunks straddle old ones,
         // released by the last of their readers.
-        {"sliced-val2-grow", 64,
+        {"sliced-second-value-grow", 64,
          []
          {
-             return check_invariance<double>("sliced-val2-grow-64-to-256", 4L << 20, 256, sliced_val2_mix,
+             return check_invariance<double>("sliced-second-value-grow-64-to-256", 4L << 20, 256,
+                                             sliced_second_value_mix,
                                              /*sv_value=*/0.5, /*post_rounds=*/2);
          }},
-        {"sliced-val2-uneven", 512,
+        {"sliced-second-value-uneven", 512,
          []
          {
-             return check_invariance<double>("sliced-val2-uneven-512-to-192", 2L << 20, 192, sliced_val2_mix,
+             return check_invariance<double>("sliced-second-value-uneven-512-to-192", 2L << 20, 192,
+                                             sliced_second_value_mix,
                                              /*sv_value=*/0.5, /*post_rounds=*/2);
          }},
     };

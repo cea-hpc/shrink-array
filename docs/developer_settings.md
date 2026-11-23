@@ -29,7 +29,7 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | variable | default | effect |
 |---|---|---|
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()`. On Milan (64 threads), `0` is 3.5% faster for `zero_or_value` and the same for the other variants; it stays at 1 until it is measured on Grace, where 288 threads would issue them |
-| `CHUNK_CONST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`const2_registry_validation`, `const2_reclaim_validation`); can only lower it. Former name `CHUNK_CST_VAL2_ID_LIMIT`, still read when this one is unset (deprecated) |
+| `CHUNK_SECOND_VALUE_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`second_value_registry_validation`, `second_value_reclaim_validation`); can only lower it |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 | `CHUNK_PMP_JOIN_US` | 5000 | std backend with the library's teams on TBB (`shrink_array::tbb::use_tbb_for_library_teams()`): how long a team waits for its TBB tasks to start, in microseconds; the tasks started by then make the team (one thread, the caller, at worst), a later one returns at once. 5 ms rather than 200 us: a late task is otherwise taken and dropped by a TBB worker during the program's next region (144 threads: 79.5 s -> 50.9 s on the TBB bench) |
 | `CHUNK_PMP_SPIN_US` | 1000 | std backend: how long a thread waiting at a team's barrier, at its end or for the next team spins before it sleeps, in microseconds (OpenMP's blocktime); `0`: sleep at once. Spinning: at 160 threads the re-chunk's slice-boundary drain went from 2.45 s to the order of the OpenMP build's 0.24 s |
@@ -47,10 +47,9 @@ passes (CHANGELOG.md, Removed).
 The traces are messages in the library's log, chosen by `CHUNK_LOG` (see
 [environment_variables.md](environment_variables.md)). The variables of the former traces
 (`CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`, `CHUNK_RECHUNK_MEMTRACE`,
-`CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`) are no longer read;
-`FAST_ALLOC_TRACE` and the variables of the former reports (`CHUNK_ARENA_REPORT`,
-`CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS`, `CHUNK_CST2_PROBE`) still set the level they stand for,
-with a deprecation warning. *Removal planned: 2026-12-31.* A report is switched on by the level of
+`CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`, `FAST_ALLOC_TRACE`) and
+of the former reports (`CHUNK_ARENA_REPORT`, `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS`,
+`CHUNK_CST2_PROBE`) are no longer read. A report is switched on by the level of
 its channel, then written in full; a bare level (`CHUNK_LOG=info`) switches them all on, and the
 arena's and OMPT's counters with them, which cost a little time.
 
@@ -70,7 +69,7 @@ arena's and OMPT's counters with them, which cost a little time.
 | `CHUNK_LOG=ledger=info` (formerly `CHUNK_LEDGER_REPORT`) | the report of the block registry (builds with the registry), at exit |
 | `CHUNK_LOG=ompt=info` (formerly `CHUNK_OMPT_STATS`) | statistics of the synchronisation regions (OMPT builds), at exit |
 | `CHUNK_LOG=compress=info` in `shrink_bench` (formerly `CHUNK_CST2_PROBE`) | `zero_any`: in addition, the report of the second-value registry at each advisor pass (`gc_mark_report()`) |
-| `CHUNK_CONST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build). Former name `CHUNK_CST2_RECLAIM`, still read when this one is unset (deprecated) |
+| `CHUNK_SECOND_VALUE_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
 | `ALLOC_TOKEN_REPORT` | `CHUNK_SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `CHUNK_LOG=alloc=trace` (formerly `FAST_ALLOC_TRACE`) | one `munmap` line per emptied slab that a pool's reserve does not keep and that is freed |
 
@@ -114,6 +113,10 @@ to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR
 | `SHRINK_BENCH_KEEP_POOLS` | `1`: no `trim_reuse_pools` at the checkpoints (the parked buffers, and with the fast allocator the emptied slabs, stay resident) |
 | `BENCH_SCHED_BLOCK` | size of the scheduling blocks of the benchmark phases (64; 0 = contiguous slices) |
 | `BENCH_RANK_TIMING` | `1`: every bench backend (OpenMP, std, TBB) times every region per rank (per virtual rank under TBB) and prints at exit, per call site, the split of the threads' time into busy / imbalance / launch / tail, and the serial time between regions (stderr, `[rank-timing]` lines). Under TBB the end of the phase (`finalize_parallel_phase`) is timed apart; elsewhere it falls in the tail (OMPT's, at each region's end) or in the serial time (the bench's own, between regions) |
+| `BENCH_TBB_PARALLEL_PHASE` | `1`: TBB bench only. The bench's arena opens one oneTBB parallel phase for the whole run (`task_arena::start_parallel_phase()`, a oneTBB 2022.x preview, `TBB_PREVIEW_PARALLEL_PHASE` set by CMake). It only changes oneTBB's leave policy: a worker out of work may then stay in the arena, spinning, for 1 ms at most -- which it already may except on hybrid CPUs (P- and E-cores), where TBB makes it leave at once by default. Useful there only; no effect measured on a 72-thread AArch64 node. A line on stderr says whether it is on; ignored, and said so, with a oneTBB without the preview |
+| `BENCH_TBB_LINGER_US` | `<us>`: TBB bench only. How long a region's task, its rank done, waits (spinning) for the other ranks before returning to TBB, so the worker stays in the arena past TBB's 1 ms when the ranks are imbalanced, for the finalize's team and the next region. It waits only once every rank has started, never longer than the budget. `0` (default): it returns at once |
+| `BENCH_TBB_PIN` | `1`: TBB bench only, Linux. The TBB counterpart of `OMP_PROC_BIND=close`: a thread entering the bench's arena (the main thread included) is pinned to the CPU of its slot, slot `s` to the `s`-th CPU of the process's affinity mask at the arena's creation (cgroup, `taskset`), so that with the static partitioner rank `k` runs on the same core region after region. Leaving the arena, a thread gets the CPUs of the arena's slots (the first `max_concurrency()` of the mask), not every CPU of the process: the main thread's serial code between regions stays on the arena's socket. For a machine the run has to itself: a pinned thread cannot flee a busy core and the team waits for it at every join (15-30x slower beside a 3-job build, 14 threads). A line on stderr gives the CPUs used; ignored, and said so, elsewhere than on Linux |
+| `BENCH_TBB_FINALIZE_INSIDE` | `1`: TBB bench only. Once every rank of a region is done, the first task to see it runs `finalize_parallel_phase()` itself, and the region's other tasks serve the library's teams (they take the team's join at once) instead of TBB tasks being enqueued one by one and waited for -- 0.19 ms + 0.33 ms per finalize on a 72-thread AArch64 node, for 0.19 ms of work. Only when no task of the region returned to TBB before (otherwise the finalize runs after the tasks, as without it); waits up to `BENCH_TBB_LINGER_US` (20 ms when unset) for the ranks. A line on stderr says it is on |
 | `NO_IO`, `COMPRESS` | equivalents of `--no_io` and `--compress` |
 | `--no_mask`, `--mask_scale <x>` | without `array_mask`; or its size, `x × sz` (default 1/32) |
 | `--no_conn`, `--conn_scale <x>` | without `array_conn`, the mesh connectivity (`pattern::Array` in the `zero_or_value` and `zero_any` builds); or its size, about `x × sz` in whole rows (default 1/32) |
@@ -178,7 +181,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_WARNINGS`, `CHUNK_WERROR` | `ON`, `OFF` | `-Wall -Wextra` on all builds; warnings as errors in Debug |
 | `CHUNK_HEAVY_JOB_POOL` | empty | Ninja job pool for the executables compiled as a single unit (limits compilation memory) |
 | `CHUNK_X86_MARCH` | `native` | GCC, Clang on x86-64: `-march=` of the optimised builds; a fixed level gives a binary independent of the machine (`x86-64-v3` in the nightly's ASan job, `native` faults there on Zen 5) |
-| `CHUNK_NATIVE_TUNING` | ON | OFF: no target flag from the project at all (`-march=`/`-mcpu=native`, `-tp=host`, `-xHost`): the target is the caller's. The Spack recipe sets it OFF, so that the spec's `target=` is the one compiled for; the project's flag came after the wrapper's and won |
+| `CHUNK_NATIVE_TUNING` | ON (OFF in a project that consumes the library: add_subdirectory, FetchContent) | OFF: no target flag from the project at all (`-march=`/`-mcpu=native`, `-tp=host`, `-xHost`): the target is the caller's. The Spack recipe sets it OFF, so that the spec's `target=` is the one compiled for; the project's flag came after the wrapper's and won |
 | `CHUNK_USE_LIBCXX` | `OFF` | Clang builds: `ON` for libc++ (`-stdlib=libc++`) instead of the compiler's default standard library, libstdc++ on Linux |
 | `CHUNK_GCC_TOOLCHAIN_DIR` | depends on the machine | Clang builds: the GCC installation whose libstdc++ and runtime clang uses (`--gcc-toolchain=`); empty: the driver's own choice. A path that does not exist is ignored, with a warning |
 | `CHUNK_USE_CCACHE` | `AUTO` | compile through ccache (>= 4.8): `AUTO` (when it is found, on `PATH` or with `-DCCACHE_EXECUTABLE=...`), `ON` (an error otherwise), `OFF`. The cache is split by host CPU, so `-march=native` objects never cross nodes; a `CMAKE_CXX_COMPILER_LAUNCHER` already given is kept |
@@ -212,7 +215,7 @@ the common options. `--help` gives the full list.
 | `--with-token-sanitizer` | add `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`CHUNK_SANITIZER=token`), disabled by default; a `--target` that selects it also builds it; `--no-sanitizers` skips it |
 | `--target=<glob>` | only the configurations whose name matches (`omp-llvm`, or a quoted shell glob); a pattern that matches nothing is an error |
 | `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_omp_zero_256`, or a quoted shell glob: `'shrink_bench_*_zero_256'` matches it regardless of the backend) |
-| `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them |
+| `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them (a jobserver with ninja 1.13 or later, see below) |
 | `--no-hardening` | without `CHUNK_GLIBCXX_ASSERTIONS` or `CHUNK_UBSAN` on the Debug and sanitizer builds |
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
 | `--pool=<id>` | share the configurations with the other runs given the same `<id>` (one batch job per node, `shrink_gui`'s "Nodes" field): each builds those it claims first; `<id>` is a name under `$CHUNK_BUILD_ROOT/.pools/` or a directory all the nodes share |
@@ -228,6 +231,22 @@ oneTBB built with TSan of the std TSan build.
 `compile_all_gnu.sh` also accepts `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). The compilation
 memory per job is set by `CHUNK_MEM_PER_JOB_MB` (3,072 MB by default, twice that for
 sanitizer builds).
+
+The compile jobs of the configurations built at the same time come from one budget, the cores
+or what the memory holds. With ninja 1.13 or later (the ninja a build dir is configured with,
+its `CMAKE_MAKE_PROGRAM`), the scripts share it through a GNU make jobserver: a configuration
+that ends leaves its cores to the ones still running, and the last one finishes on the whole
+node. The sanitizer builds take part too: when the memory is what limits the run, their compile
+jobs weigh `CHUNK_MEM_PER_JOB_MB_SANITIZER / CHUNK_MEM_PER_JOB_MB` tokens each, and
+`scripts/jobserver_broker.sh` gives their ninja a pool of its own, one token of it for that many
+of the run's. With an older ninja each configuration keeps the share it was given at its start
+(`cores / --jobs`), and the last ones finish on that share alone. The scripts take the newest
+ninja of `PATH` that runs on the node, ahead of the module's (a `~/.local/bin/ninja` 1.13 rather
+than the module's 1.11), and when it is 1.13 or later they set `CHUNK_NINJA` to it.
+`CHUNK_NINJA=<ninja>` configures the build dirs with that ninja (each dir that changes ninja
+rebuilds in full once: the two versions do not read each other's `.ninja_log`); set by hand, it
+wins (`CHUNK_NINJA=<the module's ninja>` keeps the old one). `CHUNK_JOBSERVER=off` keeps the
+fixed shares.
 
 The std threading backend (`CHUNK_THREADS=std`) has its own builds: `std-gnu`, `std-gnu-check`
 and a ThreadSanitizer one from `compile_all_gnu.sh`, `std-llvm`, `std-llvm-check` and a
@@ -246,7 +265,7 @@ Read by the Python tools, the check scripts and a few harnesses, not by the libr
 
 | variable | default | effect |
 |---|---|---|
-| `CHUNK_BUILD_ROOT` | current directory | where the `cmake-build-<target>` directories are: default of `--build-root` in `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py`; `compile_all.sh` takes its builds there, `scripts/site_env.sh` sets it per site. Its former name `CHUNK_BUILD_REP` is still read when it is unset, deprecated. `shrink_gui` exports it in the scripts it submits |
+| `CHUNK_BUILD_ROOT` | current directory | where the `cmake-build-<target>` directories are: default of `--build-root` in `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py`; `compile_all.sh` takes its builds there, `scripts/site_env.sh` sets it per site. `shrink_gui` exports it in the scripts it submits |
 | `CHUNK_BENCH_EVENTS` | unset | file the campaigns append their events to, one JSON record per line (default of `--events-file`); `shrink_gui` sets it and follows the file |
 | `CHUNK_POOL_REF_WAIT` | 21,600 | `--pool` campaigns: seconds a job waits for the reference another job generates, before skipping what needs it |
 | `CHUNK_POOL_POLL` | 2 | `--pool` campaigns: seconds between two looks at what the other jobs did |

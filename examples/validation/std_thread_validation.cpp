@@ -81,16 +81,12 @@
 #include <barrier>     // std::barrier (the long-lived threads)
 #include <latch>       // std::latch (the writers of a phase alive together)
 #include <thread>      // std::thread
-#include <type_traits> // std::conditional_t, std::is_same_v
+#include <type_traits> // std::is_same_v
 #include <vector>      // std::vector (the reference)
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/pmp_chunk.h"    // pmp::*, CHUNK_PMP_*, get_thr_rank_fast, chunk_thread_capacity, the registry
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/threads.h"               // shrink_array::thread_rank (the writers' rank, against the registry's)
@@ -99,42 +95,12 @@
 #include "chunk/internal/test_hooks.h"   // force_defer_every (the in-phase case)
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name, maybe_set_second_value
 
 namespace validation::std_thread_validation
 {
 
 using namespace shrink_array;
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
-
-template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
-{
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
-    {
-        a.set_second_value(v);
-    }
-}
 
 /// Runs of run_len elements: a whole number of chunks at every geometry built.
 constexpr long run_len = 4096;

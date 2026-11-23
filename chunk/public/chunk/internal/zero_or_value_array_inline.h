@@ -25,7 +25,7 @@
 #include <string_view> // std::string_view (the residual's kind)
 #include <vector>      // std::vector
 
-#include <sys/mman.h>  // mprotect (use_mm_protect: the read-only const_val2 blocks)
+#include <sys/mman.h>  // mprotect (use_mm_protect: the read-only second_value blocks)
 #include <unistd.h>    // sysconf(_SC_PAGESIZE) (same)
 #include <type_traits> // std::remove_reference_t
 
@@ -34,7 +34,7 @@
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/zero_or_value_array.h"                  // zero_or_value::Array, the class these bodies belong to
 #include "chunk/internal/type_name.h"                   // type_name<T>
-#include "chunk/internal/singleton.h"                   // SingletonChk<TypeStateRegistry>::get_ref
+#include "chunk/internal/singleton.h"                   // Singleton<TypeStateRegistry>::get_ref
 #include "chunk/internal/zero_or_value_proxy.h"         // zero_or_value::Proxy<T>
 #include "chunk/internal/chunk_stats.h"                 // inc_chunk_teardown_clear, add_chunk_released
 #include "chunk/internal/type_state_registry.h"         // TypeStateRegistry::ensure_manager
@@ -50,6 +50,7 @@
 #include "chunk/internal/type_state.h"        // TypeState: per-size free lists, candidate filter
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_PARK
 #include "chunk/internal/teardown_probe.h"    // teardown_probe (rechunk=debug: the tmp teardown split)
+#include "chunk/internal/teardown_park.h"     // park_live_chunks (the park step)
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, const_buffer_size
 #include "chunk/internal/same_value.h"        // same_value
 
@@ -67,7 +68,7 @@
  *    to rebuild_storage(), which rechunk_to() reuses on an already-registered
  *    array; resize() grows it; clear() / clear_core() tear it down;
  *  - **the shared second constant**: set_second_value(), and the registry of
- *    read-only const_val2 blocks it maintains across arrays;
+ *    read-only second_value blocks it maintains across arrays;
  *  - **auditing**: compress_int() / compress(), which look for constant chunks
  *    the incremental compression missed, and print_compression_stats().
  *
@@ -105,14 +106,14 @@ void zero_or_value::Array<T, IntType>::create(IntType sz)
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
-    auto& sh_inf = *Proxy<T>::array_registry;
+    auto& registry = *Proxy<T>::array_registry;
 
-    sh_inf.insert_only_array_id(this->registry_key(), array_count);
+    registry.insert_only_array_id(this->registry_key(), array_count);
     ++array_count;
     internal::ArrayUsers<ChunkType>::resize(array_count);
 
     // Registry entry written: refresh the mirror the write proxies are armed
-    // with (see zero_or_value::Array::inf_array).
+    // with (see zero_or_value::Array::array_info).
     sync_registry_mirror();
 
     if constexpr (chunk_config::use_fast_block_compression)
@@ -182,7 +183,7 @@ void zero_or_value::Array<T, IntType>::rebuild_storage(IntType sz)
             Manager::compute_size_buffer_reuse();
             Manager::compute_size_max_number_of_chunk_to_check_compress();
 
-            // Chunks start at const_val1 (the first value).
+            // Chunks start at first_value (the first value).
             this->acquire_chunk_list(static_cast<std::size_t>(chunk_count_));
             this->alloc_dirty_bitset(chunk_count_);
 
@@ -208,7 +209,7 @@ void zero_or_value::Array<T, IntType>::rebuild_storage(IntType sz)
 }
 
 // Two paths, on whether the value is already registered:
-//  - NEW value: allocate its read-only const_val2 block (mmap+mprotect when
+//  - NEW value: allocate its read-only second_value block (mmap+mprotect when
 //    use_mm_protect, so a stray write to a compressed chunk faults instead of
 //    corrupting every chunk sharing it), then size the per-value candidate
 //    lists to the new index.
@@ -242,15 +243,35 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
         }
     }
 
-    auto& sh_inf = *Proxy<T>::array_registry;
+    auto& registry = *Proxy<T>::array_registry;
 
     if constexpr (is_not_bool)
     {
-        int idx = sh_inf.find_idx_array_const2(sec_value);
+        // T{} after another second value: the array goes back to having none
+        // (T{} is the first value; every write of it folds as the first one).
+        // Not a block of its own: T{}'s index is the sentinel, which
+        // find_second_value_index() also returns for an unknown value, so T{}
+        // took the new-value path below and replaced the T{} key that every
+        // array without a second value is drained under -- its record in
+        // array_info_map_ and each rank's candidate list, dropping the chunks
+        // queued there (dedup flags still set: never compressed).
+        if (same_value(sec_value, T{}))
+        {
+            registry.replace(this->registry_key(), T{}, chunk_config::no_second_value_index);
+            second_value_idx_ = chunk_config::no_second_value_index;
+            register_no_second_value_key();
+            sync_registry_mirror();
+            return;
+        }
+    }
+
+    if constexpr (is_not_bool)
+    {
+        int idx = registry.find_second_value_index(sec_value);
 
         if (idx == -1)
         {
-            idx = static_cast<int>(Chunk<T>::array_m_ptr_const_val2->size());
+            idx = static_cast<int>(Chunk<T>::second_value_buffers->size());
 
             if constexpr (build_config::use_mm_protect)
             {
@@ -270,30 +291,30 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
 
                 mprotect(ptr, alloc_size, PROT_READ);
 
-                Chunk<T>::array_m_ptr_const_val2->push_back(arr);
-                if (Chunk<T>::array_m_ptr_const_val2_mm_elems.size() <= static_cast<std::size_t>(idx))
+                Chunk<T>::second_value_buffers->push_back(arr);
+                if (Chunk<T>::second_value_buffers_mm_elems.size() <= static_cast<std::size_t>(idx))
                 {
-                    Chunk<T>::array_m_ptr_const_val2_mm_elems.resize(idx + 1, 0);
+                    Chunk<T>::second_value_buffers_mm_elems.resize(idx + 1, 0);
                 }
-                Chunk<T>::array_m_ptr_const_val2_mm_elems[idx] = this->size_policy_.size();
+                Chunk<T>::second_value_buffers_mm_elems[idx] = this->size_policy_.size();
             }
             else
             {
-                Chunk<T>::array_m_ptr_const_val2->resize(idx + 1);
+                Chunk<T>::second_value_buffers->resize(idx + 1);
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    (*Chunk<T>::array_m_ptr_const_val2)[idx][i] = sec_value;
+                    (*Chunk<T>::second_value_buffers)[idx][i] = sec_value;
                 }
             }
 
-            sh_inf.replace(this->registry_key(), sec_value, idx);
-            sh_inf.insert_map_idx_const_val2(sec_value, idx);
+            registry.replace(this->registry_key(), sec_value, idx);
+            registry.insert_second_value_idx(sec_value, idx);
 
-            idx_const_val2_ = idx;
+            second_value_idx_ = idx;
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                inf_array_.second_value = sec_value;
-                inf_array_.idx          = idx;
+                array_info_.second_value = sec_value;
+                array_info_.idx          = idx;
             }
 
             if constexpr (build_config::threaded)
@@ -309,7 +330,7 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
                     const auto& vec_ref    = Manager::zero_or_value_candidates_thr[thr][idx];
-                    const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk, T>>(vec_ref);
+                    const auto  shared_vec = std::make_shared<CandidateList<Chunk, T>>(vec_ref);
                     Manager::zero_or_value_candidates_map_thr[thr][sec_value] = shared_vec;
                 }
             }
@@ -318,17 +339,17 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
         {
             // idx already registered for sec_value -- possibly by a DIFFERENT
             // array at a smaller geometry: the block was only filled up to THAT
-            // array's size. Reused as-is, a chunk of THIS array at const_val2 would
+            // array's size. Reused as-is, a chunk of THIS array at second_value would
             // read zeros past the original fill (every rechunk to a larger
             // geometry re-declares the same second value). Re-filling to the
             // CURRENT geometry is idempotent (same value) and grow-only (never
-            // shrinks or reallocates under another array's const_val2 pointer), so
+            // shrinks or reallocates under another array's second_value pointer), so
             // it is always safe to redo here.
             if constexpr (build_config::use_mm_protect)
             {
                 const std::size_t cur_elems =
-                    Chunk<T>::array_m_ptr_const_val2_mm_elems.size() > static_cast<std::size_t>(idx)
-                        ? Chunk<T>::array_m_ptr_const_val2_mm_elems[idx]
+                    Chunk<T>::second_value_buffers_mm_elems.size() > static_cast<std::size_t>(idx)
+                        ? Chunk<T>::second_value_buffers_mm_elems[idx]
                         : 0;
                 const std::size_t need_elems = this->size_policy_.size();
 
@@ -348,69 +369,80 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
 
                     // Do NOT unmap the old buffer: a live array's chunk may hold its
                     // address as `values` (immortal-arena discipline).
-                    (*Chunk<T>::array_m_ptr_const_val2)[idx] = arr;
-                    if (Chunk<T>::array_m_ptr_const_val2_mm_elems.size() <= static_cast<std::size_t>(idx))
+                    (*Chunk<T>::second_value_buffers)[idx] = arr;
+                    if (Chunk<T>::second_value_buffers_mm_elems.size() <= static_cast<std::size_t>(idx))
                     {
-                        Chunk<T>::array_m_ptr_const_val2_mm_elems.resize(idx + 1, 0);
+                        Chunk<T>::second_value_buffers_mm_elems.resize(idx + 1, 0);
                     }
-                    Chunk<T>::array_m_ptr_const_val2_mm_elems[idx] = need_elems;
+                    Chunk<T>::second_value_buffers_mm_elems[idx] = need_elems;
                 }
             }
             else
             {
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    (*Chunk<T>::array_m_ptr_const_val2)[idx][i] = sec_value;
+                    (*Chunk<T>::second_value_buffers)[idx][i] = sec_value;
                 }
             }
 
-            idx_const_val2_ = idx;
+            second_value_idx_ = idx;
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                inf_array_.second_value = sec_value;
-                inf_array_.idx          = idx;
+                array_info_.second_value = sec_value;
+                array_info_.idx          = idx;
             }
         }
-        const bool exi = sh_inf.exists(this->registry_key());
+        const bool exi = registry.exists(this->registry_key());
 
         if (exi && !same_value(sec_value, this->second_value()))
         {
-            sh_inf.replace_all_other_elm(this->registry_key(), sec_value, idx_const_val2_);
-            sh_inf.insert_map_idx_const_val2(sec_value, idx);
+            registry.replace_all_other_elm(this->registry_key(), sec_value, second_value_idx_);
+            registry.insert_second_value_idx(sec_value, idx);
         }
     }
     else
     {
         if constexpr (is_not_bool)
         {
-            Chunk<T>::array_m_ptr_const_val2->resize(+1);
+            Chunk<T>::second_value_buffers->resize(+1);
             for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
             {
-                (*Chunk<T>::array_m_ptr_const_val2)[0][i] = true;
+                (*Chunk<T>::second_value_buffers)[0][i] = true;
             }
         }
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            inf_array_.second_value = true;
-            inf_array_.idx          = 0;
+            array_info_.second_value = true;
+            array_info_.idx          = 0;
         }
         if constexpr (build_config::threaded)
         {
+            // Every bool array runs this (create()), and the `true` list of a rank is
+            // shared by all of them: install it once. Replaced by a fresh copy, it
+            // would drop the chunks the other live bool arrays had queued (their
+            // dedup flags still set, they would never be queued again), and free
+            // the list under a writer of another bool array pushing into it.
             for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
-                Manager::zero_or_value_candidates_thr[thr].resize(1);
-                const auto& vec_ref    = Manager::zero_or_value_candidates_thr[thr][0];
-                const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk, T>>(vec_ref);
-                Manager::zero_or_value_candidates_map_thr[thr][sec_value] = shared_vec;
+                auto& slot = Manager::zero_or_value_candidates_map_thr[thr][sec_value];
+                if (slot)
+                {
+                    continue;
+                }
+                if (Manager::zero_or_value_candidates_thr[thr].empty())
+                {
+                    Manager::zero_or_value_candidates_thr[thr].resize(1);
+                }
+                slot = std::make_shared<CandidateList<Chunk, T>>(Manager::zero_or_value_candidates_thr[thr][0]);
             }
         }
 
-        sh_inf.replace_all_other_elm(this->registry_key(), true, 0);
+        registry.replace_all_other_elm(this->registry_key(), true, 0);
     }
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        sh_inf.insert(sec_value, &inf_array_);
+        registry.insert(sec_value, &array_info_);
     }
 
     // Every branch above may have rewritten this array's registry entry
@@ -430,11 +462,11 @@ void zero_or_value::Array<T, IntType>::print_compression_stats(std::ostream& os)
         return;
     }
 
-    const auto& sh_inf   = *Proxy<T>::array_registry;
-    const int   array_id = sh_inf.get_array_id(this->registry_key());
+    const auto& registry = *Proxy<T>::array_registry;
+    const int   array_id = registry.get_array_id(this->registry_key());
 
     // Classification. written(idx) is true for a MATERIALISED chunk (`values !=
-    // const_val1 && is_not_const_val2(idx)`, as Chunk::written()); !written(idx)
+    // first_value && is_not_second_value(idx)`, as Chunk::written()); !written(idx)
     // covers BOTH compressed states. n_t0 = at the first constant, n_t1 = at the
     // second (the "type-2" reporting downstream). Do not read !written(idx) as
     // "first constant" and written(idx) as "second": n_t0 + n_t1 would then
@@ -471,7 +503,7 @@ void zero_or_value::Array<T, IntType>::print_compression_stats(std::ostream& os)
                                                               ++acc[same_value(*v0, Chunk<T>::first_value) ? 0 : 1];
                                                               return;
                                                           }
-                                                          ++acc[ck.is_const_val1() ? 0 : 1];
+                                                          ++acc[ck.is_first_value() ? 0 : 1];
                                                       });
         n_t0              = counts[0];
         n_t1              = counts[1];
@@ -496,7 +528,7 @@ void zero_or_value::Array<T, IntType>::print_compression_stats(std::ostream& os)
                                                               ++acc[same_value(*v0, Chunk<T>::first_value) ? 0 : 1];
                                                               return;
                                                           }
-                                                          ++acc[ck.is_const_val1() ? 0 : 1];
+                                                          ++acc[ck.is_first_value() ? 0 : 1];
                                                       });
         n_t0              = counts[0];
         n_t1              = counts[1];
@@ -555,7 +587,7 @@ void zero_or_value::Array<T, IntType>::print_compression_stats(std::ostream& os)
 // candidates by array_id, then release the chunks.
 // The release itself differs by build -- serial frees in place, OpenMP parks
 // each buffer in the per-geometry reuse list and neutralises the chunk to
-// const_val1 so no residual candidate can free it a second time.
+// first_value so no residual candidate can free it a second time.
 template <ArrayChunkElement T, typename IntType>
 void zero_or_value::Array<T, IntType>::clear_core()
 {
@@ -601,9 +633,9 @@ void zero_or_value::Array<T, IntType>::clear_core()
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf = *Proxy<T>::array_registry;
+        const auto& registry = *Proxy<T>::array_registry;
 
-        const int array_id = sh_inf.get_array_id(this->registry_key());
+        const int array_id = registry.get_array_id(this->registry_key());
 
         Proxy<T>::clear_is_int(array_id);
 
@@ -627,20 +659,29 @@ void zero_or_value::Array<T, IntType>::clear_core()
         return;
     }
 
-    // See zero_any::Array::clear(): skip in aggressive mode; in the GNU build this
-    // sweep scans without compressing (compress()'s clear paths are compiled
-    // out), so it would be costly wasted work.
+    // See zero_any::Array::clear(): skip in aggressive mode.
+    // The pass compresses (apply = true), as finalize_parallel_phase() and
+    // compress_int() do. This array's own entries are gone already (the removal
+    // by array_id above); what is left belongs to the OTHER arrays, of every
+    // type. With apply = false the pass scanned each of them, dropped the
+    // verdict and emptied the lists: a temporary destroyed between two phases
+    // (or after a region, before its phase end) un-queued every other array's
+    // candidates, and those chunks stayed materialised.
     if constexpr (chunk_config::not_use_compression_with_ompt)
     {
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
+            const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
 
-            // Not for a work array torn down in a region: that pass walks every
-            // rank's list, of every type.
-            if (!own_rank && ens_type_chunk.have_chunk_to_compress_potentially())
+            // At a sequential point only: the pass walks every rank's list, of
+            // every type, and opens its own region. Not for a work array torn
+            // down in a region (own_rank), nor for any teardown inside one
+            // (an inactive region of one thread included), where the other
+            // ranks may still be writing.
+            const bool in_region = CHUNK_PMP_IN_PARALLEL_REGION || CHUNK_PMP_LEVEL > 0;
+            if (!own_rank && !in_region && type_registry.has_candidates())
             {
-                ens_type_chunk.compress_chunk_to_compress_potentially(false);
+                type_registry.run_compress_pass(true);
             }
         }
     }
@@ -662,8 +703,8 @@ void zero_or_value::Array<T, IntType>::clear_core()
             {
                 // owns_live_buffer(), not written(idx): written() tests the
                 // CURRENT second value's index only, so a chunk compressed to
-                // the const2 block of an earlier value would pass as written and
-                // clear_st() would free a pointer into the const2 deque.
+                // the second-value block of an earlier value would pass as written and
+                // clear_st() would free a pointer into the second-value deque.
                 if (chunk_list_[j].owns_live_buffer())
                 {
                     if constexpr (chunk_config::stats)
@@ -697,71 +738,25 @@ void zero_or_value::Array<T, IntType>::clear_core()
         pmp::team(pmp::Options{},
                   [&](pmp::Team& team)
                   {
-                      const int chunk_count0 = get_size_max_array_omp(chunk_count_);
-
-                      std::vector<Chunk<T>*> ll_chunk_loc;
-                      ll_chunk_loc.reserve(chunk_count0);
-
                       // owns_live_buffer(): index-agnostic, and the bool test too (bool has
-                      // one const_val2 marker). Not written(idx): with a single global index
+                      // one second_value marker). Not written(idx): with a single global index
                       // it misclassifies chunks compressed at other indices and parks
-                      // their (never-allocated) const_val2 markers.
-                      team.for_static<int>(
-                          0, chunk_count_,
-                          [&](int j)
+                      // their (never-allocated) second_value markers. Neutralised to
+                      // first_value: mirrors zero_any::Array::clear_core.
+                      internal::park_live_chunks<T>(
+                          team, chunk_list_, chunk_count_, this->size_policy_.size(),
+                          [](const Chunk<T>& chunk) { return chunk.owns_live_buffer(); },
+                          [](Chunk<T>& chunk)
                           {
-                              if (chunk_list_[j].owns_live_buffer())
-                              {
-                                  if constexpr (chunk_config::stats)
-                                  {
-                                      inc_chunk_teardown_clear<Chunk<T>>();
-                                      // Released below without a compression: out of the live figures.
-                                      add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                          static_cast<long>(this->size_policy_.size()));
-                                  }
-
-                                  ll_chunk_loc.push_back(&chunk_list_[j]);
-                              }
-                          },
-                          pmp::nowait);
-
-                      const int thr_rank = CHUNK_PMP_THREAD_RANK;
-
-                      const auto n = static_cast<int>(ll_chunk_loc.size());
-
-                      if (n > 0)
-                      {
-                          // Park into the reuse list of THIS array's geometry, not the
-                          // ambient t_active (which may be another size mid-rechunk):
-                          // a size-A buffer filed under list[B] is later popped and
-                          // memset at B, and overflows. Single-size builds have one list.
-                          const unsigned int my_sz = this->size_policy_.size();
-                          auto&              lbf   = Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
-
-                          for (int k = 0; k < n; ++k)
-                          {
-                              T* values_loc = ll_chunk_loc[k]->values_;
-                              // Ledger LIVE -> parked, or a later pop trips an ILLEGAL b_pop.
-                              CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
-                              lbf.push_back(values_loc);
-
-                              // Neutralise the chunk NOW that its buffer is parked. Otherwise
-                              // it stays materialised on the parked buffer, and a residual
-                              // compression candidate (one that slipped the removal above)
-                              // would try_mark_const_and_get_old + free_block_to_pool the SAME
-                              // buffer again: under std-alloc that frees it twice (there and
-                              // in clear_list_block_free_thr). Storing const_val1 makes every
-                              // compress path short-circuit. Mirrors zero_any::Array::clear_core.
                               if constexpr (is_not_bool)
                               {
-                                  ll_chunk_loc[k]->init_values_const_val1();
+                                  chunk.init_to_first_value();
                               }
                               else
                               {
-                                  ll_chunk_loc[k]->init_values_const_val_bool(0);
+                                  chunk.init_values_const_val_bool(0);
                               }
-                          }
-                      }
+                          });
                   });
     }
 
@@ -773,16 +768,7 @@ void zero_or_value::Array<T, IntType>::clear_core()
     chunk_count_ = 0;
     probe.mark(internal::TeardownStep::tables);
 
-    // An array with its own slab affinity gives its memory back NOW: every
-    // buffer parked above (own rank) or by another rank (foreign, under this
-    // array's key) goes home to its allocator set, whose slabs hold nothing
-    // else and so empty -- and the sweep madvises them away.
-    // Sequential point (destructor / rechunk_to); the drain opens its own
-    // region. Key 0 (shared pool): nothing to give back per array.
-    if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        TypeState<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
-    }
+    this->drain_own_reuse_list(); // an array with its own allocator set: its memory goes back now
     probe.mark(internal::TeardownStep::key_drain);
 
     // The candidate flags (one byte per chunk): released HERE, after the
@@ -827,10 +813,10 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
         if (!chunk_config::aggressive_compression() && !CHUNK_PMP_IN_PARALLEL_REGION)
         // run-time switch: chunk/config.h
         {
-            if (const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
-                ens_type_chunk.have_chunk_to_compress_potentially())
+            if (const auto& type_registry = shrink_array::Singleton<shrink_array::TypeStateRegistry>::get_ref();
+                type_registry.has_candidates())
             {
-                ens_type_chunk.compress_chunk_to_compress_potentially(true);
+                type_registry.run_compress_pass(true);
             }
             drained = true;
         }
@@ -932,8 +918,7 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
         [[maybe_unused]] ChunkFlagRowT* flags = nullptr;
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            flags = &Proxy<T>::get_array_is_inside_list_to_compress(
-                Proxy<T>::array_registry->get_array_id(this->registry_key()));
+            flags = &Proxy<T>::candidate_flag_row(Proxy<T>::array_registry->get_array_id(this->registry_key()));
         }
         const auto heal = [&](int jj, auto&& clear)
         {
@@ -1093,10 +1078,9 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
             int       is_inside   = -1; // the candidate-list flag exists in fast-block builds only
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                is_inside =
-                    static_cast<int>(Proxy<T>::get_array_is_inside_list_to_compress(
-                                         Proxy<T>::array_registry->get_array_id(this->registry_key()))[chunk_index]
-                                         .load(std::memory_order_acquire));
+                is_inside = static_cast<int>(Proxy<T>::candidate_flag_row(Proxy<T>::array_registry->get_array_id(
+                    this->registry_key()))[chunk_index]
+                                                 .load(std::memory_order_acquire));
             }
             int count = -1; // the counters exist in counter builds only
             if constexpr (chunk_config::use_compression_with_counter)
@@ -1185,7 +1169,7 @@ void zero_or_value::Array<T, IntType>::release_chunk_range(int first, int last)
                     // reuse list now.
                     if constexpr (is_not_bool)
                     {
-                        chunk_list_[j].init_values_const_val1();
+                        chunk_list_[j].init_to_first_value();
                     }
                     else
                     {
@@ -1213,9 +1197,9 @@ void zero_or_value::Array<T, IntType>::resize(IntType newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf = *Proxy<T>::array_registry;
+        const auto& registry = *Proxy<T>::array_registry;
 
-        const int array_id = sh_inf.get_array_id(this->registry_key());
+        const int array_id = registry.get_array_id(this->registry_key());
         Proxy<T>::resize_array_is_int(array_id, chunk_count_);
     }
 
@@ -1225,27 +1209,8 @@ void zero_or_value::Array<T, IntType>::resize(IntType newsz)
     parallel_storage_init::for_each_chunk(chunk_count_ - old_chunk_count, [this, old_chunk_count](int k)
                                           { this->construct_chunk(old_chunk_count + k).init_after_constructor(); });
 
-    // std::vector semantics for the regrown range [old_size, newsz): it reads
-    // T{}. The chunks added above are fresh, but the one holding the OLD end
-    // keeps its tail: after a shrink, the values written there would come back
-    // on the next growth. Reset that tail through the normal write path, after
-    // the reallocations. Serial: at most one chunk, and inside a region an
-    // `omp for` would cover 1/N of it.
-    if (newsz > old_size)
-    {
-        const auto csz = static_cast<IntType>(this->chunk_size());
-        // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
-        // the last element, so when old_size falls on a chunk boundary that
-        // spare chunk keeps stale values too.
-        // In long long: old_chunk_count * csz may pass IndexType's range near its top.
-        const long long cover_ll  = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
-        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
-        for (IntType i = old_size; i < stale_end; ++i)
-        {
-            (*this)[i] = T{};
-        }
-    }
+    // The regrown range [old_size, newsz) reads T{}, as std::vector's.
+    this->reset_regrown_tail(old_size, newsz, old_chunk_count);
 }
 
 // ---------------------------------------------------------------------------
@@ -1258,11 +1223,8 @@ zero_or_value::Array<T, IntType>::~Array()
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     clear();
     Proxy<T>::array_registry->erase(this->registry_key());
-
-    if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
-    {
-        Proxy<T>::array_registry->erase_inf_array_by_ptr(&inf_array_);
-    }
+    // No erase from array_info_map_: its records belong to the second values
+    // (copies, not this array's member), and another array may declare ours.
     // rechunk=debug, tmp teardown only (armed by rechunk_to): free chunk_list_'s
     // buffer here rather than with the member, so that the split can time it
     // (as zero_any::ArrayImpl::destroy_storage()).
@@ -1291,6 +1253,16 @@ zero_or_value::Array<T, IntType>& zero_or_value::Array<T, IntType>::operator=(co
 {
     if (this != &from)
     {
+        // A chunk counts as compressed to the second value only on the CURRENT
+        // value's block. Switched with chunks still on the old block, those
+        // would pass as materialised and copy_from() would write into a block
+        // every array declaring the old value shares. Release them first, as
+        // operator=(Array&&) does; with the value unchanged, the copy reuses
+        // this array's chunks.
+        if (takes_second_value_of(from))
+        {
+            clear();
+        }
         copy_second_value_from(from);
         this->copy_from(from);
     }
@@ -1337,15 +1309,25 @@ template <ArrayChunkElement T, typename IntType>
 }
 
 template <ArrayChunkElement T, typename IntType>
-void zero_or_value::Array<T, IntType>::copy_second_value_from(const Array& from)
+bool zero_or_value::Array<T, IntType>::takes_second_value_of(const Array& from) const noexcept
 {
-    if constexpr (!is_bool_like_v<T>)
+    if constexpr (is_bool_like_v<T>)
+    {
+        return false;
+    }
+    else
     {
         const InT<T> sv = from.second_value();
-        if (!same_value(sv, T{}) && !same_value(this->second_value(), sv))
-        {
-            set_second_value(sv, false);
-        }
+        return !same_value(sv, T{}) && !same_value(this->second_value(), sv);
+    }
+}
+
+template <ArrayChunkElement T, typename IntType>
+void zero_or_value::Array<T, IntType>::copy_second_value_from(const Array& from)
+{
+    if (takes_second_value_of(from))
+    {
+        set_second_value(from.second_value(), false);
     }
 }
 
@@ -1354,13 +1336,13 @@ void zero_or_value::Array<T, IntType>::register_no_second_value_key()
 {
     if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
     {
-        if (auto& sh_inf = *Proxy<T>::array_registry; sh_inf.find_inf_array(T{}) == nullptr)
+        if (auto& registry = *Proxy<T>::array_registry; registry.find_array_info(T{}) == nullptr)
         {
-            sh_inf.insert(T{}, &inf_array_none);
+            registry.insert(T{}, &array_info_none);
             // The between-phase pass drains only the values of THIS map: T{}
-            // must be in it, at the sentinel index (so set_second_value(T{})
-            // still sees it unregistered and builds a real block).
-            sh_inf.insert_map_idx_const_val2(T{}, chunk_config::no_second_value_index);
+            // must be in it, at the sentinel index. set_second_value(T{})
+            // never builds a block of its own: it puts the array back here.
+            registry.insert_second_value_idx(T{}, chunk_config::no_second_value_index);
         }
         if constexpr (build_config::threaded)
         {
@@ -1379,19 +1361,19 @@ void zero_or_value::Array<T, IntType>::register_no_second_value_key()
 template <ArrayChunkElement T, typename IntType>
 void zero_or_value::Array<T, IntType>::swap_identity(Array& other)
 {
-    auto& sh_inf = *Proxy<T>::array_registry;
-    sh_inf.swap_entries(this->registry_key(), other.registry_key());
-    std::swap(idx_const_val2_, other.idx_const_val2_);
+    auto& registry = *Proxy<T>::array_registry;
+    registry.swap_entries(this->registry_key(), other.registry_key());
+    std::swap(second_value_idx_, other.second_value_idx_);
     sync_registry_mirror();
     other.sync_registry_mirror();
     if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
     {
         for (Array* arr : {this, &other})
         {
-            const T value = arr->inf_array_.second_value;
+            const T value = arr->array_info_.second_value;
             if (!same_value(value, T{}))
             {
-                sh_inf.insert(value, &arr->inf_array_);
+                registry.insert(value, &arr->array_info_);
             }
         }
     }

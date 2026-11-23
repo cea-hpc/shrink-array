@@ -48,6 +48,14 @@
  *          (internal/own_candidates.h) -- it used to run on the whole list,
  *          under the other threads' writes.
  *
+ *          And a SHARED array resized under `omp single`, the team waiting at
+ *          the single's barrier (docs/getting_started.md, section 5): every
+ *          thread has chunks of it in its candidate list by then. resize()
+ *          took "inside a region" for "a work array of the calling thread" and
+ *          purged the calling rank's list only: the other ranks kept pointers
+ *          into the chunk list resize() reallocates, and flags in the row it
+ *          replaces.
+ *
  *          Each case checks every element. A hang shows as the ctest timeout.
  */
 
@@ -65,6 +73,7 @@
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
+#include "validation_variant.h" // Array, variant_name
 
 namespace validation::region_storage_validation
 {
@@ -78,22 +87,6 @@ using Arr = std::conditional_t<
     chunk_config::use_zero_any,
     zero_any::Array<double>,
     std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<double>, zero::Array<double>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 /// @brief Elements of [@p first, @p last) that do not read @p want.
 long mismatches(const Arr& arr, int first, int last, double want)
@@ -226,6 +219,65 @@ long work_arrays(Arr& shared, int count, int rank, int rounds)
     return bad;
 }
 
+/// @brief A shared array of @p count elements, written then zeroed by the team
+///        (each rank queues the chunks it zeroed), resized to @p new_count
+///        under `omp single`, written again by the team; a second phase
+///        zeroes it. @return the wrong elements.
+long shared_resized_under_single(int count, int new_count)
+{
+    Arr shared(count);
+#pragma omp parallel
+    {
+        if constexpr (build_config::needs_explicit_phases)
+        {
+            begin_parallel_phase();
+        }
+#pragma omp for schedule(static)
+        for (int i = 0; i < count; ++i)
+        {
+            shared[i] = 1.0;
+        }
+#pragma omp for schedule(static)
+        for (int i = 0; i < count; ++i)
+        {
+            shared[i] = 0.0;
+        }
+#pragma omp single
+        shared.resize(new_count); // a sequential point: the team is at this single's barrier
+#pragma omp for schedule(static)
+        for (int i = 0; i < new_count; ++i)
+        {
+            shared[i] = 2.0 + (i % 5);
+        }
+    }
+    if constexpr (build_config::needs_explicit_phases)
+    {
+        finalize_parallel_phase();
+    }
+    long bad = static_cast<long>(shared.size()) != new_count;
+    for (int i = 0; i < new_count; ++i)
+    {
+        bad += static_cast<double>(std::as_const(shared)[i]) != 2.0 + (i % 5);
+    }
+#pragma omp parallel
+    {
+        if constexpr (build_config::needs_explicit_phases)
+        {
+            begin_parallel_phase();
+        }
+#pragma omp for schedule(static)
+        for (int i = 0; i < new_count; ++i)
+        {
+            shared[i] = 0.0;
+        }
+    }
+    if constexpr (build_config::needs_explicit_phases)
+    {
+        finalize_parallel_phase();
+    }
+    return bad + mismatches(shared, 0, new_count, 0.0);
+}
+
 int report(const char* what, int count, long bad)
 {
     println("[{}/region-storage] {:<22} n={:7} : {}", variant_name(), what, count, bad ? "FAIL" : "ok");
@@ -310,6 +362,9 @@ int run(int /*argc*/, char** /*argv*/)
             }
         }
         fails += report("omp parallel (each)", count, bad_each);
+
+        fails += report("shared, grown in single", count, shared_resized_under_single(count, 4 * count));
+        fails += report("shared, shrunk in single", count, shared_resized_under_single(count, count / 4));
     }
 
     println("{}", fails ? "region_storage_validation: FAILED" : "region_storage_validation: OK");

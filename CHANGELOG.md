@@ -54,6 +54,248 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.4.0 -- 2026-11-23
+
+A breaking release: every compatibility path for a former name is gone (see Removed).
+fast_allocators is 2.5.0.
+
+### Changed
+
+- `ParamChunk::set_decalage_chunk()` is `set_chunk_shift()` (a no-op kept for old call sites, as
+  before); the former name is not kept (see Removed). Internally ChunkSizePolicy's decalage() is
+  `shift()`, and `print_info_chunk()` prints "chunk shift" instead of "decalage chunk".
+- `shrink_gui` 0.18, "cette machine": the launcher defaults to
+  `systemd-run --user --scope -q -p MemoryMax=90% -p MemorySwapMax=0` where `systemd-run --user`
+  works, so that a run out of memory is killed alone instead of bringing WSL down (a launcher
+  saved before stays as it was).
+- `CHUNK_NATIVE_TUNING` defaults to OFF in a project that consumes the library (`add_subdirectory`,
+  FetchContent): the library's objects no longer get `-march=native` / `-mcpu=native` while the
+  project's do not; the project's own target flags apply. It sets `CHUNK_NATIVE_TUNING=ON` before
+  including the library to have the former behaviour. Top level: unchanged (ON).
+- The first and second values have the names the documentation and the statistics give them:
+  the `const_val1` / `const_val2` (and `const2`) names of the chunks, proxies and registry
+  follow. `is_const_val1()` / `is_const_val2()` are `is_first_value()` / `is_second_value()`,
+  `get_const_val1()` / `get_const_val2()` are `first_value_ptr()` / `second_value_ptr()`,
+  `ArrayConstVal2Holder` is `SecondValueRegistry` (`internal/second_value_registry.h`),
+  `find_or_set_idx_const_val2()` is `find_or_register_second_value()`, and the others alike
+  (all internal). The developer settings follow: `CHUNK_SECOND_VALUE_ID_LIMIT`,
+  `CHUNK_SECOND_VALUE_RECLAIM`, and the compile-time `CHUNK_SECOND_VALUE_REGION_BYTES`,
+  `CHUNK_SECOND_VALUE_MAX_IDS`, `CHUNK_SECOND_VALUE_LOOKUP_LOG2`; their `CHUNK_CONST_VAL2_*` /
+  `CHUNK_CONST2_RECLAIM` names are no longer read (see Removed). The harnesses
+  `const2_registry_validation` and `const2_reclaim_validation` are
+  `second_value_registry_validation` and `second_value_reclaim_validation`, the
+  `rechunk_validation` cases `val2-*` are `second-value-*`.
+
+### Removed
+
+- python/multi_launch_stress_gdb.py: referenced nowhere (no script, document or `shrink_gui`
+  program).
+- `CHUNK_CST_VAL2_ID_LIMIT` and `CHUNK_CST2_RECLAIM`, the names these two settings had before
+  0.3.0, as 0.3.0 announced: `CHUNK_SECOND_VALUE_ID_LIMIT` and `CHUNK_SECOND_VALUE_RECLAIM`
+  above.
+- **Every compatibility path for a former name** (breaking, hence 0.4.0). The
+  names deprecated in 0.3.0 and those kept "until 1.0" since 0.1.3 / 0.2.0 are gone; a former
+  name no longer compiles, configures or is read:
+  - the headers `chunk/manage_ompt.h`, `chunk/param_chunk.h`, `chunk/array_chunk_bits.h`,
+    `chunk/array_chunk_range_ops.h`, `chunk/zero_one_value_array.h` (include `chunk/phases.h`,
+    `chunk/runtime.h`, `chunk/bit_array.h`, `chunk/range_ops.h`, `chunk/zero_or_value_array.h`);
+  - the `[[deprecated]]` names `ParamChunk`, `Runtime::init_indexes()` (both forms),
+    `Runtime::set_decalage_chunk()`, `destroy_block_chunk()`, `ArrayChunkBits`,
+    `build_config::has_not_ompt`, `chunk_config::use_zero_one_value`, the namespace
+    `zero_one_value`, `get_second_value()`, `get_nb_chunk_written()` (use `Runtime`,
+    `Runtime::init()`, `set_chunk_shift()`, `Runtime::shutdown()`, `BitArray`,
+    `build_config::needs_explicit_phases`, `chunk_config::use_zero_or_value`, `zero_or_value`,
+    `second_value()`, `written_chunk_count()`), and the macro `CHUNK_VARIANT_ZERO_ONE_VALUE`
+    (`CHUNK_VARIANT_ZERO_OR_VALUE`); `docs/api.md` keeps the table of the 0.3 renames;
+  - the CMake option names without `CHUNK_` (`OMP`, `SANITIZER`, `CHECK_OPTIM`, `USE_LIBCXX`,
+    ...: 0.3.0 lists them), no longer read at the top level; the `CHUNK_VARIANTS` spelling
+    `zero_one_value`, now refused with the new name as `chunk`, `chunk2`, `chunk2a` are; the
+    targets `chunk::chunk_zero_one_value*`, `chunk_zero_one_value*` and
+    `shrink_array::zero_one_value*` (link `shrink_array::zero_or_value*`);
+  - the compile-time `CHUNK_CONST_VAL2_REGION_BYTES`, `CHUNK_CONST_VAL2_MAX_IDS`,
+    `CHUNK_CONST_VAL2_INDEX_LOG2` and the variables `CHUNK_CONST_VAL2_ID_LIMIT`,
+    `CHUNK_CONST2_RECLAIM` (the `CHUNK_SECOND_VALUE_*` names above);
+  - the switches of before `CHUNK_LOG`: `FAST_ALLOC_TRACE`, `CHUNK_ARENA_REPORT`,
+    `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS`, `CHUNK_CST2_PROBE` (`CHUNK_LOG=alloc=trace`,
+    `arena=info`, `ledger=info`, `ompt=info`, `compress=info`). fast_allocators is 2.5.0
+    (`CHUNK_FAST_ALLOCATORS_VERSION` follows);
+  - in the scripts, `CHUNK_BUILD_REP` (`CHUNK_BUILD_ROOT`) and `python/omp_speedup.py`
+    (`python/thread_speedup.py`). The data recorded under old names (variant labels in perf
+    databases and summaries, `shrink_gui` runs of `omp_speedup.py`) are still read.
+  `find_package(chunk)` stays, deprecated: `find_package(shrink_array)` loads it.
+
+### Fixed
+
+- Clang or oneAPI with an OpenMP runtime that never loads an OMPT tool defined in the
+  executable -- Ubuntu 24.04's `libomp5-18` binds its own weak `ompt_start_tool` at link time
+  and searches only the objects loaded after it, so `-rdynamic` does not help -- built the
+  library with its tool anyway: the regions ran with their phase boundaries missing (chunks
+  left materialised, the concurrent-teams invariants broken; 40 validation tests of the nightly
+  clang 18 job). The configure step now runs a probe (`cmake/ompt_probe.cpp`) and, when the
+  runtime does not call it, builds without the tool (`CHUNK_OPT_OMPT` 0, `shrink_array_OMPT`
+  OFF) with a warning. The verdict is cached in `CHUNK_OMPT_TOOL_LOADS`, which can also be set
+  to skip the probe; it is not run when cross-compiling without an emulator.
+- OMPT builds, a region opened inside a parallel region of one thread (`OMP_NUM_THREADS=1`, an
+  inactive region: `omp_in_parallel()` is false there) -- the teardown census of an array
+  destroyed under `omp single` -- passed for the end of a phase: its compression pass emptied the
+  other arrays' candidate lists in the middle of the region. A region now ends the phase only if
+  it began at the top level; the one-thread region itself still ends it. multi_mat's own OMPT
+  tool had the same test and is fixed alike. `zero_or_value_shared_state_validation`
+  (bool-construct, 1 thread) and `nested_region_validation` cover it.
+- `zero_or_value`, the other arrays of a type when one array goes (destroyed, cleared, copy- or
+  move-assigned, swapped):
+  - the record of each second value (its constant block's index) was a pointer to the array
+    that declared the value last. Once that array was destroyed, or took another value, the
+    other arrays declaring the value were no longer drained by the passes -- or a pass followed
+    a dangling pointer. The type now keeps its own copy of each record;
+  - the pass that `clear()` runs at a sequential point emptied the other arrays' candidate lists
+    without compressing them, so a temporary destroyed between two phases left their chunks
+    materialised. It now compresses them, and runs only outside any region, an inactive
+    one-thread region included.
+  The new `bystander_validation` (every variant, 1 and 8 threads) checks that copy/move-assign,
+  swap, `clear()` and `shrink_to_fit()` of one array leave two bystander arrays -- one compressed,
+  one materialised -- as they were; `zero_or_value_shared_state_validation` gains the destroyed,
+  cleared, assigned and swapped owner cases.
+- `zero_or_value`: `set_second_value(T{})` on an array that had another second value took the
+  new-value path (T{}'s sentinel index reads as "not registered"): it gave T{} a block of its
+  own and replaced the T{} key every array without a second value is drained under. Called at
+  a sequential point, the T{} record took a real index; inside a region, the T{} candidates
+  other arrays had queued were dropped, their chunks left materialised. The call now puts the
+  array back to "no second value". `zero_or_value_shared_state_validation` (zero-key case).
+- Smaller findings of the rescan of 2026-11-20:
+  - `RechunkDecider`: with `max_coarsen_factor` at 1 or 0 ("no cap", `--rechunk_max_coarsen`),
+    an array banned from coarsening went on being coarsened;
+  - `ChunkSizeAdvisor::analyze()` with `Options::max_mat_scans` at 0 divided by it when it
+    sampled the materialised chunks (read from the code, not reproduced: at least one chunk
+    is read now);
+  - `zero::Chunk`'s copy-assignment named a member that does not exist (nothing instantiated it);
+  - a shared library's soname carried the major version alone while two 0.x minor versions are
+    declared incompatible: `lib<name>.so.0.<minor>` at 0.x;
+  - `find_package(shrink_array)` through `shrink_array_DIR` alone did not find the
+    fast_allocators installed with it, and could take another installation's;
+  - a former option name (`-DOMP=OFF`, `-DSANITIZER=...`) given to a tree already configured
+    printed its deprecation and was ignored;
+  - fast_allocators built alone with the std backend stopped on a static_assert
+    (`ALLOCATORS_THREADED` followed `ALLOCATORS_OMP` only);
+  - the Spack recipe accepted `threads=std` and `+tbb` at 0.1.3 and `+stats` up to 0.1.1,
+    versions that ignore those options (serial libraries installed for `threads=std`);
+  - scripts/check_tracked.py followed relative Python imports only: an untracked module of
+    `shrink_gui`, whose imports are absolute, passed the check;
+  - docs: `zero_any::Array::compress()` reports and compresses nothing, and `shrink_to_fit()` is
+    refused inside a region (`docs/api.md`, `docs/getting_started.md` said otherwise).
+- `resize()` (and what goes through it: `reserve()`, `assign()`, a growing `push_back()`) of a
+  shared array inside a region, from one thread while the team waits (`omp single`), as
+  `docs/getting_started.md` section 5 allows: it purged the calling thread's candidate list
+  only, the other ranks kept pointers into the chunk list it reallocates and flags in the row
+  it replaces (an invariant failure in the check builds, a use after free in the others). An
+  array other ranks have queued chunks of has its candidates drained on every rank; a work
+  array of the calling thread, on its own rank as before (the three variants).
+- `zero_or_value`, serial builds, an array without a declared second value: `+=`, `-=`, `++`,
+  `--` and the bitwise operators on a zero element moved one of the chunk's two constant
+  counters only, so the element still counted as zero; the next plain write that zeroed the
+  rest of the chunk folded it, and the element read 0. Each counter now moves on its own
+  (`Proxy::count_constant_transitions()`), as in a plain assignment.
+- `zero`, OpenMP: a compression pass triggered from the write path took no writer handshake
+  when `omp_get_max_threads()` was 1 -- the size of the next region, also inside a team opened
+  with `num_threads(4)` under `OMP_NUM_THREADS=1`: chunks were folded under their writers
+  (200 to 300 writes lost per run of the new case of nested_region_validation). The pass
+  looks at the ranks that may hold work (`chunk_rank_bound()`).
+- `a[i] = b[j]` between arrays of two element types (a `double` array from an `int` one): a
+  deferred write kept a copy of `b`'s proxy and read `b[j]` when it was replayed, at the end
+  of the phase -- the value by then, or freed storage after a resize of `b`. The value is
+  read when the statement runs, as between two arrays of one type (the three variants).
+- `alloc_chunk()` (the three variants), found by the new alloc_chunk_validation:
+  - on a chunk compressed to a second value (`zero_or_value`, `zero_any`, bool's `true`) it
+    installed a buffer filled with the first constant: the chunk read `T{}` from then on, in
+    every build. It keeps the constant the chunk held; a serial `zero_or_value` also records
+    the chunk's count of it;
+  - in a dynamic build the buffer had the chunk size the calling thread used last (another
+    array's, or the process-wide one), not the array's: the stores that followed overran it.
+    The array's geometry and allocator set are pinned first, as the write proxies do.
+- `operator()(i)`, the raw reference, did not compile on a `zero_or_value::Array` of a non-bool
+  type in the check builds (the chunk's "materialised?" check instantiated a bool-only member):
+  the member is constrained, and the check is made by the array, which has the second-value
+  index.
+- `shrink_gui` 0.19, "Supprimer" and "Arrêter" (the cluster-side helper now checks what the
+  window assumed):
+  - a run's own output directory was removed with the outputs of later runs written below it
+    (a run given the default base as its output directory): refused when another run announces
+    a directory in it, or when it holds files written after the run ended;
+  - in a shared output directory, the files written after the run ended are no longer taken
+    for its own (a later run deleted without its outputs, or launched by hand, lost them);
+  - a run still active, or whose state cannot be known from here (started from another login
+    node, no squeue), could be deleted: the helper refuses the first and wants a second
+    confirmation for the other;
+  - "Arrêter" on a local or detached run that had ended sent SIGTERM to whatever process group
+    had its PID by then: refused once the run has an exit code, and the PID is tied to the run
+    by its start time and the boot id, so that a PID reused after a restart of WSL is neither
+    shown "en cours" nor signalled;
+  - "Arrêter" marked a batch run "arrêté" before trying to cancel it, also when the cancel
+    failed or the run had already ended with its exit code: marked once cancelled only.
+- `shrink_gui`, "Supprimer" with the run's own output directory: the directory the log announces
+  is removed whole only when every file in it was written after the run was submitted, it holds
+  no git repository and is no mount point; the former guard (absolute, not `/` nor the home,
+  three levels deep) let a log naming e.g. `~/Documents` have it removed.
+- A relocatable install with the optimised libm: `SHRINK_INTEL_LIBM` (on by default, when oneAPI's
+  `libimf` is found) and `SHRINK_ARM_LIBM` linked it into every target of the directory with an
+  absolute path and rpath, the libraries included: the installed chunk-targets.cmake and
+  fast_allocators-targets.cmake named `/opt/intel/.../libimf.so`. Only the project's executables
+  (`examples/`) link it now.
+- The installed fast_allocators-config.cmake calls `find_dependency(Threads)`: with the std backend its target
+  links `Threads::Threads`, and a project that found fast_allocators alone (without chunk) failed
+  to link.
+- `zero_any`: every `a[i] += x` ran `ensure_writable_storage()`, which re-armed the per-chunk
+  pointers the write engine's `set_info_on_chunk()` had just armed and tested both constants,
+  on a chunk already materialised as well: about 44 instructions per operation. It runs only on
+  a constant chunk now (a materialised one stays so for the write session); `pattern::Array`,
+  whose motif chunks are neither constant, keeps the full path. Instructions per `+=` (1
+  thread, steady state): 308 -> 259.
+- `zero_or_value` and `zero_any` (and `pattern::Array`): `a[i] += x` cost more than a read plus a
+  write (16.4 ns on Grace), and `zero_any`'s `a[i] = v` paid the same stall. Every write runs
+  `set_info_on_chunk()`, which was called out of line: it stored into the proxy, on the caller's
+  stack, with 8- and 4-byte stores that the caller's 16-byte reloads of the proxy spanned -- a
+  store the core cannot forward, so each write waited for it to reach the cache. It is forced
+  inline. `access_cost`, x86, 1 thread: `rmw` 13.2 -> 6.0 ns (`zero_or_value`), 17.1 -> 9.8 ns
+  (`zero_any`), `zero_any`'s `write-varied` 14.5 -> 8.9 ns; 14 threads, `zero_or_value`'s `rmw`
+  1.60 -> 0.85 ns. Not measured on Grace yet.
+- Check builds, `zero_any` and `pattern::Array`: the destructor (noexcept) runs `clear()`, whose
+  chunk-size prediction allocates a summary and formats a log line; a `std::bad_alloc` there
+  would have called `std::terminate()`. The prediction, a log line only, is skipped on an
+  exception (Coverity 661905, 661906).
+- Compound operations with an operand that is not clean for the element (`int` `*= 1.5`,
+  `int` `%= 4294967299L`; concept_is_clean_assignment.h): the rule -- the operand converted to `T`
+  first, with an `HPC WARNING` -- held for `+=` / `-=` of `zero_or_value` and `zero_any` only.
+  `zero`'s `+=` / `-=` computed in the common type on the direct path and converted on the
+  deferred one (`-1 += 0.5`: 0 or -1); `*=` / `/=` / `%=` of every variant took the operand as it
+  came, without warning, and `zero_or_value` gave 3 for `2 *= 1.5` in a serial build, 2 in an OpenMP
+  one. Every compound operator of every variant now has the two overloads `+=` had: a clean operand
+  computes as a plain `T` does, any other is converted to `T` at the operator, with the warning, so
+  every path below gets a `T`. `docs/api.md` §4 states the rule; `mixed_operand_compound_validation`
+  checks it, direct and deferred, in every variant.
+- `zero_or_value`: a copy-assignment `a = b`, `b` declaring another second value than `a`,
+  wrote `b`'s elements into the constant block of `a`'s old second value -- a block every array
+  declaring that value shares: their compressed chunks read `b`'s elements afterwards.
+  `operator=` switched the value before copying, so `a`'s chunks still on the old block passed as
+  materialised. It now releases `a`'s chunks first when the second value changes, as the
+  move-assignment does. `zero_or_value_shared_state_validation` checks it.
+- `zero_or_value::Array<bool>` (and the bit arrays): building one installed a fresh, empty `true`
+  candidate list on every rank, dropping the chunks the other live bool arrays had queued -- never
+  queued again, never compressed by the passes -- and freeing the list under a thread of another
+  bool array writing into it, for one built inside a region. The list is installed once.
+  `zero_or_value_shared_state_validation` checks it.
+- Every variant, a parallel region of one thread (`OMP_NUM_THREADS=1`): the teardown of a work
+  array built in the region took the region for a sequential point -- one thread's region is
+  inactive, `omp_in_parallel()` is false there -- and ran the pass over every type's candidate
+  lists that `clear()` runs at one, a walk that empties them without compressing: what every array
+  had queued in the region was never compressed. The own-rank test (`teardown_on_own_rank()`)
+  counts an inactive region as a region. `zero_or_value_shared_state_validation` checks it.
+- Install of a std-alloc build (`CHUNK_STD_ALLOC`, Spack's `~fast_alloc`): the handful of
+  fast_allocators headers it installs with chunk missed three that the others include --
+  `internal/append_text.h` (from `log_core.h` and `fatal.h`), `internal/pmp_loops_inline.h`
+  and `internal/pmp_std_inline.h` -- so no consumer of such an install compiled. They are
+  installed, and `check_tracked` (rule 6) recomputes the list from chunk's includes and fails
+  when one is missing.
+
 ## 0.3.0 -- 2026-11-18
 
 ### Added
@@ -661,7 +903,13 @@ the tag's checksum to the recipe.
   (were `Base2`, `ManagerChunk2`, `ManagerChunk2A`), `CandidateTuples`,
   `CandidateValueTuples` (were `VecTupleChunk*pInt2`);
   `ZeroOneValueInfArrayPolicy`, `CHUNK_LINK_CHECK_ZERO/_ZERO_ONE_VALUE/_ZERO_ANY`
-  and the multi-mat example's `VectZeroOneValue`. Generic `chunk` names (the
+  and the multi-mat example's `VectZeroOneValue`; the traits
+  `is_zero_array_v`, `is_zero_or_value_array_v`, `is_zero_any_family_array_v`
+  (were `is_v1_v`, `is_v2_v`, `is_v2a_family_v`), the link-check symbol
+  `variant_zero_*_zero_or_value_*_zero_any_*_size_*_dyn_*` (was
+  `variant_v1_*_v2_*_v2a_*_...`: a library built before it does not link with a
+  program built after) and the `PointerMap` of each variant in messages and
+  docs (was `PointerMapChunk`, `PointerMapChunk2A`). Generic `chunk` names (the
   block of CHUNK_SIZE values, common to the variants: `ChunkBase`,
   `ManagerChunk`, `ParamChunk`...) stay.
 

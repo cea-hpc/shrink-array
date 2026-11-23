@@ -599,3 +599,42 @@ def test_errors_of_failed_builds(tmp_path, capsys):
     r = json.loads(capsys.readouterr().out)
     assert [f["name"] for f in r["files"]] == ["gnu-stats.log"] and r["count"] == 1
     assert "cannot convert" in r["files"][0]["data"]
+
+
+def test_stop_marks_a_batch_run_only_once_cancelled(site):
+    import base64
+    import json
+    # ended with its code: "Arrêter" does not turn "fini / 0" into "arrêté"
+    _launch(site, "done", "python3 fake_stress.py --runs 1")
+    assert site.wait(lambda: _status(site, "done")["status"] == "fini")
+    assert "déjà terminé" in site.helper("stop", "~/shrink_runs", "done", BATCH_ARG)["error"]
+    assert not (site.runs / "done" / "stopped").exists() and _status(site, "done")["status"] == "fini"
+    # the cancel command fails: the job runs on, and is not shown "arrêté"
+    _launch(site, "long", "python3 fake_stress.py --runs 500 --step 0.5")
+    assert site.wait(lambda: _status(site, "long")["status"] == "en cours")
+    failing = base64.b64encode(json.dumps({"cancel": ["false"]}).encode()).decode()
+    assert "n'a pas pu être annulé" in site.helper("stop", "~/shrink_runs", "long", failing)["error"]
+    assert not (site.runs / "long" / "stopped").exists() and _status(site, "long")["status"] == "en cours"
+    assert site.helper("stop", "~/shrink_runs", "long", BATCH_ARG)["ok"]
+    assert site.wait(lambda: _status(site, "long")["status"] == "arrêté")
+
+
+def test_eta_follows_a_slower_end_of_campaign():
+    """2000 runs of 2 s, then serial perf runs of 300 s: at 1990 / 2000 the
+    whole run's mean says ~20 s left, the recent pace ~50 min; the larger wins.
+    A uniform campaign keeps the mean's estimate."""
+    from shrink_gui import remote_helper as rh
+    start = {"kind": "start", "t": 0.0}
+    progs = [{"kind": "progress", "t": 2.0 * i, "done": i, "total": 2000} for i in range(1, 1981)]
+    t = progs[-1]["t"]
+    for i in range(1981, 1991):
+        t += 300.0
+        progs.append({"kind": "progress", "t": t, "done": i, "total": 2000})
+    eta = rh.eta_from_progress(progs, start)
+    assert 9 * 300 <= eta <= 11 * 300
+    mean_only = (progs[-1]["t"] - start["t"]) / 1990 * 10
+    assert eta > 10 * mean_only
+    uniform = [{"kind": "progress", "t": 2.0 * i, "done": i, "total": 2000} for i in range(1, 1001)]
+    assert rh.eta_from_progress(uniform, start) == pytest.approx(2.0 * 1000)
+    ev = [dict(start, total_runs=2000)] + progs
+    assert rh.progress_from_events(ev)[2] == pytest.approx(eta)

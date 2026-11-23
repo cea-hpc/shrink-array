@@ -18,8 +18,8 @@
 
 | state | `values` points to | test |
 |---|---|---|
-| compressed | the shared constant buffer `const_val1`, filled with zeros | `is_const_val1()` |
-| materialised | a buffer owned by the chunk | `written()`, that is `values != const_val1` |
+| compressed | the shared constant buffer `first_value_buffer_`, filled with zeros | `is_first_value()` |
+| materialised | a buffer owned by the chunk | `written()`, that is `values != first_value_buffer_` |
 
 The `values` pointer therefore holds both the data and the state. A chunk does not know its
 own number of elements: the geometry lives in the array's size policy
@@ -41,7 +41,7 @@ about 38 GB of its 40 GB is data.
 ## 3. Read and write
 
 The read is the same as in `zero_or_value` (§5 of [algo_zero_or_value.md](algo_zero_or_value.md)): one value,
-read from the chunk's buffer or from `const_val1`, after the read barrier.
+read from the chunk's buffer or from `first_value_buffer_`, after the read barrier.
 
 The write goes through the `Proxy<T>` proxy:
 
@@ -64,12 +64,12 @@ flowchart TD
     C --> D{"re-check:<br/>compressor?"}
     D -->|yes| D1["end_write + DEFERRED write<br/>(lbd_equal_asynch)"]
     D -->|no| E["body lbd_equal_core: read old_value<br/>BEFORE any materialisation"]
-    E --> F{"chunk at const_val1?<br/>(perform_core_assignment)"}
-    F -->|yes| G["create_value: buffer from the reuse list,<br/>already zero, or new and zero-filled,<br/>CAS const_val1 -> buffer, a lost CAS recycles it"]
+    E --> F{"chunk at first_value_buffer_?<br/>(perform_core_assignment)"}
+    F -->|yes| G["create_value: buffer from the reuse list,<br/>already zero, or new and zero-filled,<br/>CAS first_value_buffer_ -> buffer, a lost CAS recycles it"]
     F -->|no| H
     G --> H["store_value_at"]
     H --> I{"old != 0 and new == 0, or element<br/>changed by another writer?<br/>(mark_for_compression_core)"}
-    I -->|yes| J["add_to_compression_list:<br/>queue_flag::try_queue, then push"]
+    I -->|yes| J["queue_as_candidate:<br/>queue_flag::try_queue, then push"]
     I -->|no| K
     J --> K["end_write + housekeeping of 7.2<br/>(trigger_compression_if_needed)"]
 ```
@@ -104,10 +104,10 @@ When a thread's list exceeds the trigger threshold (§6), a
    rounds and doubled the run time;
 2. each candidate is **reserved** (`steal_mark`), before the compression window
    opens (`CompressionManager::start()`), whose barrier publishes the reservations;
-3. `fill_list_to_compress` re-reads each candidate and keeps only those that are **entirely
+3. `classify_candidate` re-reads each candidate and keeps only those that are **entirely
    zero**; the others are unmarked at once, and every scanned candidate's queue flag is handed
    back (`queue_flag::hand_back`);
-4. each of these is compressed (`clear_int_st`: `values` goes back to `const_val1` by CAS, and
+4. each of these is compressed (`clear_int_st`: `values` goes back to `first_value_buffer_` by CAS, and
    the buffer joins the reuse list after the read sections' grace period);
 5. the remaining reservations are released, then the queue flags (`queue_flag::release`): a
    candidate written meanwhile is queued again, and so is the chunk of the write that triggered
@@ -126,10 +126,10 @@ flowchart TD
     B -->|no| C["steal_mark every candidate"]
     C --> D{"CompressionManager::start"}
     D -->|declined| D1["steal_unmark all, give up"]
-    D -->|accepted| E["fill_list_to_compress at the entry's n_elems:<br/>written and is_constant_to 0?<br/>then queue_flag::hand_back"]
+    D -->|accepted| E["classify_candidate at the entry's n_elems:<br/>written and is_constant_to 0?<br/>then queue_flag::hand_back"]
     E -->|yes| F["list ll_compt"]
     E -->|no| G["steal_unmark at once"]
-    F --> H["clear_int_st: CAS values -> const_val1,<br/>free_block_to_pool after a grace period,<br/>steal_unmark"]
+    F --> H["clear_int_st: CAS values -> first_value_buffer_,<br/>free_block_to_pool after a grace period,<br/>steal_unmark"]
     H --> I["each candidate: steal_unmark, then queue_flag::release:<br/>written meanwhile -> queued again"]
     G --> I
     I --> J["trigger's chunk queued again if materialised,<br/>finish()"]
@@ -176,9 +176,11 @@ reasons for this small gain:
 
 - its metadata is already small, and growing the chunks mostly saves
   metadata;
-- after its rechunk, dynamic `zero` **slows down** (1.5 to 2 times slower per iteration than
-  static 1,024), for a reason still unknown: a dynamic build started directly at
-  1,024 runs as fast as the static one, and `zero_or_value` does not slow down after its rechunks.
+- a dynamic `zero` runs about 3% slower per iteration than static 1,024, rechunk or not, and
+  the advisor settles it at 768 on the benchmark's densifying arrays, which churns a little
+  more (about 2%) and holds no less memory than 1,024 (measured at full size, November 2026:
+  [adaptive_rechunk.md](adaptive_rechunk.md), section 8). The 1.5 to 2 times slowdown after its
+  rechunk measured earlier is gone.
 
 For a workload like the benchmark's, a **static** `zero` at the right size is still the
 best choice today.

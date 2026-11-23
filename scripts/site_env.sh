@@ -60,12 +60,6 @@ chunk_local_gcc() {
         | sort -t- -k2 -V | tail -1
 }
 
-# CHUNK_BUILD_REP (répertoire), the former name of CHUNK_BUILD_ROOT: still
-# read when the new one is unset, with a deprecation line. It goes at 0.3.
-if [ -n "${CHUNK_BUILD_REP:-}" ] && [ -z "${CHUNK_BUILD_ROOT:-}" ]; then
-    echo "[site] CHUNK_BUILD_REP is deprecated: set CHUNK_BUILD_ROOT (taken from it this time)" >&2
-    CHUNK_BUILD_ROOT=$CHUNK_BUILD_REP
-fi
 if [ "$CHUNK_SITE" = cea ]; then
     # Not under the sources in ~ (quota): stop rather than guess when the TGCC
     # environment did not set CCCWORKDIR.
@@ -194,31 +188,62 @@ chunk_check_binutils() {
     esac
 }
 
-# chunk_ensure_ninja: make the ninja on PATH one that runs here, after a
-# `module load ninja`. A home shared by the x86 and the ARM nodes (/ccc/home)
-# can hold an x86-64 ~/.local/bin/ninja ahead of the module's: on grace /
-# gh200 every configure then failed with "cannot execute binary file". The
-# first ninja of PATH that answers --version wins (its directory goes first);
-# none: the error, return 1. Nothing changes when the first one already runs,
-# nor when there is no ninja at all (a --dryrun on a workstation; CMake says
-# so at configure time, as before).
+# chunk_ensure_ninja: make the ninja on PATH the newest one that runs here,
+# after a `module load ninja`. Called again after each `module load ninja`,
+# which puts the module's ninja back in front.
+#  - A home shared by the x86 and the ARM nodes (/ccc/home) can hold an x86-64
+#    ~/.local/bin/ninja ahead of the module's: on grace / gh200 every configure
+#    then failed with "cannot execute binary file". A ninja that does not
+#    answer --version is skipped.
+#  - Of the ones that run, the newest wins (the first on PATH between equal
+#    versions), and its directory goes first: a ~/.local/bin/ninja 1.13 rather
+#    than the module's 1.11, for the shared jobserver.
+#  - When that ninja is 1.13 or later and CHUNK_NINJA is unset, CHUNK_NINJA is
+#    set to it, so the existing build dirs are configured with it too (their
+#    cached CMAKE_MAKE_PROGRAM is the ninja of their first configure; each dir
+#    that changes ninja rebuilds in full once). An explicit CHUNK_NINJA wins:
+#    CHUNK_NINJA=<the module's ninja> keeps the old one.
+# None runs: the error, return 1. No ninja at all (a --dryrun on a
+# workstation): nothing changes, CMake says so at configure time, as before.
+__CHUNK_NINJA_SAID=""
 chunk_ensure_ninja() {
-    local n bad="" first
+    local n v bad="" first best="" best_v="" major minor
     first=$(command -v ninja 2>/dev/null)
-    if [ -z "$first" ] || "$first" --version >/dev/null 2>&1; then
-        return 0
-    fi
     for n in $(type -a -P ninja ninja-build 2>/dev/null | awk '!seen[$0]++'); do
-        if "$n" --version >/dev/null 2>&1; then
-            [ -n "$first" ] && echo "[ninja] $first does not run on $(uname -m) (another architecture's binary?): using $n"
-            PATH="$(dirname "$n"):$PATH"
-            export PATH
-            return 0
+        v=$("$n" --version 2>/dev/null) && [ -n "$v" ] || { bad="$bad $n"; continue; }
+        # Strictly newer only: between equal versions the first on PATH stays.
+        if [ -z "$best" ] || [ "$(printf '%s\n%s\n' "$best_v" "$v" | sort -V | tail -1)" != "$best_v" ]; then
+            best=$n best_v=$v
         fi
-        bad="$bad $n"
     done
-    echo "ERROR: no ninja that runs on $(uname -m) on PATH${bad:+ (not runnable:$bad)}; load a ninja module or install one for this architecture" >&2
-    return 1
+    if [ -z "$best" ]; then
+        [ -z "$first" ] && return 0
+        echo "ERROR: no ninja that runs on $(uname -m) on PATH${bad:+ (not runnable:$bad)}; load a ninja module or install one for this architecture" >&2
+        return 1
+    fi
+    if [ "$best" != "$first" ]; then
+        PATH="$(dirname "$best"):$PATH"
+        export PATH
+        # Said once: the later `module load ninja` put the module's back each time.
+        if [ "$__CHUNK_NINJA_SAID" != "$best" ]; then
+            if [ -z "$first" ]; then
+                echo "[ninja] using $best ($best_v)"
+            elif "$first" --version >/dev/null 2>&1; then
+                echo "[ninja] using $best ($best_v) rather than $first ($("$first" --version))"
+            else
+                echo "[ninja] $first does not run on $(uname -m) (another architecture's binary?): using $best ($best_v)"
+            fi
+            __CHUNK_NINJA_SAID=$best
+        fi
+    fi
+    IFS=. read -r major minor _ <<< "$best_v"
+    if [ -z "${CHUNK_NINJA:-}" ] && [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] &&
+       { [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 13 ]; }; }; then
+        CHUNK_NINJA=$best
+        export CHUNK_NINJA
+        echo "[ninja] CHUNK_NINJA=$best ($best_v): the build dirs are configured with it (shared jobserver)"
+    fi
+    return 0
 }
 
 # chunk_drop_dead_make_program <build-dir>: a cache that names a ninja which

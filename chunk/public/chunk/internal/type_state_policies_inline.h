@@ -289,8 +289,7 @@ void TypeStateParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_parallel
         if constexpr (build_config::any_check)
         {
             // aggressive_compression(): a run-time switch (chunk/config.h).
-            if (!chunk_config::aggressive_compression() &&
-                self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
+            if (!chunk_config::aggressive_compression() && self.has_candidates(CHUNK_PMP_RANK_BOUND))
             {
                 CHUNK_LOG(info, compress,
                           "audit: blocks left to compress after final flush (non-aggressive) -- compression pass "

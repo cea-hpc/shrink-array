@@ -264,10 +264,10 @@ inline void break_on_failure() noexcept
     {
         return;
     }
-    const std::string_view line =
-        forced ? "[shrink_array] CHUNK_BREAK_ON_FAILURE=1: stopping on SIGTRAP; continue to abort\n"
-               : "[shrink_array] debugger attached: stopping on SIGTRAP; continue to abort\n";
-    if (::write(STDERR_FILENO, line.data(), line.size()) < 0)
+    if (const std::string_view line =
+            forced ? "[shrink_array] CHUNK_BREAK_ON_FAILURE=1: stopping on SIGTRAP; continue to abort\n"
+                   : "[shrink_array] debugger attached: stopping on SIGTRAP; continue to abort\n";
+        ::write(STDERR_FILENO, line.data(), line.size()) < 0)
     {
         // Nothing to do: the stop does not depend on the line.
     }

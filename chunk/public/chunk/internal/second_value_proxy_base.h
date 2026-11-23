@@ -17,12 +17,12 @@
 #pragma once
 
 #include <functional>  // std::divides, std::multiplies
-#include <type_traits> // std::is_integral_v, std::is_same_v
+#include <type_traits> // std::is_integral_v, std::is_same_v, std::is_convertible_v
 #include <utility>     // std::forward
 
 #include "chunk/bit.h"    // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h" // chunk_config::use_fast_block_compression, build_config::do_check
-#include "chunk/internal/concept_is_clean_assignment.h" // BaseT, ElementMultipliable, ElementModulable
+#include "chunk/internal/concept_is_clean_assignment.h" // BaseT, IsCleanCompoundOp, ElementMultipliable, ElementModulable
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/proxy_base.h"                  // ProxyBase
@@ -52,14 +52,14 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base = ProxyBase<Derived, T, ChunkT>;
     friend Base;
 
-    using Base::add_to_compression_list;
     using Base::array_id_;
     using Base::chunk_;
     using Base::chunk_index_;
     using Base::derived;
     using Base::elem_offset_;
-    using Base::is_const_val1;
-    using Base::is_not_const_val1;
+    using Base::is_first_value;
+    using Base::is_not_first_value;
+    using Base::queue_as_candidate;
     using Base::values_;
 
     using typename Base::AtomicPtrRefT;
@@ -67,8 +67,8 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
-    using Base::array_is_inside_chunk_list_to_compress;
-    using Base::ptr_is_inside_chunk_list_to_compress_;
+    using Base::candidate_flag_;
+    using Base::candidate_flags;
 
     // ========================================================================
     // CRTP: Access to derived class
@@ -80,9 +80,9 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *        index/idx for non-bool types).
      * @return true if the chunk is compressed to the second constant.
      */
-    [[nodiscard]] bool is_const_val2() const noexcept
+    [[nodiscard]] bool is_second_value() const noexcept
     {
-        return derived().is_const_val2();
+        return derived().is_second_value();
     }
 
     /**
@@ -102,7 +102,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementMultipliable<T>
+        requires IsCleanCompoundOp<T, U> && ElementMultipliable<T>
     Derived operator*=(const U& operand) noexcept
     {
         // Early-out: multiplying by 1 writes nothing. Nothing to read either:
@@ -119,6 +119,20 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
+     * @brief Multiply -- an operand that is not clean (e.g. int *= double):
+     *        converted to T first, as operator+= does, on every path.
+     * @tparam U Type of the operand.
+     * @param operand Multiplier, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementMultipliable<T>
+    [[deprecated("HPC WARNING: Type mismatch in *=: the operand is converted to the element type first.")]]
+    Derived operator*=(const U& operand) noexcept
+    {
+        return this->operator*=(static_cast<T>(operand));
+    }
+
+    /**
      * @brief Divide this element by @p operand in place.
      * @tparam U Type of the operand.
      * @param operand Divisor. Integer element: check builds stop on operand == 0
@@ -127,7 +141,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementDivisible<T>
+        requires IsCleanCompoundOp<T, U> && ElementDivisible<T>
     Derived operator/=(const U& operand) noexcept
     {
         internal::check_integer_divisor<T>(operand, "/=");
@@ -144,6 +158,21 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
+     * @brief Divide -- an operand that is not clean (e.g. int /= double):
+     *        converted to T first, as operator+= does, on every path. An
+     *        integer element divided by 0.5 is divided by 0 (check builds stop).
+     * @tparam U Type of the operand.
+     * @param operand Divisor, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementDivisible<T>
+    [[deprecated("HPC WARNING: Type mismatch in /=: the operand is converted to the element type first.")]]
+    Derived operator/=(const U& operand) noexcept
+    {
+        return this->operator/=(static_cast<T>(operand));
+    }
+
+    /**
      * @brief Compute this element modulo @p operand in place.
      * @tparam U Type of the operand.
      * @param operand Modulus. Check builds stop on operand == 0
@@ -152,7 +181,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementModulable<T>
+        requires IsCleanCompoundOp<T, U> && ElementModulable<T>
     Derived operator%=(const U& operand) noexcept
     {
         if constexpr (std::is_integral_v<T>)
@@ -173,6 +202,20 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
         }
     }
 
+    /**
+     * @brief Modulo -- an operand that is not clean (e.g. int %= long):
+     *        converted to T first, as operator+= does, on every path.
+     * @tparam U Type of the operand.
+     * @param operand Modulus, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementModulable<T>
+    [[deprecated("HPC WARNING: Type mismatch in %=: the operand is converted to the element type first.")]]
+    Derived operator%=(const U& operand) noexcept
+    {
+        return this->operator%=(static_cast<T>(operand));
+    }
+
   protected:
     /**
      * @brief Construct a proxy for element `elem_offset_` of `chunk_`.
@@ -186,12 +229,12 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
-     * @brief Negation of is_const_val2().
+     * @brief Negation of is_second_value().
      * @return true if the chunk is NOT compressed to the second constant.
      */
-    [[nodiscard]] bool is_not_const_val2() const noexcept
+    [[nodiscard]] bool is_not_second_value() const noexcept
     {
-        return !is_const_val2();
+        return !is_second_value();
     }
 
     /**
@@ -200,20 +243,20 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      */
     [[nodiscard]] bool is_const_val() const noexcept
     {
-        return is_const_val1() || is_const_val2();
+        return is_first_value() || is_second_value();
     }
 
     /**
      * @brief Pre-check shared by every variant: the write is of a constant.
      * @details A write is worth the marking path (one read of the old value,
-     *          then add_to_compression_list) when the value written is one of
+     *          then queue_as_candidate) when the value written is one of
      *          the chunk's two constants -- whatever the chunk's state.
      *          should_mark_for_compression() then keeps the writes that change
      *          the element (old != new), so a chunk is queued at most once per
      *          pass, on its first write of a constant over something else.
      *
      *          Not only a chunk ALREADY at one constant being written the
-     *          other: a chunk materialised by a plain value (2.5 over const_val1)
+     *          other: a chunk materialised by a plain value (2.5 over first_value)
      *          and then written back to a constant element by element must be
      *          queued too, or it stays materialised for the run. The cost is
      *          paid only by writes of a constant: an old-value read and a

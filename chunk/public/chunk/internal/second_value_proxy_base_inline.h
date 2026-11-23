@@ -43,7 +43,7 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_core(InT<T> 
     if (isv && (derived().should_mark_for_compression(old_value, new_value, std::forward<Args>(compression_args)...) ||
                 !same_value(static_cast<T>(Base::load_value()), static_cast<T>(expected_in_memory)))) [[unlikely]]
     {
-        add_to_compression_list();
+        queue_as_candidate();
     }
 }
 
@@ -78,7 +78,7 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_before_store
     if (derived().should_mark_for_compression(old, new_value, second_val, first_value) ||
         !same_value(static_cast<T>(Base::read_values_at(vals)), old)) [[unlikely]]
     {
-        add_to_compression_list();
+        queue_as_candidate();
     }
 }
 

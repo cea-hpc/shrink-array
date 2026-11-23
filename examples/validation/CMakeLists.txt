@@ -102,6 +102,12 @@
 #                           resize's release) and zero_any's operator== equal a
 #                           std::vector's, with the phase bracketed; inside a
 #                           region they stay on the calling thread.
+#   alloc_chunk_validation  alloc_chunk() then the raw reference, operator()(i):
+#                           a preallocated chunk is materialised and holds
+#                           what it held (T{}, the second value it was
+#                           compressed to, its elements), raw stores stay in
+#                           their chunk; at dyn, its buffer has the array's
+#                           chunk size.
 #   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
@@ -133,12 +139,12 @@
 #                           the build flags -- otherwise a zero_or_value::Array
 #                           filled with its second value stays materialised.
 #                           The one harness that is not variant-agnostic.
-#   const2_registry_validation  zero_any's second-value registry is freed by the
+#   second_value_registry_validation  zero_any's second-value registry is freed by the
 #                           last array of every generation, not only the
 #                           first (its reinstall took a phantom reference),
 #                           and overlapping arrays free nothing early.
 #                           zero_any only, default static size.
-#   const2_reclaim_validation  zero_any::Array::reclaim_second_values() frees
+#   second_value_reclaim_validation  zero_any::Array::reclaim_second_values() frees
 #                           exactly the second values nothing refers to,
 #                           every element still reads back, and the
 #                           identifiers are reused (a run past the
@@ -219,7 +225,7 @@ endfunction()
 #     validation_zero_any_256 compress_roundtrip_validation [args...]
 #
 # The ctest names are the ones of the one-executable-per-harness layout
-# (compress_roundtrip_zero_any_256_8thr, rechunk_validation_zero_dyn_val2-grow,
+# (compress_roundtrip_zero_any_256_8thr, rechunk_validation_zero_dyn_second-value-grow,
 # ...), so `ctest -R` and python/bench_and_test.py see no difference.
 # CHUNK_VALIDATION_UNITY=OFF goes back to one executable per harness, named as
 # before -- the one to debug a harness alone. CHUNK_VALIDATION_UNITY_BATCH caps
@@ -269,8 +275,9 @@ set(_rt_harnesses       compress_roundtrip_validation pool_accounting_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         shrink_to_fit_validation chunk_exchange_validation signed_zero_validation
-                        no_init_release_validation nan_check_validation)
-set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation)
+                        no_init_release_validation nan_check_validation alloc_chunk_validation)
+set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation
+                        alloc_chunk_validation)
 
 # Compile definitions of a variant at a geometry.
 function(validation_variant_defs tgt vmacro geom)
@@ -314,6 +321,14 @@ function(validation_harness_executable tgt libbase vmacro geom)
   endif()
 endfunction()
 set_source_files_properties(validation_driver.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+# mixed_operand_compound_validation uses the operands that are not clean on
+# purpose: their HPC warnings ([[deprecated]], raised in element_ref.h where a
+# #pragma around the call cannot reach) would fail the -Werror builds. A source
+# option also keeps the file out of the unity batches. deferred_path_validation
+# too: its `long = int` cross-type case (run_cross_type_assign) takes the trap
+# path on purpose, the one it checks.
+set_source_files_properties(mixed_operand_compound_validation.cpp deferred_path_validation.cpp PROPERTIES
+                            COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>:-Wno-deprecated-declarations>")
 
 # test name, executable, harness, thread counts ("" = one test, OMP_NUM_THREADS=8), args...
 function(validation_add_test name exe harness nthreads)
@@ -368,16 +383,16 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_vname STREQUAL "zero_or_value")
       list(APPEND _group bits_container_validation)
     endif()
-    # const2_registry_validation: zero_any's second-value registry lifecycle.
+    # second_value_registry_validation: zero_any's second-value registry lifecycle.
     # zero_any only, at the default static size.
     if (_vname STREQUAL "zero_any" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group const2_registry_validation)
+      list(APPEND _group second_value_registry_validation)
     endif()
-    # const2_reclaim_validation: reclaim_second_values() frees what nothing
+    # second_value_reclaim_validation: reclaim_second_values() frees what nothing
     # refers to and the identifiers are reused. zero_any only, at the default
     # static size and at dyn (where it reclaims across a re-chunk too).
     if (_vname STREQUAL "zero_any")
-      list(APPEND _group const2_reclaim_validation)
+      list(APPEND _group second_value_reclaim_validation)
     endif()
     # zero_or_value_registry_growth_validation: zero_or_value's second-value registry must
     # not move the constant arrays chunks point at when a new value is
@@ -391,6 +406,28 @@ foreach(_geom IN LISTS _rt_geometries)
     # size, at 8 threads; OpenMP builds only (the passes run in a region).
     if (CHUNK_OPENMP AND _vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group zero_or_value_foreign_key_validation)
+    endif()
+    # mixed_operand_compound_validation: `a[i] op= u` with an operand that is
+    # not clean (a double, a long, on an int array) converts it to int first,
+    # on the direct path and on the deferred one (forced by the test hook).
+    # Every variant, default static size, at 1 and 8 threads.
+    if (NOT _geom STREQUAL "dyn")
+      list(APPEND _group mixed_operand_compound_validation)
+    endif()
+    # zero_or_value_shared_state_validation: a copy-assign across second values
+    # and a new bool array leave the other arrays' shared state alone (the
+    # harness says why). zero_or_value only, default static size, at 1 and 8
+    # threads.
+    if (_vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group zero_or_value_shared_state_validation)
+    endif()
+    # bystander_validation: copy/move-assign, swap, clear and shrink_to_fit of
+    # one array, then writes to it, leave two bystander arrays of the type (one
+    # compressed onto the shared constant block, one materialised) as they were
+    # (the harness says why). Every variant, default static size, at 1 and 8
+    # threads.
+    if (NOT _geom STREQUAL "dyn")
+      list(APPEND _group bystander_validation)
     endif()
     # deferred_path_validation: every write path through the deferred queue,
     # forced by the test hook (test_hooks.h, switched on by the harness), at
@@ -433,6 +470,12 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_geom STREQUAL "dyn")
       list(APPEND _group rechunk_validation dyn_geometry_validation)
     endif()
+    # advisor_edge_validation: the decider's coarsening ban without a cap, the
+    # advisor asked to read no chunk, zero::Chunk's copy-assignment. Dyn only
+    # (the advisor and the decider serve the runtime geometry).
+    if (_geom STREQUAL "dyn")
+      list(APPEND _group advisor_edge_validation)
+    endif()
     # Another static size: the round-trip harnesses alone.
     if (NOT _geom STREQUAL "dyn" AND NOT _geom STREQUAL CHUNK_DEFAULT_SIZE)
       set(_group ${_rt_group})
@@ -455,10 +498,10 @@ foreach(_geom IN LISTS _rt_geometries)
         # must match the case table of rechunk_validation.cpp -- an unknown
         # --case fails the test, so a drift shows up at once.
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
-                      shrink-to-smaller all-same all-different val2-grow val2-shrink
+                      shrink-to-smaller all-same all-different second-value-grow second-value-shrink
                       invalid-size-refused active-size-refused multiple-of-64-chain index-split
                       bool-grow bool-shrink bool-uneven bool-sliced sliced-grow sliced-shrink
-                      sliced-val2-grow sliced-val2-uneven)
+                      sliced-second-value-grow sliced-second-value-uneven)
           validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
         endforeach()
       elseif (_h STREQUAL "dyn_geometry_validation")

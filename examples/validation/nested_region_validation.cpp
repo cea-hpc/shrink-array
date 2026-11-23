@@ -50,6 +50,13 @@
 //      fix: writes lost ("deferred ops still queued"), a crash, or wrong values.
 //   D. C with the nested regions opened by parallel_phase(2, ...), as a
 //      component that knows nothing of the enclosing phase would.
+//   E. the team of 4 shares every chunk (schedule(static, 1)): each thread
+//      writes its elements, reads them back and zeroes them, round after
+//      round, so that the compression passes the writes trigger run against
+//      the other threads' sessions on the same chunks. With OMP_NUM_THREADS=1
+//      the next region would have one thread -- omp_get_max_threads() is 1 --
+//      while this team has four: a pass that took that for "nobody else
+//      writes" ran unguarded, and folded chunks under their writers.
 //   B. re-runs itself with `--nested-active`: max-active-levels 2 and a
 //      2-thread inner team writing the arrays, which must stop with the
 //      "nested ACTIVE" invariant failure.
@@ -61,68 +68,28 @@
 // entries do), or the per-thread capacity refuses rank 3 -- rightly.
 // ============================================================================
 
-#include <cstdio>      // std::fopen, std::fclose, std::fread, std::fflush, FILE, stdout, std::remove
-#include <cstdlib>     // std::system
-#include <string>      // std::string, std::to_string
-#include <type_traits> // std::conditional_t
-#include <vector>      // std::vector
-#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
+#include <cstdio>     // std::fopen, std::fclose, std::fread, std::fflush, FILE, stdout, std::remove
+#include <cstdlib>    // std::system
+#include <string>     // std::string, std::to_string
+#include <vector>     // std::vector
+#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
-#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
-#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::use_openmp / needs_explicit_phases
-#include "chunk/internal/pmp_chunk.h"  // chunk_pmp_set_max_active_levels
-#include "chunk/phases.h"              // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/print.h"               // shrink_array::println
-#include "chunk/internal/test_hooks.h" // force_defer_every, forced_deferrals (C, D)
+#include "chunk/config.h"                // build_config::use_openmp
+#include "chunk/internal/pmp_chunk.h"    // chunk_pmp_set_max_active_levels
+#include "chunk/phases.h"                // finalize_parallel_phase
+#include "chunk/print.h"                 // shrink_array::println
+#include "chunk/internal/test_hooks.h"   // force_defer_every, forced_deferrals (C, D)
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
+#include "validation_variant.h"        // Array, variant_name, begin_phase / end_phase
 
 namespace validation::nested_region_validation
 {
 
 using namespace shrink_array;
-
-static void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-static void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
-
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
-
-constexpr const char* variant_name()
-{
-    if constexpr (chunk_config::use_zero_any)
-    {
-        return "zero_any";
-    }
-    else if constexpr (chunk_config::use_zero_or_value)
-    {
-        return "zero_or_value";
-    }
-    else
-    {
-        return "zero";
-    }
-}
 
 /// The value element i holds after round `round` (zero runs of 2048 so the
 /// chunks alternate constant and materialised).
@@ -261,6 +228,44 @@ static long run_nested(Array<int>& arr, std::vector<int>& ref, int rounds, Inner
     return 0;
 }
 
+/// E: every chunk written by the four threads at once; the elements that did
+/// not read back what their thread had just written, plus those not zero at
+/// the end.
+template <typename A = Array<int>>
+static long run_shared_chunks(int rounds)
+{
+    long bad = 0;
+    if constexpr (build_config::use_openmp)
+    {
+        const long count = 1L << 18;
+        A          arr(count);
+        for (int round = 0; round < rounds; ++round)
+        {
+#pragma omp parallel num_threads(4) reduction(+ : bad)
+            {
+                begin_phase();
+#pragma omp for schedule(static, 1)
+                for (long index = 0; index < count; ++index)
+                {
+                    arr[index] = round + 1;
+                    if (static_cast<int>(arr[index]) != round + 1)
+                    {
+                        ++bad;
+                    }
+                    arr[index] = 0; // the chunk's last zero queues it for a pass
+                }
+            }
+            end_phase();
+        }
+        const A& carr = arr;
+        for (long index = 0; index < count; ++index)
+        {
+            bad += static_cast<int>(carr[index]) != 0;
+        }
+    }
+    return bad;
+}
+
 static int run_body(int argc, char** argv)
 {
     const bool nested_active = argc > 1 && std::string(argv[1]) == "--nested-active";
@@ -314,6 +319,9 @@ static int run_body(int argc, char** argv)
 
     if constexpr (build_config::use_openmp)
     {
+        const long shared_bad = run_shared_chunks(40);
+        println("[E shared chunks] the team of 4 on every chunk: {} wrong", shared_bad);
+        fails += shared_bad;
         fails += check_nested_active(argv[0]);
     }
 

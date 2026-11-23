@@ -82,13 +82,13 @@
 #if defined(OPERATORS_VALIDATION_PATTERN)
     #include "chunk/pattern_array.h" // pattern::Array
 #endif
-#include "chunk/config.h"             // chunk_config::use_zero*, build_config::use_openmp, needs_explicit_phases
-#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/runtime.h"            // Runtime::init
-#include "chunk/internal/type_name.h" // type_name<T>()
+#include "chunk/config.h"                               // chunk_config::use_zero*
+#include "chunk/runtime.h"                              // Runtime::init
+#include "chunk/internal/type_name.h"                   // type_name<T>()
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment, IsCleanShiftOp
 #include "chunk/print.h"                                // shrink_array::println
 #include "chunk/internal/test_hooks.h"                  // force_defer_every, force_defer_compiled
+#include "validation_variant.h"                         // Array, begin_phase / end_phase
 
 namespace validation::operators_validation
 {
@@ -131,22 +131,6 @@ constexpr const char* variant_name()
 constexpr int n_chunks = 8; ///< the layout below, one chunk kind each
 
 inline std::string only_type; ///< --type NAME: that element type alone (type_name<T>(), e.g. bool)
-
-inline void begin_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-
-inline void end_phase()
-{
-    if constexpr (build_config::needs_explicit_phases)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
 
 // ── the values ──────────────────────────────────────────────────────────────
 
@@ -825,9 +809,28 @@ void reads(Run& run)
     ++run.cases;
 }
 
+template <typename T>
+long run_type_cases(long count, long chunk_sz, const char* mode, long& cases);
+
 /// @brief Every operator on T, in one mode.
 template <typename T>
 long run_type(long count, long chunk_sz, const char* mode, long& cases)
+{
+    if constexpr (pattern_build && SecondValueTraits<T>::indexed)
+    {
+        // pattern::Chunk refuses a type wider than 4 bytes under
+        // CHUNK_SECOND_VALUE_INDEXED: a motif's offset needs a T-wide slot.
+        return 0;
+    }
+    else
+    {
+        return run_type_cases<T>(count, chunk_sz, mode, cases);
+    }
+}
+
+/// @brief run_type()'s body: every operator on T, in one mode.
+template <typename T>
+long run_type_cases(long count, long chunk_sz, const char* mode, long& cases)
 {
     const std::string type = type_name<T>();
     if (!only_type.empty() && type != only_type)
