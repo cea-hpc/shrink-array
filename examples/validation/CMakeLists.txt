@@ -965,7 +965,29 @@ if (CHUNK_DEVICE_CORE_CHECK)
   # (device::Array::assign / image), as a program must do it -- nvcc cannot compile the
   # host arrays' headers. Linked by the C++ linker with the GPU runtime (the library's
   # objects are not position-independent; ROCm's linker makes a PIE).
-  if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+  # Both halves must see one libstdc++ (they pass std::vector between them): the HIP
+  # compiler (ROCm's clang) picks a GCC installation of its own, which may be older than
+  # the C++ compiler (MI300A: gcc-toolset-12 against GCC 14.1, whose libstdc++ the link
+  # then missed). Configure with -DCMAKE_HIP_FLAGS=--gcc-install-dir=<the C++ compiler's>.
+  set(_convert_ok TRUE)
+  if (_dev_lang STREQUAL "HIP" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-libgcc-file-name
+                    OUTPUT_VARIABLE _libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
+    get_filename_component(_gcc_dir "${_libgcc}" DIRECTORY)
+    get_filename_component(_gcc_dir "${_gcc_dir}" REALPATH)
+    foreach (_d IN LISTS CMAKE_HIP_IMPLICIT_LINK_DIRECTORIES)
+      get_filename_component(_rd "${_d}" REALPATH)
+      if (_rd MATCHES "/lib/gcc/" AND NOT _rd STREQUAL _gcc_dir)
+        set(_convert_ok FALSE)
+      endif()
+    endforeach()
+    if (NOT _convert_ok)
+      message(WARNING "device_convert_validation not built: the HIP compiler uses another GCC "
+                      "(${CMAKE_HIP_IMPLICIT_LINK_DIRECTORIES}) than the C++ compiler (${_gcc_dir}). "
+                      "Configure a fresh build directory with -DCMAKE_HIP_FLAGS=--gcc-install-dir=${_gcc_dir}")
+    endif()
+  endif()
+  if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE} AND _convert_ok)
     add_library(device_convert_device OBJECT device_convert_device.cu)
     set_source_files_properties(device_convert_device.cu PROPERTIES LANGUAGE ${_dev_lang})
     set_target_properties(device_convert_device PROPERTIES ${_dev_lang}_STANDARD 20 ${_dev_lang}_STANDARD_REQUIRED ON

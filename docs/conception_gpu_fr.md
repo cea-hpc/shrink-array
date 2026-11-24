@@ -809,7 +809,11 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   `zero_any::Array` hôte avec des chunks à la première valeur, à une seconde valeur et
   matérialisés part sur le device, y est écrit et compressé (dix chunks se replient sur 2,5,
   de nouveau une seconde valeur côté hôte), et revient égal à un miroir hôte. Il passe sur la
-  T1000 et le GH200.
+  T1000 et le GH200. En HIP, les deux unités doivent utiliser le même libstdc++ : le clang de
+  ROCm choisit son propre GCC (gcc-toolset-12 sur le nœud du MI300A, contre GCC 14.1 pour
+  l'unité C++, et l'édition de liens échouait) ; la construction passe donc
+  `-DCMAKE_HIP_FLAGS=--gcc-install-dir=<celui du compilateur C++>`, sinon la configuration
+  saute le test en le disant.
 
 Suite : une façade au niveau des noyaux (Kokkos, section 13 étape 3) et le chemin `assign()`
 des noyaux quelconques sans acquire ni release à l'échelle du device (MI300A).

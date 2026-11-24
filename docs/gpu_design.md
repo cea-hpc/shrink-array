@@ -772,7 +772,11 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   unchanged). `device_convert_validation` is built that way: a host `zero_any::Array` with
   first-value, second-value and materialised chunks goes to the device, is written and
   compressed there (ten chunks fold to 2.5, a second value again on the host), and comes back
-  equal to a host mirror. It passes on the T1000 and the GH200.
+  equal to a host mirror. It passes on the T1000 and the GH200. With HIP, both translation
+  units must use one libstdc++: ROCm's clang picks a GCC of its own (gcc-toolset-12 on the
+  MI300A node, against GCC 14.1 for the C++ one, and the link failed), so the build passes
+  `-DCMAKE_HIP_FLAGS=--gcc-install-dir=<the C++ compiler's>`; the configure skips the test
+  with that hint otherwise.
 
 Next: a kernel-level facade (Kokkos, section 13 stage 3) and the `assign()` path for
 arbitrary kernels without device-scope acquire or release (MI300A).
