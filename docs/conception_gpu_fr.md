@@ -737,9 +737,14 @@ cas relaxed compris. Le chemin aligné, avant -> après :
 | écriture dans des chunks matérialisés | 16,6x -> 1,53x | 4,2x -> 0,79x | 1,71x / 1,43x |
 | réécritures de plages + `finalize()` | 36x -> 7,6x | 13,6x -> 3,0x | 4,5x / 2,4x |
 
-Sans acquire ni release dans le noyau, le MI300A à S = 1024 arrive à 1,5x du GH200 avec. La
-publication relaxed devient le chemin aligné de l'étape 1, sur les deux constructeurs si le
-GH200 confirme qu'elle n'y coûte rien (T1000 : égale ou un peu plus rapide).
+Sans acquire ni release dans le noyau, le MI300A à S = 1024 arrive à 1,5x du GH200 avec.
+
+**Et sur le GH200** (même commit ; `proto_test` passe), avant -> après : première écriture
+4,72x -> 4,20x (S = 256) et 2,17x -> 1,83x (S = 1024) ; écriture dans des chunks matérialisés
+1,83x -> 1,81x et 1,12x -> 1,16x ; réécritures de plages + `finalize()` 5,23x -> 5,05x et
+2,09x -> 2,21x. Elle ne coûte rien sur NVIDIA et gagne sur la première écriture : **la
+publication relaxed est le chemin aligné de l'étape 1, sur les deux constructeurs (tranché par
+le prototype).**
 
 **Étape 1, commencée (novembre 2026).** Les fonctions que partagent les versions hôte et device
 sont dans la bibliothèque, compilées pour les deux :

@@ -202,8 +202,13 @@ relaxed cases included. The chunk-aligned path, before -> after:
 | range rewrites + `finalize()` | 36x -> 7.6x | 13.6x -> 3.0x | 4.5x / 2.4x |
 
 Without acquire or release in the kernel, the MI300A at S = 1024 comes within 1.5x of the
-GH200 with them. The relaxed publication becomes the chunk-aligned path of stage 1, on both
-vendors if the GH200 confirms it costs nothing there (T1000: equal or slightly faster).
+GH200 with them.
+
+**And on the GH200** (same commit; `proto_test` passes), before -> after: first write 4.72x ->
+4.20x (S = 256) and 2.17x -> 1.83x (S = 1024); writes into materialised chunks 1.83x -> 1.81x
+and 1.12x -> 1.16x; range rewrites + `finalize()` 5.23x -> 5.05x and 2.09x -> 2.21x. It costs
+nothing on NVIDIA and gains on the first write: **the relaxed publication is the chunk-aligned
+path of stage 1, on both vendors (decided by the prototype).**
 
 ## What the prototype changed in the design
 
