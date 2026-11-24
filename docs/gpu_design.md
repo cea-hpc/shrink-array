@@ -759,7 +759,7 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   the tail of the last chunk is not compared. `device_write_validation` runs it after every
   round against a host model (folds counted, elements, materialised chunks and buffers in use
   checked again), and fails when the tail is compared or a buffer is not given back. It
-  passes on the T1000 and the GH200.
+  passes on the T1000, the GH200 and the MI300A.
 
 - The host <-> device conversion: `Array::assign(state)` loads an `ArrayState` (the
   `export_array()` of a host array, `chunk_exchange.h`), `Array::image()` gives one back for
@@ -772,7 +772,7 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   unchanged). `device_convert_validation` is built that way: a host `zero_any::Array` with
   first-value, second-value and materialised chunks goes to the device, is written and
   compressed there (ten chunks fold to 2.5, a second value again on the host), and comes back
-  equal to a host mirror. It passes on the T1000 and the GH200. With HIP, both translation
+  equal to a host mirror. It passes on the T1000, the GH200 and the MI300A. With HIP, both translation
   units must use one libstdc++: ROCm's clang picks a GCC of its own (gcc-toolset-12 on the
   MI300A node, against GCC 14.1 for the C++ one, and the link failed), so the build passes
   `-DCMAKE_HIP_FLAGS=--gcc-install-dir=<the C++ compiler's>`; the configure skips the test
