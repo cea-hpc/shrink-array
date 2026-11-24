@@ -178,7 +178,7 @@ int run_type(const char* type, long count)
     {
         fl.push_front(value_at<T>(i + 1000));
     }
-    const std::vector<T> ref_fl(fl.begin(), fl.end());
+    const std::vector ref_fl(fl.begin(), fl.end());
     copy.assign(fl.begin(), fl.end());
     fails += check(type, "assign-forward", copy, ref_fl);
 

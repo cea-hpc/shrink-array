@@ -492,8 +492,7 @@ try
             {
                 note(c, k, rep, s[k].seconds);
             }
-            const long long sums[n_containers] = {s[0].sum, s[1].sum, s[2].sum};
-            return std::vector<long long>(sums, sums + n_containers);
+            return std::vector{s[0].sum, s[1].sum, s[2].sum};
         };
         const auto check = [&](int c, const std::vector<long long>& v)
         {

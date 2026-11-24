@@ -1398,7 +1398,7 @@ void transform_ranges_by_blocks(Arr&        arr,
         const std::size_t hi = std::min(last, (lo / chunk_sz + 1) * chunk_sz);
         // The sources are read here, before any write session of the span
         // (store_range_mt's rule for the caller's code).
-        std::tuple<SourceSpan<typename Srcs::value_type>...> spans{load_source_span<Slot>(srcs, lo, hi, chunk_sz)...};
+        std::tuple spans{load_source_span<Slot>(srcs, lo, hi, chunk_sz)...};
         if ((std::get<Slot>(spans).is_constant && ...))
         {
             // Every source compressed on this span: one value, and the target
