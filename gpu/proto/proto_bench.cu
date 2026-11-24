@@ -321,10 +321,17 @@ void bench(long n, int reps)
     //    materialises every chunk. Grid-stride assign() puts S/32 warps on each chunk at
     //    once (race: they all pre-fill; claim: one pre-fills, the others wait); the
     //    chunk-aligned loop gives each chunk to one block.
+    //    assign() runs with the acquire load, then the relaxed one (on the MI300A an
+    //    agent-scope acquire costs 65x a flat write on its own); the chunk-aligned path reads
+    //    `buf` once per block, the load mode does not apply to it.
     const char* mode_name[] = {"race", "claim", "chunk-aligned"};
-    for (int mode = 0; mode < 3; ++mode)
+    const char* load_name[] = {"acquire", "relaxed", "plain"};
+    for (int run = 0; run < 5; ++run)
     {
+        const int mode = run < 3 ? run : run - 3; // race, claim, aligned, then race, claim relaxed
+        const int wl   = run < 3 ? 0 : 1;
         a.set_coordination(mode == 1 ? sa::Coordination::claim : sa::Coordination::race);
+        a.set_write_load(static_cast<sa::WriteLoad>(wl));
         std::vector<float> t;
         sa::Stats          before{}, after{};
         for (int r = 0; r < reps; ++r)
@@ -347,7 +354,14 @@ void bench(long n, int reps)
             after = a.stats();
         }
         char what[64];
-        std::snprintf(what, sizeof what, "first write, %s", mode_name[mode]);
+        if (mode == 2)
+        {
+            std::snprintf(what, sizeof what, "first write, %s", mode_name[mode]);
+        }
+        else
+        {
+            std::snprintf(what, sizeof what, "first write, %s, %s load", mode_name[mode], load_name[wl]);
+        }
         line(what, median(t), flat_write, "");
         std::printf("  %-44s lost CAS %.2f, claim waits %.2f per chunk; %llu given up, %llu arena failures\n", "",
                     static_cast<double>(after.cas_lost - before.cas_lost) / static_cast<double>(n_chunks),
@@ -357,6 +371,7 @@ void bench(long n, int reps)
         a.finalize();
     }
     a.set_coordination(sa::Coordination::race);
+    a.set_write_load(sa::WriteLoad::acquire);
 
     // 1. Read, every chunk compressed (descriptors only), then every chunk materialised.
     const float read_compressed = time_ms(reps, [&] { read_sum<<<grid, block>>>(a.view(), n, d_sum); });
@@ -367,7 +382,6 @@ void bench(long n, int reps)
     line("read, every chunk compressed", read_compressed, flat_read, "");
 
     // 2. Write into materialised chunks (the hot path: acquire load + store).
-    const char* load_name[] = {"acquire", "relaxed", "plain"};
     for (int w = 0; w < 3; ++w)
     {
         a.set_write_load(static_cast<sa::WriteLoad>(w));
@@ -413,9 +427,12 @@ void bench(long n, int reps)
     const auto  n_kept   = static_cast<long>(kept.size());
     const float flat_rng = time_ms(reps, [&] { write_ranges<<<grid, block>>>(flat, d_ranges, n_kept); });
     // The array starts half materialised (every other chunk at a varying ramp) for each rep.
-    for (int mode = 0; mode < 3; ++mode)
+    for (int run = 0; run < 5; ++run)
     {
+        const int mode = run < 3 ? run : run - 3; // as the first write
+        const int wl   = run < 3 ? 0 : 1;
         a.set_coordination(mode == 1 ? sa::Coordination::claim : sa::Coordination::race);
+        a.set_write_load(static_cast<sa::WriteLoad>(wl));
         std::vector<float> tw, tc;
         for (int r = 0; r < reps; ++r)
         {
@@ -440,15 +457,16 @@ void bench(long n, int reps)
         const float     rng_write    = median(tw);
         const float     rng_compress = median(tc);
         const sa::Stats st           = a.stats();
-        std::printf("  random ranges, %s: %ld non-overlapping ranges; after compress %llu/%ld chunks "
+        std::printf("  random ranges, %s%s%s: %ld non-overlapping ranges; after compress %llu/%ld chunks "
                     "materialised; so far %llu lost CAS, %llu claim waits, %llu given up, %llu replays\n",
-                    mode_name[mode], n_kept, st.materialised, st.n_chunks, st.cas_lost, st.claim_wait, st.claim_spin,
+                    mode_name[mode], mode == 2 ? "" : ", ", mode == 2 ? "" : load_name[wl], n_kept, st.materialised, st.n_chunks, st.cas_lost, st.claim_wait, st.claim_spin,
                     st.replays);
         line("  write kernel", rng_write, flat_rng, "");
         line("  finalize() (compress)", rng_compress, flat_rng, "");
         line("  write + finalize()", rng_write + rng_compress, flat_rng, "");
     }
     a.set_coordination(sa::Coordination::race);
+    a.set_write_load(sa::WriteLoad::acquire);
 
     // 4. compress() alone: every chunk materialised and uniform (all fold back), then every
     //    chunk materialised and not uniform (a pure scan, nothing folds back).

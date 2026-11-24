@@ -349,33 +349,52 @@ int main(int argc, char** argv)
 {
     const unsigned seed = argc > 1 ? static_cast<unsigned>(std::strtoul(argv[1], nullptr, 10)) : 12345U;
     std::printf("proto_test, seed %u\n", seed);
-    try
+    // Each case on its own: an exception (lost writes, a device error) fails that case and
+    // the others still run.
+    const auto run = [](const auto& f)
     {
-        // Arena large enough: no replay. Then small arenas: growth and replays.
-        // Roomy: twice the chunks, room for the buffers of lost CAS (parked until compress()).
-        random_rounds<256>(seed, 1L << 20, 2L << 12, 1L << 16, "roomy arena");
-        random_rounds<1024>(seed + 1, 1L << 20, 2L << 10, 1L << 16, "roomy arena");
-        random_rounds<256>(seed + 2, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk");
-        random_rounds<1024>(seed + 3, 1L << 18, 4, 1L << 18, "small arena");
-        random_rounds<256>(seed + 4, 1L << 20, 1L << 12, 1L << 16, "exact arena", sa::Coordination::claim);
-        random_rounds<1024>(seed + 5, 1L << 20, 1L << 10, 1L << 16, "exact arena", sa::Coordination::claim);
-        random_rounds<256>(seed + 6, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk", sa::Coordination::claim);
-        random_rounds<256>(seed + 10, 1L << 20, 1L << 12, 1L << 16, "exact arena", sa::Coordination::claim,
-                           sa::WriteLoad::plain);
-        random_rounds<1024>(seed + 11, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk",
-                            sa::Coordination::claim, sa::WriteLoad::relaxed, true);
-        random_rounds<256>(seed + 12, 1L << 20, 2L << 12, 1L << 16, "roomy arena", sa::Coordination::race,
-                           sa::WriteLoad::plain, true);
-        chunk_rounds<256>(seed + 7, 1L << 20, 1L << 12, 1L << 16, "exact arena");
-        chunk_rounds<1024>(seed + 8, (1L << 20) + 300, (1L << 10) + 1, 1L << 16, "exact arena, tail chunk");
-        chunk_rounds<256>(seed + 9, 1L << 18, 16, 1L << 18, "small arena");
-        append_overflow();
-    }
-    catch (const std::exception& e)
-    {
-        std::printf("error: %s\n", e.what());
-        return 2;
-    }
+        try
+        {
+            f();
+        }
+        catch (const std::exception& e)
+        {
+            std::printf("  error: %s\n", e.what());
+            g_failures += 1;
+        }
+    };
+    // Arena large enough for no exhaustion on NVIDIA; then small arenas: growth and replays.
+    // Roomy: twice the chunks, room for the buffers of lost CAS (parked until compress()),
+    // and an append-buffer of n entries: on the MI300A a race first write loses ~12 CAS per
+    // chunk at S = 1024 and exhausts even this arena, the replay must absorb it.
+    constexpr unsigned long long roomy_append = 1ULL << 20;
+    run([&] { random_rounds<256>(seed, 1L << 20, 2L << 12, roomy_append, "roomy arena"); });
+    run([&] { random_rounds<1024>(seed + 1, 1L << 20, 2L << 10, roomy_append, "roomy arena"); });
+    run([&] { random_rounds<256>(seed + 2, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk"); });
+    run([&] { random_rounds<1024>(seed + 3, 1L << 18, 4, 1L << 18, "small arena"); });
+    run([&] { random_rounds<256>(seed + 4, 1L << 20, 1L << 12, 1L << 16, "exact arena", sa::Coordination::claim); });
+    run([&] { random_rounds<1024>(seed + 5, 1L << 20, 1L << 10, 1L << 16, "exact arena", sa::Coordination::claim); });
+    run([&]
+        { random_rounds<256>(seed + 6, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk", sa::Coordination::claim); });
+    run([&]
+        {
+            random_rounds<256>(seed + 10, 1L << 20, 1L << 12, 1L << 16, "exact arena", sa::Coordination::claim,
+                               sa::WriteLoad::plain);
+        });
+    run([&]
+        {
+            random_rounds<1024>(seed + 11, (1L << 18) + 77, 16, 1L << 18, "small arena, tail chunk",
+                                sa::Coordination::claim, sa::WriteLoad::relaxed, true);
+        });
+    run([&]
+        {
+            random_rounds<256>(seed + 12, 1L << 20, 2L << 12, roomy_append, "roomy arena", sa::Coordination::race,
+                               sa::WriteLoad::plain, true);
+        });
+    run([&] { chunk_rounds<256>(seed + 7, 1L << 20, 1L << 12, 1L << 16, "exact arena"); });
+    run([&] { chunk_rounds<1024>(seed + 8, (1L << 20) + 300, (1L << 10) + 1, 1L << 16, "exact arena, tail chunk"); });
+    run([&] { chunk_rounds<256>(seed + 9, 1L << 18, 16, 1L << 18, "small arena"); });
+    run([&] { append_overflow(); });
     std::printf("%s: %d failure(s)\n", g_failures == 0 ? "PASSED" : "FAILED", g_failures);
     return g_failures == 0 ? 0 : 1;
 }
