@@ -736,7 +736,7 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   free-stack segment per shard), taken by the write kernels, given back by the compression
   pass, grown between phases. `device_arena_validation` checks concurrent takes (each buffer
   once, exhaustion, no overlap), give-backs, growth and home shards; it builds for CUDA or HIP
-  (`-DCHUNK_DEVICE_LANGUAGE=HIP`) and passes on the T1000 and the MI300A.
+  (`-DCHUNK_DEVICE_LANGUAGE=HIP`) and passes on the T1000, the GH200 and the MI300A.
 
 - `warp.h`, `block_write.h`, `array.h`: the chunk-aligned write with the relaxed publication
   (13). `Writer::write` (one block per call, a part of one chunk): descriptor loaded relaxed,
@@ -751,7 +751,7 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   at `finish`. `device_write_validation` checks it against a host mirror (ranges shared by
   two blocks, two kernels before one `finish`, writes of the constant only, small arenas,
   tail chunks, a non-zero constant), and fails when the settle or the rewrite of the failed
-  spans is broken.
+  spans is broken. It passes on the T1000 and the GH200.
 
 Next: `compress()` (the fold-back pass) and the host <-> device conversion.
 
