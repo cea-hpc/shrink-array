@@ -751,7 +751,7 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   at `finish`. `device_write_validation` checks it against a host mirror (ranges shared by
   two blocks, two kernels before one `finish`, writes of the constant only, small arenas,
   tail chunks, a non-zero constant), and fails when the settle or the rewrite of the failed
-  spans is broken. It passes on the T1000 and the GH200.
+  spans is broken. It passes on the T1000, the GH200 and the MI300A.
 
 Next: `compress()` (the fold-back pass) and the host <-> device conversion.
 

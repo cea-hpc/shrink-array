@@ -787,7 +787,7 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   `device_write_validation` le compare à un miroir hôte (plages partagées par deux blocs, deux
   noyaux avant un seul `finish`, écritures de la constante seule, petites arènes, chunks de fin,
   constante non nulle), et échoue si le remplissage ou la réécriture des plages ratées est cassé.
-  Il passe sur la T1000 et le GH200.
+  Il passe sur la T1000, le GH200 et le MI300A.
 
 Suite : `compress()` (la passe de repli) et la conversion hôte <-> device.
 
