@@ -780,7 +780,7 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
-T ChunkBase<T, Derived>::operator[](int offset) const noexcept
+CHUNK_FORCE_INLINE T ChunkBase<T, Derived>::operator[](int offset) const noexcept // EXPERIMENT: mode 3 left it out of line
 {
     if constexpr (chunk_config::stats)
     {
@@ -1198,7 +1198,7 @@ template <bool Relaxed>
     else
     {
         const read_reclaim::ReadSection section;
-        return element_at_unguarded<false>(offset);
+        return section.pass(element_at_unguarded<false>(offset));
     }
 }
 
@@ -1214,7 +1214,7 @@ template <bool Relaxed>
     else
     {
         const read_reclaim::ReadSection section;
-        return element_at_unguarded<false>(offset, offset_slot);
+        return section.pass(element_at_unguarded<false>(offset, offset_slot));
     }
 }
 

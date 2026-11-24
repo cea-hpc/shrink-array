@@ -6,6 +6,7 @@
 #   SRC  the exp/optimistic-read checkout (default: this script's repository)
 #   WORK where the builds and the CSVs go (default: $CCCWORKDIR/optread)
 #   THREADS (default 1,72)   N (default 33554432)   JOBS (default 32)
+#   CONFIGS (default "gcc:0 gcc:1 gcc:2 gcc:3 gcc:3d")   ROUNDS (default 2)
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC=${SRC:-$(cd "$HERE/../.." && pwd)}
@@ -14,6 +15,8 @@ THREADS=${THREADS:-1,72}
 N=${N:-33554432}
 JOBS=${JOBS:-32}
 mkdir -p "$WORK/csv"
+# A fresh CSV set: the table is built from every CSV there.
+[ -n "$(ls "$WORK/csv" 2>/dev/null)" ] && mv "$WORK/csv" "$WORK/csv.$(date +%Y%m%d-%H%M%S)" && mkdir -p "$WORK/csv"
 echo "[optread] $(hostname) $(uname -m) SRC=$SRC WORK=$WORK commit $(git -C "$SRC" log --oneline -1)"
 [ "$(uname -m)" = aarch64 ] || echo "[optread] WARNING: not an aarch64 node"
 source "$SRC/scripts/site_env.sh"
@@ -38,38 +41,47 @@ load_env() {
     export CXX CC
 }
 
-for comp in gcc llvm; do
+# CONFIGS: <compiler>:<mode>[d], d = also -DCHUNK_READ_DEP_ORDER=1 (relaxed `values` load, AArch64)
+CONFIGS=${CONFIGS:-"gcc:0 gcc:1 gcc:2 gcc:3 gcc:3d"}
+ROUNDS=${ROUNDS:-2}
+LOOP_SYM=_ZN12_GLOBAL__N_18arr_readERN12shrink_array13zero_or_value5ArrayIdiEEi._omp_fn.0
+for cfg in $CONFIGS; do
   (
+    comp=${cfg%%:*}; mode=${cfg#*:}; m=${mode%d}
+    flags=-DCHUNK_READ_SECTION_MODE=$m
+    [ "$mode" != "$m" ] && flags="$flags -DCHUNK_READ_DEP_ORDER=1"
     load_env $comp
-    echo "[optread] $comp: $($CXX --version | head -1)"
-    for m in 0 1 2; do
-        B=$WORK/$comp-mode$m
-        extra=()
-        [ $comp = llvm ] && extra=(-DCHUNK_USE_LIBCXX=OFF -DCHUNK_GCC_TOOLCHAIN_DIR=$GCC_TC)
-        cmake -S "$SRC" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_C_COMPILER="$CC" \
-            -DCHUNK_OPENMP=ON -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF -DCHUNK_BUILD_VALIDATION=OFF \
-            "${extra[@]}" -DCMAKE_CXX_FLAGS=-DCHUNK_READ_SECTION_MODE=$m > "$B.configure.log" 2>&1 \
-            || { echo "[optread] configure FAILED $comp $m"; tail -20 "$B.configure.log"; exit 1; }
-        grep 'Threading backend' "$B.configure.log"
-        ninja -C "$B" -j "$JOBS" access_cost_zero_256 access_cost_zero_or_value_256 access_cost_zero_any_256 \
-            > "$B.build.log" 2>&1 || { echo "[optread] build FAILED $comp $m"; tail -20 "$B.build.log"; exit 1; }
-        echo "[optread] $comp mode $m built"
-    done
+    echo "[optread] $cfg: $($CXX --version | head -1), CXXFLAGS $flags"
+    B=$WORK/$comp-mode$mode
+    extra=()
+    [ $comp = llvm ] && extra=(-DCHUNK_USE_LIBCXX=OFF -DCHUNK_GCC_TOOLCHAIN_DIR=$GCC_TC)
+    cmake -S "$SRC" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_C_COMPILER="$CC" \
+        -DCHUNK_OPENMP=ON -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF -DCHUNK_BUILD_VALIDATION=OFF \
+        "${extra[@]}" "-DCMAKE_CXX_FLAGS=$flags" > "$B.configure.log" 2>&1 \
+        || { echo "[optread] configure FAILED $cfg"; tail -20 "$B.configure.log"; exit 1; }
+    echo "[optread] $cfg $(grep 'Threading backend' "$B.configure.log")"
+    ninja -C "$B" -j "$JOBS" access_cost_zero_256 access_cost_zero_or_value_256 access_cost_zero_any_256 \
+        > "$B.build.log" 2>&1 || { echo "[optread] build FAILED $cfg"; tail -20 "$B.build.log"; exit 1; }
+    # What the read loop is made of: calls (an inlining miss), and the ordering instructions.
+    objdump -d --no-show-raw-insn --disassemble=$LOOP_SYM "$B/examples/access_cost/access_cost_zero_or_value_256" \
+        > "$B.loop.s" 2>/dev/null
+    echo "[optread] $cfg loop: $(grep -cE '\sbl\s' "$B.loop.s") bl, $(grep -c dmb "$B.loop.s") dmb," \
+         "$(grep -c stlr "$B.loop.s") stlr, $(grep -cE 'ldar\s' "$B.loop.s") ldar, $(grep -c ldapr "$B.loop.s") ldapr" \
+         "($(grep -c . "$B.loop.s") lines, $B.loop.s)"
   ) || exit 1
 done
 
 PY=$(command -v python3.11 || command -v python3)
-for r in 1 2 3; do
-  for comp in gcc llvm; do
-    for m in 0 1 2; do
-      (
-        load_env $comp >/dev/null 2>&1
-        echo "[optread] round $r $comp mode $m $(date +%T)"
-        "$PY" "$SRC/python/access_cost.py" --build "$WORK/$comp-mode$m" --threads "$THREADS" --rounds 1 \
-            --n "$N" --reps 5 --csv "$WORK/csv/${comp}_m${m}_r${r}.csv" > "$WORK/csv/${comp}_m${m}_r${r}.txt" 2>&1 \
-            || { echo "[optread] run FAILED $comp $m $r"; tail -5 "$WORK/csv/${comp}_m${m}_r${r}.txt"; }
-      )
-    done
+for r in $(seq 1 $ROUNDS); do
+  for cfg in $CONFIGS; do
+    (
+      comp=${cfg%%:*}; mode=${cfg#*:}
+      load_env $comp >/dev/null 2>&1
+      echo "[optread] round $r $cfg $(date +%T)"
+      "$PY" "$SRC/python/access_cost.py" --build "$WORK/$comp-mode$mode" --threads "$THREADS" --rounds 1 \
+          --n "$N" --reps 5 --csv "$WORK/csv/${comp}_m${mode}_r${r}.csv" > "$WORK/csv/${comp}_m${mode}_r${r}.txt" 2>&1 \
+          || { echo "[optread] run FAILED $cfg $r"; tail -5 "$WORK/csv/${comp}_m${mode}_r${r}.txt"; }
+    )
   done
 done
 "$PY" "$HERE/aggregate.py" "$WORK/csv" | tee "$WORK/result.txt"

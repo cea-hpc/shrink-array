@@ -8,7 +8,7 @@
 #MSUB -N 1
 #MSUB -n 1
 #MSUB -c 288
-#MSUB -T 10800
+#MSUB -T 5400
 #MSUB -o optread_%I.log
 #MSUB -e optread_%I.log
 

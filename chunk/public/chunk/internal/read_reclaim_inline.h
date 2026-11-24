@@ -28,7 +28,7 @@ namespace shrink_array
 
 inline read_reclaim::ReadSection::ReadSection() noexcept
 {
-    if constexpr (enabled && CHUNK_READ_SECTION_MODE == 2)
+    if constexpr (enabled && (CHUNK_READ_SECTION_MODE == 2 || CHUNK_READ_SECTION_MODE == 3))
     {
         seq_ = g_reclaim_epoch.load(std::memory_order_acquire);
     }
@@ -78,6 +78,13 @@ inline read_reclaim::ReadSection::~ReadSection()
             note_optimistic_conflict();
         }
     }
+    else if constexpr (enabled && CHUNK_READ_SECTION_MODE == 3)
+    {
+        if (!passed_ && g_reclaim_epoch.load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        {
+            note_optimistic_conflict();
+        }
+    }
     else if constexpr (enabled && CHUNK_READ_SECTION_MODE == 0)
     {
         if (slot_ != nullptr) [[likely]]
@@ -89,6 +96,29 @@ inline read_reclaim::ReadSection::~ReadSection()
             g_overflow_readers.fetch_sub(1, std::memory_order_release);
         }
     }
+}
+
+template <typename V>
+[[nodiscard]] CHUNK_FORCE_INLINE V read_reclaim::ReadSection::pass(V value) const noexcept
+{
+    if constexpr (enabled && CHUNK_READ_SECTION_MODE == 3 && std::is_trivially_copyable_v<V>)
+    {
+        std::uintptr_t raw = 0;
+        std::memcpy(&raw, &value, sizeof(V) < sizeof(raw) ? sizeof(V) : sizeof(raw));
+        // zero = raw ^ raw, hidden from the compiler: 0 at run time, a data
+        // dependency on the element for the CPU (eor on AArch64).
+        std::uintptr_t opaque = raw;
+        __asm__ volatile("" : "+r"(opaque));
+        const std::uintptr_t zero  = opaque ^ raw;
+        const auto*          epoch = reinterpret_cast<const std::atomic<std::uint64_t>*>(
+            reinterpret_cast<std::uintptr_t>(&g_reclaim_epoch) + zero);
+        if (epoch->load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        {
+            note_optimistic_conflict();
+        }
+        passed_ = true;
+    }
+    return value;
 }
 
 // ---------------------------------------------------------------------------

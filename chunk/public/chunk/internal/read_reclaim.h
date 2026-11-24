@@ -63,12 +63,15 @@
 #include <algorithm> // std::min
 #include <atomic>    // std::atomic, std::atomic_thread_fence, std::memory_order
 #include <cstdint>   // std::uint64_t
+#include <cstring>   // std::memcpy (EXPERIMENT mode 3)
+#include <type_traits> // std::is_trivially_copyable_v (EXPERIMENT mode 3)
 #include <thread>    // std::this_thread::yield
 #include <vector>    // std::vector
 
 #include "chunk/config.h"                              // build_config::threaded
 #include "chunk/internal/chunk_size_policy.h"          // t_active_chunk_size / t_alloc_key, restored per released block
 #include "chunk/internal/cpu_pause.h"                  // CHUNK_CPU_PAUSE
+#include "chunk/internal/def_force_inline.h"           // CHUNK_FORCE_INLINE (EXPERIMENT mode 3)
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::heavy_barrier / asymmetric_active
 
 #ifndef CHUNK_READ_RECLAIM_SLOTS
@@ -83,6 +86,10 @@
 //   2  the cost of an optimistic read on its success path: an acquire load of the
 //      reclaim epoch before, an acquire fence + a load + a compare after; the
 //      retry is not implemented (a mismatch is only counted)
+//   3  optimistic, no fence: acquire load of the epoch before; after, a relaxed re-load
+//      whose ADDRESS depends on the element value (pass()), ordered after the element
+//      load by the Arm address-dependency rule; without pass() (the other call sites)
+//      a plain relaxed re-load, same cost, no ordering
 #ifndef CHUNK_READ_SECTION_MODE
     #define CHUNK_READ_SECTION_MODE 0
 #endif
@@ -166,9 +173,15 @@ class ReadSection
     ReadSection(ReadSection&&)                 = delete;
     ReadSection& operator=(ReadSection&&)      = delete;
 
+    /// @brief EXPERIMENT mode 3: the re-check, ordered after the load of @p value by an
+    ///        address dependency; returns @p value. Other modes: returns @p value.
+    template <typename V>
+    [[nodiscard]] V pass(V value) const noexcept;
+
   private:
     ReaderSlot*   slot_ = nullptr;
     std::uint64_t seq_  = 0;
+    mutable bool  passed_ = false; ///< EXPERIMENT mode 3: pass() did the re-check
 };
 
 /**
