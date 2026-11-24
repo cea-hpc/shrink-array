@@ -346,14 +346,18 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
     /**
      * @brief Counter-mode: called when the per-chunk zero-counter reaches
      *        the chunk size (every element is now zero) -- compresses the
-     *        chunk.
+     *        chunk once the buffer confirms it.
      * @details Counter mode == !use_fast_block_compression, hence this
-     *          specialisation.
+     *          specialisation. The counter only sees the writes of the proxy:
+     *          a raw store (arr(i) = v after alloc_chunk()) leaves it high, and
+     *          compressing on its word alone loses that value. So the buffer is
+     *          counted first; when it disagrees, the pending write is stored and
+     *          the counter re-stated instead.
+     * @param pending the caller has not stored its zero yet (it returns right
+     *        after this call): this proxy's element counts as zero, and is
+     *        written when the chunk stays.
      */
-    void manage_full_zero() const
-    {
-        chunk_.clear_st();
-    }
+    void manage_full_zero(bool pending = false) const;
 };
 
 #ifdef __clang__

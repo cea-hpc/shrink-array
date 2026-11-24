@@ -106,6 +106,14 @@ the tag's checksum to the recipe.
   included -- was accepted in both. The geometry goes with the chunks, as in a move: the check
   is gone, the documentation says so, and `swap_move_validation` is built at the run-time
   geometry too, with a swap after a rechunk.
+- Serial builds, `zero` and `zero_or_value`: a value stored through the raw reference
+  `operator()(i)` (after `alloc_chunk()`) could be lost. These builds decide to fold a chunk
+  from per-chunk counters of its constants, kept by the writes through `operator[]` alone; the
+  raw store left them claiming "all constant", and the next `operator[]` write of the constant
+  into that chunk folded it, the raw value with it. The buffer is now counted before a fold:
+  when it disagrees, the chunk stays and the counters are set from the buffer. One scan of a
+  chunk per fold. Found by `differential_validation` (`bool`, seed 6); `alloc_chunk_validation`
+  has the case (`mixed`). OpenMP builds were not affected (no counters).
 
 ## 0.4.0 -- 2026-11-23
 

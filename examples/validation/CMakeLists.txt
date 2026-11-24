@@ -127,8 +127,9 @@
 #                           a preallocated chunk is materialised and holds
 #                           what it held (T{}, the second value it was
 #                           compressed to, its elements), raw stores stay in
-#                           their chunk; at dyn, its buffer has the array's
-#                           chunk size.
+#                           their chunk, and survive the operator[] writes of
+#                           the constant around them (serial counters); at
+#                           dyn, its buffer has the array's chunk size.
 #   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
