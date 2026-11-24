@@ -261,16 +261,19 @@ class Array
         return batch_bytes / (S * sizeof(T)) > 0 ? batch_bytes / (S * sizeof(T)) : 1;
     }
 
-    std::int64_t       n_;
-    std::int64_t       n_chunks_;
-    ChunkDesc<T>*      desc_     = nullptr;
-    unsigned*          written_  = nullptr;
-    Span*              failed_   = nullptr;
-    T**                lost_     = nullptr;
-    WriteCounters*     counters_ = nullptr;
-    unsigned long long failed_capacity_;
-    unsigned long long lost_capacity_;
-    DeviceArena<T, S>  arena_;
+    std::int64_t   n_;
+    std::int64_t   n_chunks_;
+    ChunkDesc<T>*  desc_     = nullptr;
+    unsigned*      written_  = nullptr;
+    Span*          failed_   = nullptr;
+    T**            lost_     = nullptr;
+    WriteCounters* counters_ = nullptr;
+    /// One counter for compress() and materialised(), allocated once instead of a device
+    /// allocation and free per call.
+    unsigned long long* scratch_ = nullptr;
+    unsigned long long  failed_capacity_;
+    unsigned long long  lost_capacity_;
+    DeviceArena<T, S>   arena_;
 };
 
 // ---------------------------------------------------------------------------
@@ -293,6 +296,7 @@ Array<T, S>::Array(std::int64_t n, unsigned long long arena_buffers, T constant)
     failed_       = allocate<Span>(static_cast<std::size_t>(failed_capacity_));
     lost_         = allocate<T*>(static_cast<std::size_t>(lost_capacity_));
     counters_     = allocate<WriteCounters>(1);
+    scratch_      = allocate<unsigned long long>(1);
     zero(written_, nc * Writer<T, S>::words);
     zero(counters_, 1);
     if (n_chunks_ > 0)
@@ -310,6 +314,7 @@ Array<T, S>::~Array()
     release(failed_);
     release(lost_);
     release(counters_);
+    release(scratch_);
 }
 
 template <typename T, unsigned int S>
@@ -420,7 +425,7 @@ unsigned long long Array<T, S>::compress()
 {
     synchronize();
     settle(); // a fresh buffer left by a kernel without finish() would fold on unwritten elements
-    unsigned long long* d = allocate<unsigned long long>(1);
+    unsigned long long* d = scratch_;
     zero(d, 1);
     arena_.normalise();
     if (n_chunks_ > 0)
@@ -433,7 +438,6 @@ unsigned long long Array<T, S>::compress()
     synchronize();
     unsigned long long folded = 0;
     copy(&folded, d, 1);
-    release(d);
     return folded;
 }
 
@@ -569,13 +573,11 @@ template <typename T, unsigned int S>
 template <typename T, unsigned int S>
 [[nodiscard]] unsigned long long Array<T, S>::materialised() const
 {
-    unsigned long long* d = allocate<unsigned long long>(1);
-    zero(d, 1);
-    kernels::count_materialised<<<256, 256>>>(desc_, n_chunks_, d);
+    zero(scratch_, 1);
+    kernels::count_materialised<<<256, 256>>>(desc_, n_chunks_, scratch_);
     synchronize();
     unsigned long long h = 0;
-    copy(&h, d, 1);
-    release(d);
+    copy(&h, scratch_, 1);
     return h;
 }
 
