@@ -36,10 +36,10 @@
  */
 
 #include <algorithm> // std::sort, std::shuffle
-#include <chrono>    // std::chrono::steady_clock
 #include <cstdint>   // std::int64_t
 #include <cstdio>    // std::printf
 #include <cstdlib>   // std::atoi
+#include <ctime>     // std::timespec_get (not <chrono>: see now_ms)
 #include <exception> // std::exception
 #include <random>    // std::mt19937_64
 #include <vector>    // std::vector
@@ -143,15 +143,25 @@ __global__ void __launch_bounds__(block) view_ranges(sd::Writer<double, S> w, co
     }
 }
 
+/// @brief A monotonic-enough wall clock in milliseconds. Not <chrono>: in C++20 it includes
+///        <format>, whose GCC 14.1 headers (bits/unicode.h, `++this`) ROCm's clang rejects once
+///        it is pointed at that GCC (--gcc-install-dir, MI300A).
+double now_ms()
+{
+    std::timespec ts{};
+    (void)std::timespec_get(&ts, TIME_UTC);
+    return (static_cast<double>(ts.tv_sec) * 1e3) + (static_cast<double>(ts.tv_nsec) * 1e-6);
+}
+
 /// @brief Milliseconds taken by @p f, which waits for the device.
 template <typename F>
 double time_once(F&& f)
 {
     sd::synchronize();
-    const auto t0 = std::chrono::steady_clock::now();
+    const double t0 = now_ms();
     f();
     sd::synchronize();
-    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    return now_ms() - t0;
 }
 
 double median(std::vector<double> t)
