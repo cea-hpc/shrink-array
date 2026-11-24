@@ -102,6 +102,21 @@ __global__ void count_materialised(const ChunkDesc<T>* desc, std::int64_t n_chun
     fetch_add(out, mine);
 }
 
+/// @brief Chunks of @p chunks with no buffer, added to @p out.
+template <typename T>
+__global__ void
+count_compressed(const ChunkDesc<T>* desc, const std::int64_t* chunks, unsigned long long m, unsigned long long* out)
+{
+    const unsigned long long stride = static_cast<unsigned long long>(gridDim.x) * blockDim.x;
+    unsigned long long       mine   = 0;
+    for (unsigned long long k = blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x; k < m;
+         k += stride)
+    {
+        mine += desc[chunks[k]].buf == nullptr ? 1 : 0;
+    }
+    fetch_add(out, mine);
+}
+
 /// @brief Every buffer back to the arena (after normalise()), every descriptor compressed.
 template <typename T, unsigned int S>
 __global__ void release_all(ChunkDesc<T>* desc, std::int64_t n_chunks, ArenaRef<T, S> arena)
@@ -279,12 +294,13 @@ class Array
     {
     };
     template <int BLOCK, typename F>
-    void                      finish_impl(const F* f);
-    void                      replay_appends();
-    void                      fit_lost_list();
-    void                      settle();
-    void                      reclaim_lost();
-    [[nodiscard]] std::size_t batch_chunks() const noexcept
+    void                             finish_impl(const F* f);
+    void                             replay_appends();
+    [[nodiscard]] unsigned long long count_compressed(const std::vector<std::int64_t>& chunks);
+    void                             fit_lost_list();
+    void                             settle();
+    void                             reclaim_lost();
+    [[nodiscard]] std::size_t        batch_chunks() const noexcept
     {
         constexpr std::size_t batch_bytes = std::size_t{64} << 20;
         return batch_bytes / (S * sizeof(T)) > 0 ? batch_bytes / (S * sizeof(T)) : 1;
@@ -505,11 +521,30 @@ void Array<T, S>::fit_lost_list()
     lost_          = allocate<T*>(static_cast<std::size_t>(lost_capacity_));
 }
 
-/// @details Deduplicated on the host: the append-buffer only fills when the arena runs out, it
-///          is small. For each element the last append (the highest index: one thread's appends
-///          are in its program order); the arena grows by one buffer per chunk appended to,
-///          plus a quarter for the publications the replay may lose. The replay may append
-///          again (to the emptied buffer): repeat.
+/// @brief Chunks of @p chunks whose descriptor holds no buffer (between phases).
+template <typename T, unsigned int S>
+[[nodiscard]] unsigned long long Array<T, S>::count_compressed(const std::vector<std::int64_t>& chunks)
+{
+    if (chunks.empty())
+    {
+        return 0;
+    }
+    std::int64_t* const d_chunks = allocate<std::int64_t>(chunks.size());
+    copy(d_chunks, chunks.data(), chunks.size());
+    zero(scratch_, 1);
+    kernels::count_compressed<<<256, 256>>>(desc_, d_chunks, static_cast<unsigned long long>(chunks.size()), scratch_);
+    synchronize();
+    unsigned long long h = 0;
+    copy(&h, scratch_, 1);
+    release(d_chunks);
+    return h;
+}
+
+/// @details Deduplicated on the host: the append-buffer only fills when the arena runs out or a
+///          wait is given up, it is small. For each element the last append (the highest index:
+///          one thread's appends are in its program order); the arena grows only if the chunks
+///          still compressed need more buffers than it has free (one claim, one buffer per
+///          chunk). The replay may append again (to the emptied buffer): repeat.
 template <typename T, unsigned int S>
 void Array<T, S>::replay_appends()
 {
@@ -537,8 +572,8 @@ void Array<T, S>::replay_appends()
         std::iota(order.begin(), order.end(), std::size_t{0});
         std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return idx[a] < idx[b]; });
         std::vector<std::int64_t> last_idx;
+        std::vector<std::int64_t> chunks;
         const auto                last_val = std::make_unique_for_overwrite<T[]>(m);
-        unsigned long long        chunks   = 0;
         for (std::size_t k = 0; k < m; ++k)
         {
             const std::size_t j = order[k];
@@ -546,13 +581,23 @@ void Array<T, S>::replay_appends()
             {
                 continue; // a later append of the same element
             }
-            chunks += last_idx.empty() || last_idx.back() / S != idx[j] / S ? 1 : 0;
+            if (chunks.empty() || chunks.back() != idx[j] / S)
+            {
+                chunks.push_back(idx[j] / S);
+            }
             last_val[last_idx.size()] = val[j];
             last_idx.push_back(idx[j]);
         }
         reclaim_lost();
-        arena_.grow(chunks + chunks / 4 + 1);
-        fit_lost_list();
+        // Room for the chunks still compressed: an append whose wait was given up (MI300A) or
+        // whose chunk was published later finds a buffer, and growing for it piled up arenas.
+        const unsigned long long needed = count_compressed(chunks);
+        const unsigned long long free   = arena_.buffers() - arena_.in_use();
+        if (needed > free)
+        {
+            arena_.grow(needed - free + needed / 4 + 1);
+            fit_lost_list();
+        }
         copy(&c, counters_, 1);
         c.n_append = 0;
         copy(counters_, &c, 1);

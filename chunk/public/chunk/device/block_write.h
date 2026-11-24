@@ -89,10 +89,11 @@ struct WriteCounters
 };
 
 /// Polls of a claimed descriptor before an assign() gives up and appends (docs/gpu_assign.md
-/// 3.3): far beyond a claim's duration (two atomics, no pre-fill); what it bounds is a claim
-/// held by a lane of the same AMD wavefront on a divergent path, which cannot progress while
-/// this lane polls.
-inline constexpr unsigned int claim_spin_max = 1U << 14;
+/// 3.3): far beyond a claim's duration (three device-scope atomics, no pre-fill); what it
+/// bounds is a claim held by a lane of the same AMD wavefront on a divergent path, which cannot
+/// progress while this lane polls. 2^14 polls (about 1 ms) gave up on 0.3% of the waits on the
+/// MI300A, where those atomics are slow: 2^16, the prototype's bound.
+inline constexpr unsigned int claim_spin_max = 1U << 16;
 
 /**
  * @brief What a write kernel gets of an array: trivially copyable, passed by value.
@@ -159,7 +160,8 @@ struct Writer
     __device__ T*              take_buffer(std::int64_t c) const noexcept;
     __device__ void            park(T* buf) const noexcept;
     __device__ void            fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept;
-    __device__ T*              materialise(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept;
+    __device__ T*              publish(std::int64_t c, ChunkDesc<T>& d) const noexcept;
+    __device__ T*              wait_claim(ChunkDesc<T>& d, T* found) const noexcept;
     __device__ T*              materialise_grouped(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept;
     __device__ void            append(std::int64_t i, T v) const noexcept;
     [[nodiscard]] __device__ T appended_or(std::int64_t i, T otherwise) const noexcept;
@@ -495,53 +497,55 @@ __device__ void Writer<T, S>::park(T* buf) const noexcept
     }
 }
 
-/// @details The claim first, the buffer after (docs/gpu_assign.md 3.3): a relaxed CAS from
-///          nullptr to busy_mark(); its winner alone takes a buffer and publishes it empty,
-///          tagged fresh (a relaxed exchange), or releases the claim when the arena is
-///          exhausted. No pre-fill: every writer marks its elements. The others poll the
-///          descriptor (relaxed) until the publication, up to claim_spin_max. @p seen: what the
-///          caller loaded (nullptr or busy_mark()). Returns the chunk's buffer (fresh-tagged,
-///          or untagged from a whole-chunk Writer::write), or nullptr: the caller appends.
+/// @details The claim's winner takes a buffer from the arena (not the spare slot: one atomic
+///          less before the publication, which every other writer of the chunk waits for) and
+///          publishes it empty, tagged fresh, by a relaxed exchange -- or releases the claim
+///          when the arena is exhausted. Returns what it published (nullptr: the caller appends).
 template <typename T, unsigned int S>
-__device__ T* Writer<T, S>::materialise(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept
+__device__ T* Writer<T, S>::publish(std::int64_t c, ChunkDesc<T>& d) const noexcept
 {
-    T* const busy  = busy_mark<T>();
-    T*       found = seen;
-    if (seen == nullptr)
-    {
-        found = cas_ptr(&d.buf, static_cast<T*>(nullptr), busy);
-        if (found == nullptr)
-        {
-            T* const mine = take_buffer(c);
-            T* const publ = mine != nullptr ? tag_fresh(mine) : nullptr;
-            (void)exchange_ptr(&d.buf, publ); // publish, or release the claim (arena exhausted)
-            return publ;
-        }
-    }
-    if (found == busy)
-    {
-        fetch_add(&counters->claim_wait, 1ULL);
-        for (unsigned int spins = 0; found == busy; ++spins)
-        {
-            if (spins == claim_spin_max)
-            {
-                fetch_add(&counters->claim_spin, 1ULL);
-                return nullptr;
-            }
-            backoff();
-            found = load_ptr(&d.buf);
-        }
-    }
-    return found; // nullptr: the claim was released, the arena is exhausted
+    T* const mine = arena.take(c);
+    T* const publ = mine != nullptr ? tag_fresh(mine) : nullptr;
+    (void)exchange_ptr(&d.buf, publ);
+    return publ;
 }
 
-/// @details Warp aggregation (docs/gpu_assign.md 3.3): the active lanes that need chunk @p c
-///          elect one leader, which claims or waits; the others get its result by a shuffle.
-///          A grid-stride first write has every lane of a warp on one chunk: one claim or one
-///          wait per warp instead of one per lane. The lanes active here are the ones that
-///          reached this point together, whatever branch the caller is in; the others group
-///          when they get here. The leaders of one call are on distinct chunks: none waits for
-///          another's claim.
+/// @details Polls the descriptor (relaxed loads, a short pause) while another thread's claim
+///          holds it, up to claim_spin_max. Returns the chunk's buffer (fresh-tagged, or
+///          untagged from a whole-chunk Writer::write), or nullptr: the claim was released
+///          (arena exhausted) or the wait given up; the caller appends.
+template <typename T, unsigned int S>
+__device__ T* Writer<T, S>::wait_claim(ChunkDesc<T>& d, T* found) const noexcept
+{
+    if (found != busy_mark<T>())
+    {
+        return found;
+    }
+    fetch_add(&counters->claim_wait, 1ULL);
+    for (unsigned int spins = 0; found == busy_mark<T>(); ++spins)
+    {
+        if (spins == claim_spin_max)
+        {
+            fetch_add(&counters->claim_spin, 1ULL);
+            return nullptr;
+        }
+        backoff();
+        found = load_ptr(&d.buf);
+    }
+    return found;
+}
+
+/**
+ * @details The claim first, the buffer after (docs/gpu_assign.md 3.3), aggregated per warp: the
+ *          active lanes that need chunk @p c elect a leader, and the others get its result by a
+ *          shuffle (a grid-stride first write: one claim or one wait per warp instead of one
+ *          per lane). Three phases, as the prototype learned: every leader tries its claim (a
+ *          relaxed CAS from nullptr to busy_mark()); the winners publish; only then do the
+ *          others wait. On AMD the lanes of a wavefront run in lockstep: a leader waiting in
+ *          the same call as a winner would hold back that winner's publication, and every
+ *          writer of its chunk behind it (the MI300A gave up waits that way). @p seen: what
+ *          this lane loaded (nullptr or busy_mark()).
+ */
 template <typename T, unsigned int S>
 __device__ T* Writer<T, S>::materialise_grouped(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept
 {
@@ -549,10 +553,23 @@ __device__ T* Writer<T, S>::materialise_grouped(std::int64_t c, ChunkDesc<T>& d,
     LaneMask       group  = 0;
     int            leader = 0;
     group_by_key(c, active, group, leader);
-    T* got = nullptr;
-    if (lane_id() == leader)
+    const bool lead  = lane_id() == leader;
+    T*         found = seen;
+    bool       won   = false;
+    if (lead && seen == nullptr)
     {
-        got = materialise(c, d, seen);
+        found = cas_ptr(&d.buf, static_cast<T*>(nullptr), busy_mark<T>());
+        won   = found == nullptr;
+    }
+    T* got = nullptr;
+    if (won)
+    {
+        got = publish(c, d);
+    }
+    sync_lanes(active); // every claim of this call published before any lane waits
+    if (lead && !won)
+    {
+        got = wait_claim(d, found);
     }
     return shuffle_ptr(active, got, leader);
 }
