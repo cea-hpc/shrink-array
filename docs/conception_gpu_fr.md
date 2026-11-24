@@ -772,7 +772,7 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   réalimente, et qui grandissent entre les phases. `device_arena_validation` vérifie les prises
   concurrentes (chaque buffer une fois, épuisement, aucun recouvrement), les restitutions, la
   croissance et les shards d'origine ; il se compile en CUDA ou en HIP
-  (`-DCHUNK_DEVICE_LANGUAGE=HIP`).
+  (`-DCHUNK_DEVICE_LANGUAGE=HIP`) et passe sur la T1000 et le MI300A.
 
 Suite : l'écriture alignée sur les chunks avec la publication relaxed (13), puis `compress()` et
 la conversion hôte <-> device.

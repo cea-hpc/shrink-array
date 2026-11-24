@@ -736,7 +736,7 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   free-stack segment per shard), taken by the write kernels, given back by the compression
   pass, grown between phases. `device_arena_validation` checks concurrent takes (each buffer
   once, exhaustion, no overlap), give-backs, growth and home shards; it builds for CUDA or HIP
-  (`-DCHUNK_DEVICE_LANGUAGE=HIP`).
+  (`-DCHUNK_DEVICE_LANGUAGE=HIP`) and passes on the T1000 and the MI300A.
 
 Next: the chunk-aligned write with the relaxed publication (13), then `compress()` and the
 host <-> device conversion.
