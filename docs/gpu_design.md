@@ -3,11 +3,12 @@
 > Version française : [conception_gpu_fr.md](conception_gpu_fr.md).
 
 > Status: written in October 2026 before any prototype; revised in November 2026 after the
-> stage-0 prototype ([gpu/proto](../gpu/proto/README.md), laptop RTX A1000). This document sets
-> out what a GPU backend of shrink-array should be, what it takes from the CPU version and what
-> it leaves behind, and the plan for deciding by measurement. The figures of section 13 are
-> laptop ratios against a flat array; the absolute times wait for the GH200 and the MI300A.
-> The decisions marked **(decided by the prototype)** were open in the first version.
+> stage-0 prototype ([gpu/proto](../gpu/proto/README.md): a laptop RTX A1000, then a GH200).
+> This document sets out what a GPU backend of shrink-array should be, what it takes from the
+> CPU version and what it leaves behind, and the plan for deciding by measurement. Section 13
+> gives the stage-0 figures, laptop and GH200; the MI300A is still to be measured. The
+> decisions marked **(decided by the prototype)** were open in the first version. Stage 1 has
+> started (end of section 13).
 
 ***
 
@@ -653,6 +654,24 @@ carry into stage 1:
   per chunk.
 
 Left for stage 0: the MI300A (HIP build, wavefronts of 64, the bounded wait on divergent paths).
+
+**Stage 1, started (November 2026).** The functions the host and device versions share are in
+the library, compiled for both:
+
+- `CHUNK_HD` (`chunk/internal/host_device.h`) is `__host__ __device__` in a CUDA or HIP
+  translation unit and nothing otherwise. It marks the geometry (`StaticChunkSize`,
+  `ChunkElems`, `log2int`), the value identity (`same_value`, `identity_less`,
+  `ValueIdentity::same`, the parts of `std::complex` and `std::array` included) and the
+  uniformity test of a chunk, `internal::walk_constant` (`chunk/internal/constant_walk.h`),
+  which the CPU's compression scans call and the device `compress()` will call.
+- `device_core_validation` (`-DCHUNK_DEVICE_CORE_CHECK=ON`) runs them in a CUDA kernel and
+  compares them with the host, signed zeros and NaN payloads included. It builds with
+  `-Werror=all-warnings` under nvcc, which only warns when such a function calls a host one.
+  It passes with nvcc 13.1 (T1000, sm_75), on the GH200 (sm_90) and with clang 23.
+
+Next: `chunk/public/chunk/device/`, starting from the prototype (`gpu/proto/zero_any_device.h`)
+-- the chunk descriptor and the read path first, then the arena, the claim, `compress()` and the
+host <-> device conversion.
 
 ## 14. Risks and open questions
 

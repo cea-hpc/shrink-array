@@ -3,12 +3,12 @@
 > English version: [gpu_design.md](gpu_design.md).
 
 > État : écrit en octobre 2026 avant tout prototype ; révisé en novembre 2026 après le
-> prototype de l'étape 0 ([gpu/proto](../gpu/proto/README.md), RTX A1000 du portable). Ce
-> document fixe ce qu'un backend GPU de shrink-array devrait être, ce qu'il reprend de la
-> version CPU et ce qu'il abandonne, et le plan pour trancher par la mesure. Les chiffres de la
-> section 13 sont des rapports au tableau plat mesurés sur le portable ; les temps absolus
-> attendent le GH200 et le MI300A. Les décisions marquées **(tranché par le prototype)** étaient
-> ouvertes dans la première version.
+> prototype de l'étape 0 ([gpu/proto](../gpu/proto/README.md) : RTX A1000 du portable, puis
+> GH200). Ce document fixe ce qu'un backend GPU de shrink-array devrait être, ce qu'il reprend
+> de la version CPU et ce qu'il abandonne, et le plan pour trancher par la mesure. La section 13
+> donne les chiffres de l'étape 0, portable et GH200 ; le MI300A reste à mesurer. Les décisions
+> marquées **(tranché par le prototype)** étaient ouvertes dans la première version. L'étape 1
+> a commencé (fin de la section 13).
 
 ***
 
@@ -684,6 +684,24 @@ conclusions qui passent à l'étape 1 :
 
 Reste pour l'étape 0 : le MI300A (compilation HIP, wavefronts de 64, attente bornée sur des
 branches divergentes).
+
+**Étape 1, commencée (novembre 2026).** Les fonctions que partagent les versions hôte et device
+sont dans la bibliothèque, compilées pour les deux :
+
+- `CHUNK_HD` (`chunk/internal/host_device.h`) vaut `__host__ __device__` dans une unité de
+  traduction CUDA ou HIP, et rien sinon. Il marque la géométrie (`StaticChunkSize`,
+  `ChunkElems`, `log2int`), l'identité des valeurs (`same_value`, `identity_less`,
+  `ValueIdentity::same`, parties de `std::complex` et de `std::array` comprises) et le test
+  d'uniformité d'un chunk, `internal::walk_constant` (`chunk/internal/constant_walk.h`), qu'appellent
+  les parcours de compression du CPU et qu'appellera le `compress()` device.
+- `device_core_validation` (`-DCHUNK_DEVICE_CORE_CHECK=ON`) les exécute dans un noyau CUDA et
+  les compare à l'hôte, zéros signés et charges utiles de NaN compris. Il compile avec
+  `-Werror=all-warnings` sous nvcc, qui ne fait qu'avertir quand une telle fonction en appelle
+  une de l'hôte. Il passe avec nvcc 13.1 (T1000, sm_75), sur le GH200 (sm_90) et avec clang 23.
+
+Suite : `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_device.h`) --
+le descripteur de chunk et le chemin de lecture d'abord, puis l'arène, la réservation
+(claim), `compress()` et la conversion hôte <-> device.
 
 ## 14. Risques et questions ouvertes
 
