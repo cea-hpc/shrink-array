@@ -29,6 +29,9 @@
  *            itself (several spans per kernel, the same f in every call), then finish(f):
  *            fresh buffers settled, spans the arena could not serve written again after it
  *            grew, lost buffers given back.
+ *          - writer() and finish(): for a kernel of the caller's that calls Writer::assign
+ *            (docs/gpu_assign.md), then finish(): the append-buffer replayed, fresh buffers
+ *            settled, spare and lost buffers given back.
  *          - compress(): the fold-back pass (compress.h), between phases.
  *          - assign(state) and image(): the host <-> device conversion, through the
  *            ArrayState of chunk_exchange.h (chunk/internal/chunk_state.h). A program calls
@@ -40,10 +43,12 @@
 
 #include <cstddef>     // std::size_t
 #include <cstdint>     // std::int64_t
+#include <algorithm>   // std::stable_sort
 #include <memory>      // std::unique_ptr, std::make_unique_for_overwrite
+#include <numeric>     // std::iota
 #include <stdexcept>   // std::runtime_error
 #include <string>      // std::to_string
-#include <type_traits> // std::is_trivially_copyable_v
+#include <type_traits> // std::is_trivially_copyable_v, std::is_same_v
 #include <vector>      // std::vector
 
 #include "chunk/device/arena.h"         // DeviceArena
@@ -181,8 +186,13 @@ class Array
     /// Threads per block of the write kernels: 256, or S below it.
     static constexpr int default_block = static_cast<int>(S < 256 ? S : 256);
 
-    /// @brief @p n elements reading @p constant; an arena of @p arena_buffers buffers to start.
-    Array(std::int64_t n, unsigned long long arena_buffers, T constant = T{});
+    /// Spare slots of the write path: more than the warps resident on an H100 or an MI300A.
+    static constexpr unsigned long long spare_slots = 1ULL << 14;
+
+    /// @brief @p n elements reading @p constant; an arena of @p arena_buffers buffers to start;
+    ///        an append-buffer of @p append_capacity entries (0: 1% of the arena's elements,
+    ///        4096 at least), for Writer::assign when the arena runs out.
+    Array(std::int64_t n, unsigned long long arena_buffers, T constant = T{}, unsigned long long append_capacity = 0);
     ~Array();
     Array(const Array&)            = delete;
     Array& operator=(const Array&) = delete;
@@ -195,7 +205,8 @@ class Array
         return View<T, S>{desc_, n_};
     }
 
-    /// @brief For a write kernel of the caller's that calls Writer::write; finish(f) after it.
+    /// @brief For a write kernel of the caller's that calls Writer::write (then finish(f)) or
+    ///        Writer::assign (then finish()).
     [[nodiscard]] Writer<T, S> writer() const noexcept;
 
     /// @brief a(i) = f(i) for i in [@p lo, @p hi) by the chunk-aligned loop, then finish(f).
@@ -208,6 +219,13 @@ class Array
     ///        growing it (as often as needed), gives the lost buffers back. Waits.
     template <int BLOCK = default_block, typename F>
     void finish(const F& f);
+
+    /// @brief The end of a write phase whose kernels called Writer::assign: replays the
+    ///        append-buffer (growing the arena), settles the fresh buffers, gives the spare
+    ///        and lost buffers back. Waits.
+    /// @throws std::runtime_error if the append-buffer overflowed (writes lost), or if a
+    ///         Writer::write span failed (it needs finish(f)).
+    void finish();
 
     /// @brief The compression pass (section 7), between phases: every materialised chunk
     ///        whose elements below size() are one value folds back to it, its buffer back to
@@ -243,6 +261,10 @@ class Array
     /// @brief Publications that lost their CAS since the array was made.
     [[nodiscard]] unsigned long long cas_lost() const;
 
+    /// @brief The write path's counters since the array was made (cas_lost, claim_wait,
+    ///        claim_spin; the list counters are reset by finish()).
+    [[nodiscard]] WriteCounters write_counters() const;
+
     /// @brief Every element, on the host (waits).
     [[nodiscard]] std::vector<T> to_host() const;
 
@@ -253,6 +275,13 @@ class Array
     }
 
   private:
+    struct NoFunction
+    {
+    };
+    template <int BLOCK, typename F>
+    void                      finish_impl(const F* f);
+    void                      replay_appends();
+    void                      fit_lost_list();
     void                      settle();
     void                      reclaim_lost();
     [[nodiscard]] std::size_t batch_chunks() const noexcept
@@ -273,6 +302,10 @@ class Array
     unsigned long long* scratch_ = nullptr;
     unsigned long long  failed_capacity_;
     unsigned long long  lost_capacity_;
+    T**                 spare_        = nullptr;
+    std::int64_t*       append_index_ = nullptr;
+    T*                  append_value_ = nullptr;
+    unsigned long long  append_capacity_;
     DeviceArena<T, S>   arena_;
 };
 
@@ -280,25 +313,33 @@ class Array
 
 /// @details The failed-span list holds two spans per chunk (a chunk-aligned loop fails once
 ///          per chunk at most; a caller's kernel may have more spans per chunk, past that the
-///          phase throws). The lost list holds one buffer per chunk: a lost CAS needs two
-///          blocks on one compressed chunk.
+///          phase throws). The lost list holds one buffer per buffer of the arena: a buffer is
+///          lost at most once per take (fit_lost_list() follows the arena's growth).
 template <typename T, unsigned int S>
-Array<T, S>::Array(std::int64_t n, unsigned long long arena_buffers, T constant)
+Array<T, S>::Array(std::int64_t n, unsigned long long arena_buffers, T constant, unsigned long long append_capacity)
     : n_(n)
     , n_chunks_((n + S - 1) / S)
     , failed_capacity_(2 * static_cast<unsigned long long>(n_chunks_) + 1)
-    , lost_capacity_(static_cast<unsigned long long>(n_chunks_) + 1)
+    , lost_capacity_(0)
+    , append_capacity_(append_capacity != 0                ? append_capacity
+                       : arena_buffers * S / 100 > 4096ULL ? arena_buffers * S / 100
+                                                           : 4096ULL)
     , arena_(arena_buffers)
 {
     const auto nc = static_cast<std::size_t>(n_chunks_);
     desc_         = allocate<ChunkDesc<T>>(nc);
     written_      = allocate<unsigned>(nc * Writer<T, S>::words);
     failed_       = allocate<Span>(static_cast<std::size_t>(failed_capacity_));
-    lost_         = allocate<T*>(static_cast<std::size_t>(lost_capacity_));
     counters_     = allocate<WriteCounters>(1);
     scratch_      = allocate<unsigned long long>(1);
+    spare_        = allocate<T*>(spare_slots);
+    append_index_ = allocate<std::int64_t>(static_cast<std::size_t>(append_capacity_));
+    append_value_ = allocate<T>(static_cast<std::size_t>(append_capacity_));
     zero(written_, nc * Writer<T, S>::words);
     zero(counters_, 1);
+    zero(spare_, spare_slots);
+    kernels::reset_append<<<256, 256>>>(append_index_, append_capacity_);
+    fit_lost_list();
     if (n_chunks_ > 0)
     {
         kernels::init_desc<<<256, 256>>>(desc_, n_chunks_, constant);
@@ -315,6 +356,9 @@ Array<T, S>::~Array()
     release(lost_);
     release(counters_);
     release(scratch_);
+    release(spare_);
+    release(append_index_);
+    release(append_value_);
 }
 
 template <typename T, unsigned int S>
@@ -330,6 +374,11 @@ template <typename T, unsigned int S>
     w.failed          = failed_;
     w.failed_capacity = failed_capacity_;
     w.counters        = counters_;
+    w.spare           = spare_;
+    w.spare_slots     = spare_slots;
+    w.append_index    = append_index_;
+    w.append_value    = append_value_;
+    w.append_capacity = append_capacity_;
     return w;
 }
 
@@ -353,7 +402,23 @@ template <typename T, unsigned int S>
 template <int BLOCK, typename F>
 void Array<T, S>::finish(const F& f)
 {
+    finish_impl<BLOCK>(&f);
+}
+
+template <typename T, unsigned int S>
+void Array<T, S>::finish()
+{
+    finish_impl<default_block>(static_cast<const NoFunction*>(nullptr));
+}
+
+/// @details The appends first: their replay skips the elements marked in a fresh buffer, and
+///          settle_fresh clears the marks (docs/gpu_assign.md 3.4, 3.5).
+template <typename T, unsigned int S>
+template <int BLOCK, typename F>
+void Array<T, S>::finish_impl(const F* f)
+{
     synchronize();
+    replay_appends();
     settle();
     for (;;)
     {
@@ -369,15 +434,24 @@ void Array<T, S>::finish(const F& f)
             break;
         }
         const unsigned long long n_spans = c.n_failed;
+        if constexpr (std::is_same_v<F, NoFunction>)
+        {
+            throw std::runtime_error("shrink_array::device::Array::finish(): " + std::to_string(n_spans) +
+                                     " Writer::write spans to write again: call finish(f)");
+        }
         reclaim_lost();
         arena_.grow(n_spans + n_spans / 4 + 1);
+        fit_lost_list();
         Span* spans = allocate<Span>(static_cast<std::size_t>(n_spans));
         copy(spans, failed_, static_cast<std::size_t>(n_spans));
         copy(&c, counters_, 1);
         c.n_failed = 0;
         copy(counters_, &c, 1);
         const auto blocks = static_cast<unsigned int>(n_spans < 4096 ? n_spans : 4096);
-        kernels::rewrite_spans<BLOCK><<<blocks, BLOCK>>>(writer(), spans, n_spans, f);
+        if constexpr (!std::is_same_v<F, NoFunction>)
+        {
+            kernels::rewrite_spans<BLOCK><<<blocks, BLOCK>>>(writer(), spans, n_spans, *f);
+        }
         synchronize();
         release(spans);
         settle();
@@ -407,13 +481,90 @@ void Array<T, S>::reclaim_lost()
         throw std::runtime_error("shrink_array::device::Array: " + std::to_string(c.n_lost) +
                                  " lost buffers, past the capacity of the list");
     }
+    arena_.normalise();
+    kernels::reclaim_lost<<<64, 256>>>(writer(), c.n_lost); // the spare slots too
+    synchronize();
     if (c.n_lost > 0)
     {
-        arena_.normalise();
-        kernels::reclaim_lost<<<64, 256>>>(writer(), c.n_lost);
-        synchronize();
         c.n_lost = 0;
         copy(counters_, &c, 1);
+    }
+}
+
+/// @details The lost list holds as many buffers as the arena: called after every growth,
+///          between phases.
+template <typename T, unsigned int S>
+void Array<T, S>::fit_lost_list()
+{
+    if (lost_capacity_ >= arena_.buffers() && lost_ != nullptr)
+    {
+        return;
+    }
+    release(lost_);
+    lost_capacity_ = arena_.buffers() > 0 ? arena_.buffers() : 1;
+    lost_          = allocate<T*>(static_cast<std::size_t>(lost_capacity_));
+}
+
+/// @details Deduplicated on the host: the append-buffer only fills when the arena runs out, it
+///          is small. For each element the last append (the highest index: one thread's appends
+///          are in its program order); the arena grows by one buffer per chunk appended to,
+///          plus a quarter for the publications the replay may lose. The replay may append
+///          again (to the emptied buffer): repeat.
+template <typename T, unsigned int S>
+void Array<T, S>::replay_appends()
+{
+    for (;;)
+    {
+        WriteCounters c{};
+        copy(&c, counters_, 1);
+        if (c.n_append == 0)
+        {
+            return;
+        }
+        if (c.n_append > append_capacity_)
+        {
+            throw std::runtime_error(
+                "shrink_array::device::Array::finish: " + std::to_string(c.n_append - append_capacity_) +
+                " writes lost (append-buffer full: a larger one, or a larger arena)");
+        }
+        const auto                m = static_cast<std::size_t>(c.n_append);
+        std::vector<std::int64_t> idx(m);
+        const auto                val = std::make_unique_for_overwrite<T[]>(m);
+        copy(idx.data(), append_index_, m);
+        copy(val.get(), append_value_, m);
+        kernels::reset_append<<<256, 256>>>(append_index_, m); // before the replay appends again
+        std::vector<std::size_t> order(m);
+        std::iota(order.begin(), order.end(), std::size_t{0});
+        std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return idx[a] < idx[b]; });
+        std::vector<std::int64_t> last_idx;
+        const auto                last_val = std::make_unique_for_overwrite<T[]>(m);
+        unsigned long long        chunks   = 0;
+        for (std::size_t k = 0; k < m; ++k)
+        {
+            const std::size_t j = order[k];
+            if (k + 1 < m && idx[order[k + 1]] == idx[j])
+            {
+                continue; // a later append of the same element
+            }
+            chunks += last_idx.empty() || last_idx.back() / S != idx[j] / S ? 1 : 0;
+            last_val[last_idx.size()] = val[j];
+            last_idx.push_back(idx[j]);
+        }
+        reclaim_lost();
+        arena_.grow(chunks + chunks / 4 + 1);
+        fit_lost_list();
+        copy(&c, counters_, 1);
+        c.n_append = 0;
+        copy(counters_, &c, 1);
+        const std::size_t   u       = last_idx.size();
+        std::int64_t* const d_index = allocate<std::int64_t>(u);
+        T* const            d_value = allocate<T>(u);
+        copy(d_index, last_idx.data(), u);
+        copy(d_value, last_val.get(), u);
+        kernels::replay_appends<T, S><<<256, 256>>>(writer(), d_index, d_value, u);
+        synchronize();
+        release(d_index);
+        release(d_value);
     }
 }
 
@@ -478,6 +629,7 @@ void Array<T, S>::assign(const ArrayState<T>& state)
     if (arena_.buffers() < mats.size())
     {
         arena_.grow(mats.size() - arena_.buffers()); // every buffer is free now
+        fit_lost_list();
     }
     const std::size_t   batch   = batch_chunks();
     const auto          staging = std::make_unique_for_overwrite<T[]>(batch * S);
@@ -579,6 +731,14 @@ template <typename T, unsigned int S>
     unsigned long long h = 0;
     copy(&h, scratch_, 1);
     return h;
+}
+
+template <typename T, unsigned int S>
+[[nodiscard]] WriteCounters Array<T, S>::write_counters() const
+{
+    WriteCounters c{};
+    copy(&c, counters_, 1);
+    return c;
 }
 
 template <typename T, unsigned int S>

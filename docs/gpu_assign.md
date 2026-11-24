@@ -2,10 +2,12 @@
 
 > Version française : [gpu_assign_fr.md](gpu_assign_fr.md).
 
-> Status: design note, November 2026, for review before any code. It replaces, for stage 1,
-> the materialisation of [gpu_design.md](gpu_design.md) 6.1 and 6.2 (pre-fill, release
-> publication, claim) by the deferred fill that the chunk-aligned path already uses
-> (gpu_design.md, section 13, "relaxed publication").
+> Status: design note, November 2026, implemented on the `gpu` branch
+> (`Writer::assign`, `Writer::load`, `Array::finish()`, `device_assign_validation`). It
+> replaces, for stage 1, the materialisation of [gpu_design.md](gpu_design.md) 6.1 and 6.2
+> (pre-fill, release publication, claim with acquire loads) by the deferred fill that the
+> chunk-aligned path already uses (gpu_design.md, section 13, "relaxed publication"), with a
+> claim that keeps one buffer per chunk (3.3: the first version without it did not).
 
 ## 1. The problem
 
@@ -44,10 +46,10 @@ __device__ void Writer::assign(std::int64_t i, T v) const
     const unsigned     e = static_cast<unsigned>(i & mask);
     ChunkDesc<T>&      d = desc[c];
     T* buf = load_ptr(&d.buf);                   // relaxed
-    if (buf == nullptr)
+    if (buf == nullptr || buf == busy_mark<T>())
     {
         if (same_value(v, d.constant)) return;   // 1. the constant onto its chunk: nothing
-        buf = materialise(c, d);                 // 2. a fresh buffer, or nullptr (arena exhausted)
+        buf = materialise(c, d, buf);            // 2. claim, or wait for the claim (3.3)
         if (buf == nullptr) { append(i, v); return; }
     }
     if (is_fresh(buf))                           // 3. fresh: the element, then its bit
@@ -60,11 +62,12 @@ __device__ void Writer::assign(std::int64_t i, T v) const
 }
 ```
 
-`materialise` looks at the descriptor again (a chunk published meanwhile costs nothing), takes a
-buffer (the warp's spare slot, else the arena: `DeviceArena::take`), and publishes it tagged fresh
-by a **relaxed** CAS from `nullptr`. The loser keeps its buffer in its spare slot and writes into
-the winner's. No pre-fill, no claim, no wait, no fence. A buffer taken from the arena is never read
-before its elements are written: its old contents do not matter.
+`materialise` claims the chunk by a **relaxed** CAS from `nullptr` to the busy mark; its winner
+alone takes a buffer (`DeviceArena::take`) and publishes it empty, tagged fresh, by a relaxed
+exchange -- or puts `nullptr` back when the arena is exhausted. The other threads poll the
+descriptor (relaxed loads, a short pause) until the publication (3.3). No pre-fill, no fence. A
+buffer taken from the arena is never read before its elements are written: its old contents do
+not matter.
 
 Case 4 is the hot path: a relaxed load and a store, measured at 1.34x (MI300A) and 1.76x (GH200)
 a flat write in the prototype, 1.1x to 1.2x with the descriptor loads issued ahead.
@@ -74,22 +77,39 @@ a flat write in the prototype, 1.1x to 1.2x with the descriptor loads issued ahe
 `a(i) += v` reads first. `Writer::load(i)` follows the same cases: the constant of a compressed
 chunk; in a fresh buffer the element if its bit is set, else the constant; in an older buffer
 the element. A thread always reads what it wrote itself (same thread, same address), and what a
-thread of its block wrote before a `__syncthreads()` (block scope). Communication between blocks
+thread of its block wrote before a `__syncthreads()` (block scope). That includes a write that
+went to the append-buffer (3.4): once the arena has run out in the kernel, an element that would
+read the constant is looked up in the append-buffer first, from its end -- slow, but only until
+`finish()`; without it `a(i) += 1` twice by one thread lost an update. Communication between blocks
 inside a kernel needs device-scope fences in the application, as on a flat array; they order the
 descriptor, the bitmap and the elements alike.
 
 `View` (the read path) is for read kernels only and never sees a fresh tag: `finish()` settles.
 
-### 3.3 Lost publications
+### 3.3 The claim before the buffer
 
-On a grid-stride first write, the S/32 warps (S/64 wavefronts) that share a chunk all find it
-compressed at once. Without a pre-fill a lost publication costs one take and one exchange into the
-warp's spare slot, which its next materialisation reuses (the prototype's mechanism). The arena
-pressure is bounded: one buffer per materialised chunk, plus one per resident warp in the spare
-slots, plus the lost list when a slot is already held (given back at `finish()`).
+The first version took the buffer **before** its CAS, as the prototype's race did, and counted
+on a lost publication being cheap without a pre-fill. It was not the cost but the count: with
+scattered writes some 32 threads of different warps meet each compressed chunk at once, each
+took a buffer, and one wave took about 31 buffers too many per chunk. `device_assign_validation`
+measured it: an arena of one buffer per chunk (4 096) grew to 26 817 buffers in 19 arenas
+(242 000 lost publications), most writes went through the append-buffer, and the limit of 32
+arenas was near.
 
-Warp aggregation (one materialisation per group of lanes on the same chunk, gpu_design.md 6.2
-step 1) is an optimisation, not a need: it is measured, not assumed (section 5).
+So the claim comes first: a CAS from `nullptr` to the busy mark, then the winner alone takes a
+buffer. The others wait, but the wait is short -- between its CAS and its publication the winner
+makes one or two atomics on its shard, no pre-fill -- and bounded (`claim_spin_max` polls, then
+the append-buffer): what the bound is for is a claim held by a lane of the same AMD wavefront on a
+divergent path, which cannot progress while this lane polls. Measured on the T1000: the roomy
+arenas do not grow, no wait reached the bound in millions.
+
+A claimed chunk still reads its constant (case 1 holds under the mark); `load()` reads it as
+compressed. The chunk-aligned path waits for an `assign()` claim of the same kernel the same way,
+and records its span past the bound.
+
+Warp aggregation (one claim per group of lanes on the same chunk, gpu_design.md 6.2 step 1) is an
+optimisation: the grid-stride first write is its case (every lane of a warp polls the same
+claim), measured in section 5.
 
 ### 3.4 Arena exhausted
 
@@ -133,8 +153,9 @@ application, as on a `std::vector`; the library does not order them.
 - **Every write lands or is replayed.** Case 1 changes nothing; cases 3 and 4 store; case 2 either
   publishes or finds the winner's buffer, or appends; the replay applies the appends that no later
   direct write superseded (3.4).
-- **Nothing waits.** No spin, so no deadlock between lanes of one AMD wavefront on divergent paths
-  (the case the claim's bound was there for).
+- **Every wait ends.** A claim's holder waits for nothing between its CAS and its publication;
+  the polls are bounded, and a write that gives up goes to the append-buffer: two lanes of one
+  AMD wavefront on divergent paths cost a replay, not a deadlock.
 - **The descriptor and the bitmap are only touched by atomics** (relaxed, device scope): they are
   coherent; the elements are plain stores of distinct threads to distinct elements, ordered for the
   next kernels by the kernel boundary.
@@ -148,6 +169,12 @@ application, as on a `std::vector`; the library does not order them.
 | write into a fresh chunk | -- | one relaxed atomic or per element (per 32 elements if aggregated) |
 | random range rewrites, then `finish()` + `compress()` | 2.5x / 64x (claim, relaxed load) | between the two above |
 
+T1000, 0.5 GiB of doubles, S = 256 / 1024 (`device_bench`, `finish()` timed): `assign()` into
+materialised chunks 0.91x / 0.72x, `a(i) = load(i) + 1` 1.08x / 1.18x, scattered into
+materialised chunks 2.24x / 2.32x and as a first write 4.59x / 4.36x (against the flat scattered
+write), grid-stride first write 7.31x / 6.22x: there every lane of a warp waits for one claim,
+the case of warp aggregation.
+
 Added to `device_bench`: grid-stride first write by `assign()`, scattered writes (a random
 permutation of the indices), `+=` on a materialised array, range rewrites by `assign()`. Each
 with and without warp aggregation, and with one atomic or per element against one per 32 lanes
@@ -157,9 +184,8 @@ when they write consecutive elements (a ballot).
 
 - **The prototype's protocol** (acquire load, pre-fill, release CAS, claim): 300x to 600x on the
   MI300A.
-- **Claim without pre-fill** (a busy mark, the others wait for the buffer): the wait remains, and
-  with it the divergent-wavefront case and its bound; the deferred fill makes the claim
-  unnecessary.
+- **No claim** (the buffer taken before the CAS, losers parked in spare slots): the first
+  version; it took about 31 buffers too many per chunk under scattered writes (3.3).
 - **Uncached or fine-grained memory for the buffers**, coherent across the XCDs without cache
   operations: it would slow down every read and write of a materialised chunk, the hot path.
 - **A sentinel value instead of the bitmap** (an unwritten element holds a reserved value): there
@@ -177,9 +203,10 @@ when they write consecutive elements (a ballot).
   catch it in `View` (a tagged pointer is misaligned).
 - **The append-buffer's size**: an overflow is an error (gpu_design.md 6.4). Default to
   discuss: a fraction of the arena, or of n.
-- **Decisions asked for**: drop the claim and race variants from the library (the prototype
-  keeps them as references); warp aggregation in the first version or after the measurements;
-  the default size of the append-buffer.
+- **Decisions taken** (2026-11-24): the prototype's claim (pre-fill, acquire loads) and race
+  stay out of the library, as references in `gpu/proto`; the claim of 3.3 replaces them. Warp
+  aggregation after the measurements. The append-buffer holds 1% of the arena's elements by
+  default (4 096 at least), set at construction.
 
 ## 8. Plan
 

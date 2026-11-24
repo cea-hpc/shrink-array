@@ -801,9 +801,13 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   slower (1.21x against 0.79x at S = 1024, 2.02x at S = 256: at the criterion), to be looked
   at. The conversion: 12 to 18 GB/s on the GH200 (not tuned).
 
-Next: the `assign()` path for arbitrary kernels without device-scope acquire or release
-(MI300A), designed in [gpu_assign.md](gpu_assign.md); then a kernel-level facade (Kokkos,
-section 13 stage 3).
+- `Writer::assign` / `load`, `Array::finish()`: the writes at arbitrary indices without
+  device-scope acquire or release, designed and measured in [gpu_assign.md](gpu_assign.md);
+  `device_assign_validation` passes on the T1000.
+
+Next: warp aggregation of the claims (the grid-stride first write by `assign()`, 6x to 7x on the
+T1000), the GH200 and MI300A measurements; then a kernel-level facade (Kokkos, section 13
+stage 3).
 
 ## 14. Risks and open questions
 

@@ -88,6 +88,16 @@ __device__ inline P* load_ptr(P* const* slot) noexcept
 #endif
 }
 
+/// @brief Atomic load of a 32-bit word (a bit of the `written` bitmap).
+__device__ inline unsigned load(const unsigned* word) noexcept
+{
+#if defined(CHUNK_DEVICE_HIP)
+    return __hip_atomic_load(const_cast<unsigned*>(word), __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+#else
+    return *reinterpret_cast<const volatile unsigned*>(word);
+#endif
+}
+
 /// @brief Atomic load of a 64-bit counter (a look before an atomic on it).
 template <typename C>
 __device__ inline C load(const C* counter) noexcept
@@ -97,6 +107,16 @@ __device__ inline C load(const C* counter) noexcept
     return __hip_atomic_load(const_cast<C*>(counter), __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
 #else
     return *reinterpret_cast<const volatile C*>(counter);
+#endif
+}
+
+/// @brief A short pause in a polling loop (a claimed descriptor): lets the claim's holder run.
+__device__ inline void backoff() noexcept
+{
+#if defined(CHUNK_DEVICE_HIP)
+    __builtin_amdgcn_s_sleep(2);
+#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+    __nanosleep(64);
 #endif
 }
 

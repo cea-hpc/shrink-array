@@ -122,6 +122,12 @@ the tag's checksum to the recipe.
   units (nvcc cannot compile the host arrays' headers). `ChunkKind`, `ChunkState` and
   `ArrayState` moved to `chunk/internal/chunk_state.h`, included by `chunk_exchange.h`: its
   interface is unchanged. `device_convert_validation` checks a round trip.
+- `device::Writer::assign` / `load` and `device::Array::finish()` (experimental,
+  docs/gpu_assign.md): writes at arbitrary indices from any thread, with no device-scope
+  acquire or release: a claim (relaxed CAS to a busy mark) before the buffer, published empty
+  and tagged fresh, the elements marked in the chunk's bitmap and the rest filled after the
+  kernel; a bounded wait, then the append-buffer, replayed by `finish()` (the last append of
+  each element, unless a direct write came after). `device_assign_validation` checks it.
 
 ### Fixed
 

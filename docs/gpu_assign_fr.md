@@ -2,10 +2,13 @@
 
 > English version: [gpu_assign.md](gpu_assign.md).
 
-> État : note de conception, novembre 2026, soumise à relecture avant tout code. Elle remplace,
-> pour l'étape 1, la matérialisation de [conception_gpu_fr.md](conception_gpu_fr.md) 6.1 et 6.2
-> (pré-remplissage, publication release, réservation) par le remplissage différé qu'utilise déjà
-> le chemin aligné sur les chunks (conception_gpu_fr.md, section 13, « publication relaxed »).
+> État : note de conception, novembre 2026, implémentée sur la branche `gpu`
+> (`Writer::assign`, `Writer::load`, `Array::finish()`, `device_assign_validation`). Elle
+> remplace, pour l'étape 1, la matérialisation de [conception_gpu_fr.md](conception_gpu_fr.md)
+> 6.1 et 6.2 (pré-remplissage, publication release, réservation avec loads acquire) par le
+> remplissage différé qu'utilise déjà le chemin aligné sur les chunks (conception_gpu_fr.md,
+> section 13, « publication relaxed »), avec une réservation qui garde un buffer par chunk (3.3 :
+> la première version sans elle ne le faisait pas).
 
 ## 1. Le problème
 
@@ -45,10 +48,10 @@ __device__ void Writer::assign(std::int64_t i, T v) const
     const unsigned     e = static_cast<unsigned>(i & mask);
     ChunkDesc<T>&      d = desc[c];
     T* buf = load_ptr(&d.buf);                   // relaxed
-    if (buf == nullptr)
+    if (buf == nullptr || buf == busy_mark<T>())
     {
         if (same_value(v, d.constant)) return;   // 1. la constante sur son chunk : rien
-        buf = materialise(c, d);                 // 2. un buffer frais, ou nullptr (arène épuisée)
+        buf = materialise(c, d, buf);            // 2. réserver, ou attendre la réservation (3.3)
         if (buf == nullptr) { append(i, v); return; }
     }
     if (is_fresh(buf))                           // 3. frais : l'élément, puis son bit
@@ -61,11 +64,11 @@ __device__ void Writer::assign(std::int64_t i, T v) const
 }
 ```
 
-`materialise` relit le descripteur (un chunk publié entre-temps ne coûte rien), prend un buffer
-(l'emplacement de réserve du warp, sinon l'arène : `DeviceArena::take`) et le publie marqué frais
-par un CAS **relaxed** depuis `nullptr`. Le perdant garde son buffer dans son emplacement de
-réserve et écrit dans celui du gagnant. Ni pré-remplissage, ni réservation, ni attente, ni
-fence. Un buffer pris dans l'arène n'est jamais lu avant que ses éléments soient écrits : son
+`materialise` réserve le chunk par un CAS **relaxed** de `nullptr` vers la marque occupée ; seul
+son gagnant prend un buffer (`DeviceArena::take`) et le publie vide, marqué frais, par un échange
+relaxed -- ou remet `nullptr` quand l'arène est épuisée. Les autres threads relisent le
+descripteur (loads relaxed, une courte pause) jusqu'à la publication (3.3). Ni pré-remplissage,
+ni fence. Un buffer pris dans l'arène n'est jamais lu avant que ses éléments soient écrits : son
 ancien contenu est sans importance.
 
 Le cas 4 est le chemin chaud : un load relaxed et un store, mesuré à 1,34x (MI300A) et 1,76x
@@ -77,25 +80,43 @@ en avance.
 `a(i) += v` lit d'abord. `Writer::load(i)` suit les mêmes cas : la constante d'un chunk compressé ;
 dans un buffer frais l'élément si son bit est mis, sinon la constante ; dans un buffer plus ancien
 l'élément. Un thread lit toujours ce qu'il a écrit lui-même (même thread, même adresse), et ce
-qu'un thread de son bloc a écrit avant un `__syncthreads()` (portée du bloc). Une communication
+qu'un thread de son bloc a écrit avant un `__syncthreads()` (portée du bloc). Y compris une
+écriture partie dans l'append-buffer (3.4) : une fois l'arène épuisée dans le noyau, un élément
+qui lirait la constante est d'abord cherché dans l'append-buffer, depuis sa fin -- lent, mais
+seulement jusqu'à `finish()` ; sans cela, `a(i) += 1` deux fois par un même thread perdait une
+mise à jour. Une communication
 entre blocs à l'intérieur d'un noyau demande des fences à l'échelle du device dans l'application,
 comme sur un tableau plat ; elles ordonnent le descripteur, le bitmap et les éléments de même.
 
 `View` (le chemin de lecture) ne sert qu'aux noyaux de lecture et ne voit jamais de marque
 fraîche : `finish()` complète les buffers.
 
-### 3.3 Les publications perdues
+### 3.3 La réservation avant le buffer
 
-Sur une première écriture en grid-stride, les S/32 warps (S/64 wavefronts) qui partagent un chunk
-le trouvent tous compressé en même temps. Sans pré-remplissage, une publication perdue coûte une
-prise et un échange dans l'emplacement de réserve du warp, que sa matérialisation suivante
-réutilise (le mécanisme du prototype). La pression sur l'arène est bornée : un buffer par chunk
-matérialisé, plus un par warp résident dans les emplacements de réserve, plus la liste des
-perdus quand un emplacement est déjà occupé (rendue à `finish()`).
+La première version prenait le buffer **avant** son CAS, comme la course du prototype, en
+comptant qu'une publication perdue coûte peu sans pré-remplissage. Ce n'est pas le coût qui
+comptait, mais le nombre : avec des écritures dispersées, quelque 32 threads de warps différents
+tombent en même temps sur chaque chunk compressé, chacun prenait un buffer, et une vague prenait
+environ 31 buffers de trop par chunk. `device_assign_validation` l'a mesuré : une arène d'un
+buffer par chunk (4 096) est passée à 26 817 buffers en 19 arènes (242 000 publications
+perdues), la plupart des écritures passaient par l'append-buffer, et la limite de 32 arènes était
+proche.
 
-L'agrégation par warp (une matérialisation par groupe de lanes sur le même chunk,
-conception_gpu_fr.md 6.2 étape 1) est une optimisation, pas une nécessité : elle est mesurée, pas
-supposée (section 5).
+La réservation vient donc d'abord : un CAS de `nullptr` vers la marque occupée, puis seul le
+gagnant prend un buffer. Les autres attendent, mais l'attente est courte -- entre son CAS et sa
+publication, le gagnant fait une ou deux atomiques sur son shard, sans pré-remplissage -- et
+bornée (`claim_spin_max` relectures, puis l'append-buffer) : la borne sert pour une réservation
+tenue par une lane du même wavefront AMD sur une branche divergente, qui ne peut pas avancer
+pendant que cette lane relit. Mesuré sur la T1000 : les arènes larges ne grandissent pas, aucune
+attente n'a atteint la borne sur des millions.
+
+Un chunk réservé lit toujours sa constante (le cas 1 tient sous la marque) ; `load()` le lit comme
+compressé. Le chemin aligné attend de même une réservation d'`assign()` du même noyau, et note sa
+plage au-delà de la borne.
+
+L'agrégation par warp (une réservation par groupe de lanes sur le même chunk,
+conception_gpu_fr.md 6.2 étape 1) est une optimisation : la première écriture en grid-stride est
+son cas (toutes les lanes d'un warp attendent la même réservation), mesuré section 5.
 
 ### 3.4 Arène épuisée
 
@@ -142,9 +163,10 @@ les ordonne pas.
 - **Chaque écriture arrive ou est rejouée.** Le cas 1 ne change rien ; les cas 3 et 4 écrivent ; le
   cas 2 publie, ou trouve le buffer du gagnant, ou ajoute à l'append-buffer ; le rejeu applique
   les ajouts qu'aucune écriture directe ultérieure n'a remplacés (3.4).
-- **Rien n'attend.** Pas de boucle d'attente, donc pas d'interblocage entre lanes d'un même
-  wavefront AMD sur des branches divergentes (le cas pour lequel la borne de la réservation
-  existait).
+- **Toute attente finit.** Le détenteur d'une réservation n'attend rien entre son CAS et sa
+  publication ; les relectures sont bornées, et une écriture qui abandonne part dans
+  l'append-buffer : deux lanes d'un même wavefront AMD sur des branches divergentes coûtent un
+  rejeu, pas un interblocage.
 - **Le descripteur et le bitmap ne sont touchés que par des atomiques** (relaxed, à l'échelle du
   device) : ils sont cohérents ; les éléments sont des stores simples de threads distincts sur des
   éléments distincts, ordonnés pour les noyaux suivants par la frontière de noyau.
@@ -158,6 +180,12 @@ les ordonne pas.
 | écriture dans un chunk frais | -- | un or atomique relaxed par élément (par 32 éléments si agrégé) |
 | réécritures de plages aléatoires, puis `finish()` + `compress()` | 2,5x / 64x (réservation, load relaxed) | entre les deux ci-dessus |
 
+T1000, 0,5 Gio de doubles, S = 256 / 1024 (`device_bench`, `finish()` compris) : `assign()` dans
+des chunks matérialisés 0,91x / 0,72x, `a(i) = load(i) + 1` 1,08x / 1,18x, dispersé dans des
+chunks matérialisés 2,24x / 2,32x et en première écriture 4,59x / 4,36x (contre l'écriture
+dispersée plate), première écriture en grid-stride 7,31x / 6,22x : toutes les lanes d'un warp y
+attendent une même réservation, le cas de l'agrégation par warp.
+
 Ajouts à `device_bench` : première écriture en grid-stride par `assign()`, écritures dispersées
 (une permutation aléatoire des indices), `+=` sur un tableau matérialisé, réécritures de plages
 par `assign()`. Chacun avec et sans agrégation par warp, et avec un or atomique par élément contre
@@ -167,9 +195,9 @@ un par 32 lanes quand elles écrivent des éléments consécutifs (un ballot).
 
 - **Le protocole du prototype** (load acquire, pré-remplissage, CAS release, réservation) : 300x
   à 600x sur le MI300A.
-- **La réservation sans pré-remplissage** (une marque occupée, les autres attendent le buffer) :
-  l'attente demeure, et avec elle le cas du wavefront divergent et sa borne ; le remplissage
-  différé rend la réservation inutile.
+- **Pas de réservation** (le buffer pris avant le CAS, les perdants mis en réserve) : la première
+  version ; elle prenait environ 31 buffers de trop par chunk sous des écritures dispersées
+  (3.3).
 - **De la mémoire non cachée ou à grain fin pour les buffers**, cohérente entre les XCD sans
   opérations de cache : elle ralentirait chaque lecture et chaque écriture d'un chunk matérialisé,
   le chemin chaud.
@@ -189,9 +217,10 @@ un par 32 lanes quand elles écrivent des éléments consécutifs (un ballot).
   construction de vérification peut l'attraper dans `View` (un pointeur marqué est mal aligné).
 - **La taille de l'append-buffer** : un débordement est une erreur (conception_gpu_fr.md 6.4).
   Valeur par défaut à discuter : une fraction de l'arène, ou de n.
-- **Décisions demandées** : retirer de la bibliothèque les variantes réservation et course (le
-  prototype les garde comme références) ; l'agrégation par warp dans la première version ou après
-  les mesures ; la taille par défaut de l'append-buffer.
+- **Décisions prises** (24/11/2026) : la réservation du prototype (pré-remplissage, loads
+  acquire) et la course restent hors de la bibliothèque, comme références dans `gpu/proto` ; la
+  réservation de 3.3 les remplace. L'agrégation par warp après les mesures. L'append-buffer
+  contient par défaut 1 % des éléments de l'arène (4 096 au moins), réglable à la construction.
 
 ## 8. Plan
 

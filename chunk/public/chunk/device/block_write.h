@@ -48,14 +48,21 @@
  *          Arena exhausted: the block writes nothing in that chunk and records its span; the
  *          host grows the arena and writes the span again with the same f (Array::finish:
  *          f must be a function of i, the same in both passes). A lost CAS (two blocks on
- *          one compressed chunk) parks the loser's buffer in a list the host gives back.
+ *          one compressed chunk) parks the loser's buffer in its warp's spare slot, which the
+ *          warp's next materialisation reuses (the one it evicts goes to a lost list); the
+ *          host gives both back.
+ *
+ *          Writer::assign, from any thread (docs/gpu_assign.md): the same fresh buffers and
+ *          bitmap, one element at a time, no vote, no wait; the arena exhausted, the value goes
+ *          to the append-buffer, which Array::finish() replays (the last append of each
+ *          element, unless a direct write came after it).
  */
 
 #include <cstdint> // std::int64_t
 
 #include "chunk/device/arena.h"        // ArenaRef
-#include "chunk/device/atomics.h"      // cas_ptr, fetch_add, fetch_or, load_ptr
-#include "chunk/device/chunk_desc.h"   // ChunkDesc, is_fresh, tag_fresh, untag
+#include "chunk/device/atomics.h"      // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
+#include "chunk/device/chunk_desc.h"   // ChunkDesc, busy_mark, is_fresh, tag_fresh, untag
 #include "chunk/device/warp.h"         // ballot, lane_id, active_lanes, sync_lanes
 #include "chunk/internal/same_value.h" // same_value
 
@@ -73,10 +80,19 @@ struct Span
 /// @brief The device-side counters of the write path, read back by the host.
 struct WriteCounters
 {
-    unsigned long long n_lost;   ///< entries of the lost list (past its capacity: an error)
-    unsigned long long n_failed; ///< entries of the failed-span list (past its capacity: an error)
-    unsigned long long cas_lost; ///< publications that lost their CAS
+    unsigned long long n_lost;     ///< entries of the lost list (past its capacity: an error)
+    unsigned long long n_failed;   ///< entries of the failed-span list (past its capacity: an error)
+    unsigned long long cas_lost;   ///< publications that lost their CAS
+    unsigned long long n_append;   ///< entries of the append-buffer (past its capacity: writes lost)
+    unsigned long long claim_wait; ///< assign() calls that waited for another thread's claim
+    unsigned long long claim_spin; ///< waits given up at the bound (the write was appended)
 };
+
+/// Polls of a claimed descriptor before an assign() gives up and appends (docs/gpu_assign.md
+/// 3.3): far beyond a claim's duration (two atomics, no pre-fill); what it bounds is a claim
+/// held by a lane of the same AMD wavefront on a divergent path, which cannot progress while
+/// this lane polls.
+inline constexpr unsigned int claim_spin_max = 1U << 14;
 
 /**
  * @brief What a write kernel gets of an array: trivially copyable, passed by value.
@@ -100,6 +116,28 @@ struct Writer
     Span*              failed          = nullptr; ///< spans not written (arena exhausted)
     unsigned long long failed_capacity = 0;
     WriteCounters*     counters        = nullptr;
+    T**                spare           = nullptr; ///< a parked buffer per slot (slot: the warp, see park)
+    unsigned long long spare_slots     = 0;       ///< a power of two
+    std::int64_t*      append_index    = nullptr; ///< append-buffer: element indices
+    T*                 append_value    = nullptr; ///< append-buffer: values
+    unsigned long long append_capacity = 0;
+
+    /**
+     * @brief a(i) = v, from any thread of a write kernel (docs/gpu_assign.md): no
+     *        device-scope acquire or release, no wait. A buffer of an earlier kernel: a
+     *        store. A compressed chunk: nothing if v is its constant, else a buffer published
+     *        empty and tagged fresh by a relaxed CAS. A fresh buffer: the element, then its bit
+     *        in `written`. The arena exhausted: the append-buffer, replayed by
+     *        Array::finish().
+     */
+    __device__ void assign(std::int64_t i, T v) const noexcept;
+
+    /// @brief a(i) in a write kernel (for `a(i) += v`): the constant of a compressed chunk, an
+    ///        unwritten element of a fresh buffer included. What this thread wrote, or a thread
+    ///        of its block before a __syncthreads(), it reads back -- an append included: once
+    ///        the arena has run out in the kernel, an element that would read the constant is
+    ///        looked up in the append-buffer first, from its end (slow, until finish()).
+    [[nodiscard]] __device__ T load(std::int64_t i) const noexcept;
 
     /**
      * @brief a(i) = f(i) for every i of [@p lo, @p hi), a part of chunk @p c; called by every
@@ -117,8 +155,13 @@ struct Writer
     template <int BLOCK>
     __device__ void
     write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept;
-    __device__ void park(T* buf) const noexcept;
-    __device__ void fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept;
+    __device__ T**             spare_slot() const noexcept;
+    __device__ T*              take_buffer(std::int64_t c) const noexcept;
+    __device__ void            park(T* buf) const noexcept;
+    __device__ void            fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept;
+    __device__ T*              materialise(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept;
+    __device__ void            append(std::int64_t i, T v) const noexcept;
+    [[nodiscard]] __device__ T appended_or(std::int64_t i, T otherwise) const noexcept;
 };
 
 namespace kernels
@@ -186,15 +229,58 @@ __global__ void settle_fresh(Writer<T, S> w, std::int64_t n_chunks)
     }
 }
 
-/// @brief The lost list back to the arena (after DeviceArena::normalise()).
+/// @brief The lost list and the spare slots back to the arena (after DeviceArena::normalise()).
 template <typename T, unsigned int S>
 __global__ void reclaim_lost(Writer<T, S> w, unsigned long long n)
+{
+    const unsigned long long stride = static_cast<unsigned long long>(gridDim.x) * blockDim.x;
+    const unsigned long long first  = blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x;
+    for (unsigned long long k = first; k < n; k += stride)
+    {
+        w.arena.give_back(w.lost[k]);
+    }
+    for (unsigned long long k = first; k < w.spare_slots; k += stride)
+    {
+        if (w.spare[k] != nullptr)
+        {
+            w.arena.give_back(w.spare[k]);
+            w.spare[k] = nullptr;
+        }
+    }
+}
+
+/// @brief Entries [0, @p n) of the append-buffer back to index -1 (no entry). A template: a
+///        kernel defined in a header (a plain __global__ cannot be inline).
+template <typename Index>
+__global__ void reset_append(Index* index, unsigned long long n)
 {
     const unsigned long long stride = static_cast<unsigned long long>(gridDim.x) * blockDim.x;
     for (unsigned long long k = blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x; k < n;
          k += stride)
     {
-        w.arena.give_back(w.lost[k]);
+        index[k] = -1;
+    }
+}
+
+/// @brief The replay of an append-buffer (docs/gpu_assign.md 3.4), deduplicated by the host
+///        (the last append of each element): an entry whose element is marked in a fresh
+///        buffer is skipped, a direct write came after it. Before settle_fresh.
+template <typename T, unsigned int S>
+__global__ void replay_appends(Writer<T, S> w, const std::int64_t* index, const T* value, unsigned long long n)
+{
+    const unsigned long long stride = static_cast<unsigned long long>(gridDim.x) * blockDim.x;
+    for (unsigned long long k = blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x; k < n;
+         k += stride)
+    {
+        const std::int64_t i   = index[k];
+        const std::int64_t c   = i / S;
+        const auto         e   = static_cast<unsigned int>(i % S);
+        T* const           buf = load_ptr(&w.desc[c].buf);
+        if (is_fresh(buf) && ((load(&w.written[c * Writer<T, S>::words + (e >> 5)]) >> (e & 31)) & 1U) != 0)
+        {
+            continue;
+        }
+        w.assign(i, value[k]);
     }
 }
 
@@ -217,11 +303,26 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
     __syncthreads(); // every thread has read s_buf of the previous call
     if (t == 0)
     {
-        s_buf = load_ptr(&d.buf);
+        // An assign() claim of the same kernel: wait for its publication, as assign() does.
+        T* seen = load_ptr(&d.buf);
+        for (unsigned int spins = 0; seen == busy_mark<T>() && spins < claim_spin_max; ++spins)
+        {
+            backoff();
+            seen = load_ptr(&d.buf);
+        }
+        s_buf = seen;
     }
     __syncthreads();
     T* const buf = s_buf;
-    T        new_vals[per_thread];
+    if (buf == busy_mark<T>())
+    {
+        if (t == 0)
+        {
+            fail(c, lo, hi); // written again by finish(f)
+        }
+        return;
+    }
+    T new_vals[per_thread];
     for (int j = 0; j < per_thread; ++j)
     {
         const std::int64_t i = base + t + j * BLOCK;
@@ -253,7 +354,7 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
     const bool         whole    = lo <= base && hi >= valid_hi;
     if (t == 0)
     {
-        s_buf = arena.take(c);
+        s_buf = take_buffer(c);
     }
     __syncthreads();
     T* const mine = s_buf;
@@ -289,6 +390,14 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
     if (winner == mine)
     {
         return; // the whole chunk, written
+    }
+    if (winner == busy_mark<T>())
+    {
+        if (t == 0)
+        {
+            fail(c, lo, hi); // an assign() claimed it meanwhile: written again by finish(f)
+        }
+        return;
     }
     if (is_fresh(winner))
     {
@@ -350,14 +459,156 @@ Writer<T, S>::write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t 
     }
 }
 
+/// @details The warp's slot: the buffer of a lost publication waits there for the warp's next
+///          materialisation. Two warps sharing a slot only exchange atomically.
+template <typename T, unsigned int S>
+__device__ T** Writer<T, S>::spare_slot() const noexcept
+{
+    const unsigned long long thread = blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x;
+    return spare + ((thread / warp_size) & (spare_slots - 1));
+}
+
+/// @brief A buffer for chunk @p c: the warp's spare one, else one from the arena; nullptr when
+///        the arena is exhausted.
+template <typename T, unsigned int S>
+__device__ T* Writer<T, S>::take_buffer(std::int64_t c) const noexcept
+{
+    T* const mine = spare_slots != 0 ? exchange_ptr(spare_slot(), static_cast<T*>(nullptr)) : nullptr;
+    return mine != nullptr ? mine : arena.take(c);
+}
+
+/// @brief The buffer of a lost publication into the warp's spare slot; the one it evicts, if
+///        any, to the lost list. Both go back to the arena at Array::finish().
 template <typename T, unsigned int S>
 __device__ void Writer<T, S>::park(T* buf) const noexcept
 {
+    T* const evicted = spare_slots != 0 ? exchange_ptr(spare_slot(), buf) : buf;
+    if (evicted == nullptr)
+    {
+        return;
+    }
     const unsigned long long k = fetch_add(&counters->n_lost, 1ULL);
     if (k < lost_capacity)
     {
-        lost[k] = buf;
+        lost[k] = evicted;
     }
+}
+
+/// @details The claim first, the buffer after (docs/gpu_assign.md 3.3): a relaxed CAS from
+///          nullptr to busy_mark(); its winner alone takes a buffer and publishes it empty,
+///          tagged fresh (a relaxed exchange), or releases the claim when the arena is
+///          exhausted. No pre-fill: every writer marks its elements. The others poll the
+///          descriptor (relaxed) until the publication, up to claim_spin_max. @p seen: what the
+///          caller loaded (nullptr or busy_mark()). Returns the chunk's buffer (fresh-tagged,
+///          or untagged from a whole-chunk Writer::write), or nullptr: the caller appends.
+template <typename T, unsigned int S>
+__device__ T* Writer<T, S>::materialise(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept
+{
+    T* const busy  = busy_mark<T>();
+    T*       found = seen;
+    if (seen == nullptr)
+    {
+        found = cas_ptr(&d.buf, static_cast<T*>(nullptr), busy);
+        if (found == nullptr)
+        {
+            T* const mine = take_buffer(c);
+            T* const publ = mine != nullptr ? tag_fresh(mine) : nullptr;
+            (void)exchange_ptr(&d.buf, publ); // publish, or release the claim (arena exhausted)
+            return publ;
+        }
+    }
+    if (found == busy)
+    {
+        fetch_add(&counters->claim_wait, 1ULL);
+        for (unsigned int spins = 0; found == busy; ++spins)
+        {
+            if (spins == claim_spin_max)
+            {
+                fetch_add(&counters->claim_spin, 1ULL);
+                return nullptr;
+            }
+            backoff();
+            found = load_ptr(&d.buf);
+        }
+    }
+    return found; // nullptr: the claim was released, the arena is exhausted
+}
+
+template <typename T, unsigned int S>
+__device__ void Writer<T, S>::append(std::int64_t i, T v) const noexcept
+{
+    const unsigned long long k = fetch_add(&counters->n_append, 1ULL);
+    if (k < append_capacity)
+    {
+        append_index[k] = i;
+        append_value[k] = v;
+    }
+}
+
+template <typename T, unsigned int S>
+__device__ void Writer<T, S>::assign(std::int64_t i, T v) const noexcept
+{
+    const std::int64_t c   = i / S;
+    const auto         e   = static_cast<unsigned int>(i % S);
+    ChunkDesc<T>&      d   = desc[c];
+    T*                 buf = load_ptr(&d.buf);
+    if (buf == nullptr || buf == busy_mark<T>())
+    {
+        if (same_value(v, d.constant))
+        {
+            return; // 1. the constant onto its chunk: nothing (a claimed chunk still reads it)
+        }
+        buf = materialise(c, d, buf); // 2.
+        if (buf == nullptr)
+        {
+            append(i, v);
+            return;
+        }
+    }
+    if (is_fresh(buf))
+    {
+        untag(buf)[e] = v; // 3. the element, then its bit
+        fetch_or(&written[c * words + (e >> 5)], 1U << (e & 31));
+        return;
+    }
+    buf[e] = v; // 4. a buffer of an earlier kernel
+}
+
+template <typename T, unsigned int S>
+[[nodiscard]] __device__ T Writer<T, S>::load(std::int64_t i) const noexcept
+{
+    const std::int64_t  c   = i / S;
+    const auto          e   = static_cast<unsigned int>(i % S);
+    const ChunkDesc<T>& d   = desc[c];
+    T* const            buf = load_ptr(&d.buf);
+    if (buf == nullptr || buf == busy_mark<T>())
+    {
+        return appended_or(i, d.constant); // claimed: no element written yet but appends
+    }
+    if (is_fresh(buf))
+    {
+        // device::load: the member load(i) hides the atomic load inside the class.
+        const bool set = ((device::load(&written[c * words + (e >> 5)]) >> (e & 31)) & 1U) != 0;
+        return set ? untag(buf)[e] : appended_or(i, d.constant);
+    }
+    return buf[e]; // a buffer of an earlier kernel: no append to its chunk in this one
+}
+
+/// @details The append-buffer's unused entries hold index -1 (Array resets them after each
+///          replay), so an entry being written by another thread reads as no entry or as its
+///          new index, never as an earlier phase's.
+template <typename T, unsigned int S>
+[[nodiscard]] __device__ T Writer<T, S>::appended_or(std::int64_t i, T otherwise) const noexcept
+{
+    const unsigned long long n = device::load(&counters->n_append);
+    for (unsigned long long k = n < append_capacity ? n : append_capacity; k > 0; --k)
+    {
+        if (append_index[k - 1] == i)
+        {
+            return append_value[k - 1];
+        }
+    }
+    return otherwise;
 }
 
 template <typename T, unsigned int S>

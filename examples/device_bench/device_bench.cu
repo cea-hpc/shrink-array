@@ -23,7 +23,9 @@
  * @details For S = 256 and 1024: read (every chunk materialised, every chunk compressed);
  *          the chunk-aligned write (first write over a compressed array, write into
  *          materialised chunks), with finish() inside the timing; random range rewrites by
- *          a kernel calling Writer::write, then compress(); compress() alone, every chunk
+ *          a kernel calling Writer::write, then compress(); Writer::assign, one thread per
+ *          element (first write, into materialised chunks, scattered, `+=`), finish() timed,
+ *          against the same flat kernels; compress() alone, every chunk
  *          folding back and none; then the host <-> device conversion (assign() of a fully
  *          materialised state, image()) on 1 GiB at most.
  *
@@ -127,6 +129,65 @@ __global__ void flat_ranges(double* a, const Range* r, std::int64_t n_ranges)
         {
             a[i] = 3.0 + static_cast<double>(i);
         }
+    }
+}
+
+/// @brief Element k of a pseudo-random permutation of [0, n), n a power of two: an odd
+///        multiplier is a bijection modulo 2^m (the scattered writes, no index array).
+__host__ __device__ inline std::int64_t scatter_index(std::int64_t k, std::int64_t n)
+{
+    return static_cast<std::int64_t>((static_cast<unsigned long long>(k) * 0x9E3779B97F4A7C15ULL) &
+                                     static_cast<unsigned long long>(n - 1));
+}
+
+__global__ void flat_scatter(double* a, std::int64_t n)
+{
+    const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
+    for (std::int64_t k = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; k < n; k += stride)
+    {
+        const std::int64_t i = scatter_index(k, n);
+        a[i]                 = 3.0 + static_cast<double>(i);
+    }
+}
+
+__global__ void flat_add(double* a, std::int64_t n)
+{
+    const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
+    for (std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; i < n; i += stride)
+    {
+        a[i] += 1.0;
+    }
+}
+
+/// @brief a(i) = base + i by Writer::assign, grid-stride (one thread per element).
+template <unsigned int S>
+__global__ void assign_ramp(sd::Writer<double, S> w, std::int64_t n, double base)
+{
+    const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
+    for (std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; i < n; i += stride)
+    {
+        w.assign(i, base + static_cast<double>(i));
+    }
+}
+
+template <unsigned int S>
+__global__ void assign_scatter(sd::Writer<double, S> w, std::int64_t n)
+{
+    const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
+    for (std::int64_t k = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; k < n; k += stride)
+    {
+        const std::int64_t i = scatter_index(k, n);
+        w.assign(i, 3.0 + static_cast<double>(i));
+    }
+}
+
+template <unsigned int S>
+__global__ void assign_add(sd::Writer<double, S> w, std::int64_t n)
+{
+    const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
+    for (std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; i < n; i += stride)
+    {
+        w.assign(i, w.load(i) + 1.0);
     }
 }
 
@@ -270,7 +331,41 @@ void bench(std::int64_t n, int reps)
     line("  write + finish() + compress()", median(tw) + median(tc), flat_rng, "");
     sd::release(d_ranges);
 
-    // 4. compress() alone: every chunk materialised and uniform (all fold), then every
+    // 4. Writer::assign (docs/gpu_assign.md), one thread per element, finish() timed: first
+    //    write over a compressed array, write into materialised chunks, scattered writes
+    //    (over a compressed array, then a materialised one), a(i) += 1.
+    {
+        const double flat_sc  = time_median(reps, nothing, [&] { flat_scatter<<<grid, block>>>(flat, n); });
+        const double flat_add_ms = time_median(reps, nothing, [&] { flat_add<<<grid, block>>>(flat, n); });
+        const auto   assign_phase = [&](auto&& launch)
+        {
+            return [&, launch]
+            {
+                launch();
+                a.finish();
+            };
+        };
+        line("assign(), first write, grid-stride (+ finish)",
+             time_median(reps, fold_all, assign_phase([&] { assign_ramp<S><<<grid, block>>>(a.writer(), n, 1.0); })),
+             flat_w, "");
+        line("assign() into materialised chunks (+ finish)",
+             time_median(reps, nothing, assign_phase([&] { assign_ramp<S><<<grid, block>>>(a.writer(), n, 2.0); })),
+             flat_w, "");
+        line("assign(), scattered, first write (+ finish)",
+             time_median(reps, fold_all, assign_phase([&] { assign_scatter<S><<<grid, block>>>(a.writer(), n); })),
+             flat_sc, "");
+        line("assign(), scattered, into materialised chunks (+ finish)",
+             time_median(reps, nothing, assign_phase([&] { assign_scatter<S><<<grid, block>>>(a.writer(), n); })),
+             flat_sc, "");
+        line("a(i) = load(i) + 1, materialised chunks (+ finish)",
+             time_median(reps, nothing, assign_phase([&] { assign_add<S><<<grid, block>>>(a.writer(), n); })),
+             flat_add_ms, "");
+        const sd::WriteCounters wc = a.write_counters();
+        std::printf("  assign(): %llu claim waits, %llu given up; arena %llu buffers in %d arena(s)\n", wc.claim_wait,
+                    wc.claim_spin, a.arena().buffers(), a.arena().arenas());
+    }
+
+    // 5. compress() alone: every chunk materialised and uniform (all fold), then every
     //    chunk materialised and varied (a scan; it stops at the first difference).
     const auto report = [&](const char* what, double ms)
     {
