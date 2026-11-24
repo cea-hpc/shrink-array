@@ -186,6 +186,15 @@ chunks matérialisés 2,24x / 2,32x et en première écriture 4,59x / 4,36x (con
 dispersée plate), première écriture en grid-stride 7,31x / 6,22x : toutes les lanes d'un warp y
 attendent une même réservation, le cas de l'agrégation par warp.
 
+GH200, 8 Gio, S = 256 / 1024, avant l'agrégation : dans des chunks matérialisés 1,79x / 1,64x,
+`+=` 1,18x / 1,13x, dispersé dans des chunks matérialisés 1,33x / 1,12x et en première écriture
+2,30x / 2,14x, mais la première écriture en grid-stride 23,7x / 18,9x (la réservation du
+prototype : 14x à S = 1024), avec environ une attente par élément écrit. Avec l'agrégation par
+warp (les lanes actives sur un même chunk élisent une meneuse, qui réserve ou attend ;
+`group_by_key`, `warp.h`), les attentes baissent d'un facteur 35 sur la T1000 et sa première
+écriture en grid-stride passe de 7,31x / 6,22x à 4,80x / 5,04x ; les écritures dispersées ne
+changent pas.
+
 Ajouts à `device_bench` : première écriture en grid-stride par `assign()`, écritures dispersées
 (une permutation aléatoire des indices), `+=` sur un tableau matérialisé, réécritures de plages
 par `assign()`. Chacun avec et sans agrégation par warp, et avec un or atomique par élément contre

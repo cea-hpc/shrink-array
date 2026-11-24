@@ -19,7 +19,7 @@
 /**
  * @file warp.h
  * @brief The warp primitives of chunk/device/ on CUDA (32 lanes) and HIP (64 lanes): the
- *        lane, the active lanes, a ballot.
+ *        lane, the active lanes, ballot, shuffle, the grouping of lanes by key.
  *
  * @details Stage 1, experimental (see chunk_desc.h). Every lane of the mask calls a ballot
  *          (warp-uniform control flow at the call).
@@ -68,6 +68,66 @@ __device__ inline LaneMask ballot(LaneMask mask, bool pred) noexcept
 #else
     return __ballot_sync(mask, pred);
 #endif
+}
+
+/// @brief @p value as lane @p src has it. Every lane of @p mask calls it.
+template <typename V>
+__device__ inline V shuffle(LaneMask mask, V value, int src) noexcept
+{
+#if defined(CHUNK_DEVICE_HIP)
+    (void)mask;
+    return __shfl(value, src);
+#else
+    return __shfl_sync(mask, value, src);
+#endif
+}
+
+/// @brief A pointer as lane @p src has it (the 64-bit address, through an integer).
+template <typename P>
+__device__ inline P* shuffle_ptr(LaneMask mask, P* ptr, int src) noexcept
+{
+    const auto bits = reinterpret_cast<unsigned long long>(ptr);
+    return reinterpret_cast<P*>(shuffle(mask, bits, src));
+}
+
+/// @brief The lowest lane of a non-empty @p mask.
+__device__ inline int first_lane(LaneMask mask) noexcept
+{
+#if defined(CHUNK_DEVICE_HIP)
+    return __ffsll(static_cast<unsigned long long>(mask)) - 1;
+#else
+    return __ffs(static_cast<int>(mask)) - 1;
+#endif
+}
+
+/**
+ * @brief The lanes of @p active grouped by @p key: each lane gets its group (the lanes of
+ *        @p active with its key) and the group's leader (its lowest lane). Every lane of
+ *        @p active calls it.
+ * @details Every lane goes through the loop as many times as the others (`pending` is the same
+ *          on every lane), so each ballot and shuffle has the one mask @p active. The
+ *          prototype's first version let a lane leave once its own group was found, and the
+ *          later shuffles ran with masks that changed under it.
+ */
+template <typename K>
+__device__ inline void group_by_key(K key, LaneMask active, LaneMask& group, int& leader) noexcept
+{
+    const int lane    = lane_id();
+    LaneMask  pending = active;
+    group             = 0;
+    leader            = lane;
+    while (pending != 0)
+    {
+        const int      l = first_lane(pending);
+        const K        k = shuffle(active, key, l);
+        const LaneMask g = ballot(active, ((pending >> lane) & 1U) != 0 && key == k);
+        if (((g >> lane) & 1U) != 0)
+        {
+            group  = g;
+            leader = l;
+        }
+        pending &= ~g;
+    }
 }
 
 /// @brief Waits for the lanes of @p mask (their earlier stores visible to each other).

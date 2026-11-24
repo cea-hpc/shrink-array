@@ -175,6 +175,14 @@ materialised chunks 2.24x / 2.32x and as a first write 4.59x / 4.36x (against th
 write), grid-stride first write 7.31x / 6.22x: there every lane of a warp waits for one claim,
 the case of warp aggregation.
 
+GH200, 8 GiB, S = 256 / 1024, before aggregation: into materialised chunks 1.79x / 1.64x, `+=`
+1.18x / 1.13x, scattered into materialised chunks 1.33x / 1.12x and as a first write 2.30x /
+2.14x, but the grid-stride first write 23.7x / 18.9x (the prototype's claim: 14x at S = 1024),
+with about one wait per element written. With warp aggregation (the active lanes on one chunk
+elect a leader, which claims or waits; `group_by_key`, `warp.h`) the waits drop 35-fold on the
+T1000 and its grid-stride first write goes from 7.31x / 6.22x to 4.80x / 5.04x; the scattered
+writes do not change.
+
 Added to `device_bench`: grid-stride first write by `assign()`, scattered writes (a random
 permutation of the indices), `+=` on a materialised array, range rewrites by `assign()`. Each
 with and without warp aggregation, and with one atomic or per element against one per 32 lanes

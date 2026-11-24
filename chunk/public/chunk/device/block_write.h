@@ -63,7 +63,7 @@
 #include "chunk/device/arena.h"        // ArenaRef
 #include "chunk/device/atomics.h"      // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
 #include "chunk/device/chunk_desc.h"   // ChunkDesc, busy_mark, is_fresh, tag_fresh, untag
-#include "chunk/device/warp.h"         // ballot, lane_id, active_lanes, sync_lanes
+#include "chunk/device/warp.h"         // ballot, group_by_key, lane_id, active_lanes, shuffle_ptr, sync_lanes
 #include "chunk/internal/same_value.h" // same_value
 
 namespace shrink_array::device
@@ -160,6 +160,7 @@ struct Writer
     __device__ void            park(T* buf) const noexcept;
     __device__ void            fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept;
     __device__ T*              materialise(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept;
+    __device__ T*              materialise_grouped(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept;
     __device__ void            append(std::int64_t i, T v) const noexcept;
     [[nodiscard]] __device__ T appended_or(std::int64_t i, T otherwise) const noexcept;
 };
@@ -534,6 +535,28 @@ __device__ T* Writer<T, S>::materialise(std::int64_t c, ChunkDesc<T>& d, T* seen
     return found; // nullptr: the claim was released, the arena is exhausted
 }
 
+/// @details Warp aggregation (docs/gpu_assign.md 3.3): the active lanes that need chunk @p c
+///          elect one leader, which claims or waits; the others get its result by a shuffle.
+///          A grid-stride first write has every lane of a warp on one chunk: one claim or one
+///          wait per warp instead of one per lane. The lanes active here are the ones that
+///          reached this point together, whatever branch the caller is in; the others group
+///          when they get here. The leaders of one call are on distinct chunks: none waits for
+///          another's claim.
+template <typename T, unsigned int S>
+__device__ T* Writer<T, S>::materialise_grouped(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept
+{
+    const LaneMask active = active_lanes();
+    LaneMask       group  = 0;
+    int            leader = 0;
+    group_by_key(c, active, group, leader);
+    T* got = nullptr;
+    if (lane_id() == leader)
+    {
+        got = materialise(c, d, seen);
+    }
+    return shuffle_ptr(active, got, leader);
+}
+
 template <typename T, unsigned int S>
 __device__ void Writer<T, S>::append(std::int64_t i, T v) const noexcept
 {
@@ -558,7 +581,7 @@ __device__ void Writer<T, S>::assign(std::int64_t i, T v) const noexcept
         {
             return; // 1. the constant onto its chunk: nothing (a claimed chunk still reads it)
         }
-        buf = materialise(c, d, buf); // 2.
+        buf = materialise_grouped(c, d, buf); // 2.
         if (buf == nullptr)
         {
             append(i, v);
