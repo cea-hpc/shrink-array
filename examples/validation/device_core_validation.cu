@@ -23,10 +23,12 @@
  * @details Built with -DCHUNK_DEVICE_CORE_CHECK=ON (needs a CUDA compiler: nvcc or clang).
  *          The CPU builds never see CUDA; this program checks that the functions marked
  *          CHUNK_HD compile for the device and give the host's answers, signed zeros and
- *          NaN payloads included.
+ *          NaN payloads included, for float, double, std::complex and std::array.
  */
 
+#include <array>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -71,7 +73,7 @@ __global__ void pairs_kernel(const T* a, const T* b, int n, PairAnswer* out)
     if (i < n)
     {
         out[i] = PairAnswer{sa::same_value(a[i], b[i]) ? 1 : 0, 0, 0};
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (sa::internal::has_identity_order<T>::value)
         {
             out[i].less_ab = sa::identity_less(a[i], b[i]) ? 1 : 0;
             out[i].less_ba = sa::identity_less(b[i], a[i]) ? 1 : 0;
@@ -156,7 +158,7 @@ void check_pairs(const char* type_name, const std::vector<T>& values)
     {
         const bool same = sa::same_value(a[i], b[i]);
         bool       ab = false, ba = false;
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (sa::internal::has_identity_order<T>::value)
         {
             ab = sa::identity_less(a[i], b[i]);
             ba = sa::identity_less(b[i], a[i]);
@@ -269,10 +271,25 @@ int main()
         "float", {0.0F, -0.0F, 2.25F, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()});
     check_pairs<int>("int", {0, 1, -1, std::numeric_limits<int>::max(), std::numeric_limits<int>::min()});
     check_pairs<long>("long", {0L, 1L, -1L, 3L << 40});
+    // std::complex, std::array: part by part (internal::part, the array view on the device).
+    using cd = std::complex<double>;
+    check_pairs<cd>("complex<double>", {cd(0.0, 0.0), cd(-0.0, 0.0), cd(0.0, -0.0), cd(1.5, 0.0), cd(0.0, 1.5),
+                                        cd(qnan, 0.0), cd(0.0, nan_with_payload(7)), cd(1.5, -1.5)});
+    using cf = std::complex<float>;
+    check_pairs<cf>("complex<float>", {cf(0.0F, 0.0F), cf(-0.0F, 0.0F), cf(0.0F, -0.0F), cf(2.25F, 1.0F)});
+    using a3 = std::array<double, 3>;
+    check_pairs<a3>("array<double, 3>", {a3{0.0, 0.0, 0.0}, a3{0.0, 0.0, -0.0}, a3{-0.0, 0.0, 0.0}, a3{1.0, 2.0, 3.0},
+                                         a3{1.0, 2.0, qnan}, a3{1.0, 3.0, 2.0}});
+    using a2f = std::array<float, 2>;
+    check_pairs<a2f>("array<float, 2>", {a2f{0.0F, 0.0F}, a2f{0.0F, -0.0F}, a2f{1.0F, 0.0F}});
+    using a2i = std::array<int, 2>;
+    check_pairs<a2i>("array<int, 2>", {a2i{0, 0}, a2i{0, 1}, a2i{1, 0}, a2i{-1, -1}});
     check_walks<double>("double, -0.0 in a run of 0.0", 0.0, -0.0);
     check_walks<double>("double, run of NaN", qnan, 1.0);
     check_walks<float>("float", 1.0F, 2.0F);
     check_walks<int>("int", 7, 8);
+    check_walks<cd>("complex<double>, -0.0 imag in a run of 0", cd(0.0, 0.0), cd(0.0, -0.0));
+    check_walks<a3>("array<double, 3>", a3{1.0, 2.0, 3.0}, a3{1.0, 2.0, -3.0});
     check_geometry();
     std::printf("%s: %d failure(s)\n", g_failures == 0 ? "PASSED" : "FAILED", g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -93,7 +93,10 @@ the tag's checksum to the recipe.
   (`chunk/internal/constant_walk.h`) that `ChunkBase::walk_constant` calls. CPU builds are
   unchanged. `-DCHUNK_DEVICE_CORE_CHECK=ON` builds device_core_validation, which runs these
   functions in a CUDA kernel and compares them with the host, signed zeros and NaN payloads
-  included (nvcc 13.3 and clang 23).
+  included, for float, double, `std::complex` and `std::array` (nvcc 13.1 and 13.3, clang 23).
+  `same_value` and `identity_less` read the parts of a `std::complex` or a `std::array` through
+  `internal::part()`, since `real()`, `imag()` and `std::array::operator[]` are host functions
+  to nvcc. nvcc only warns about such a call, so the check builds with `-Werror=all-warnings`.
 
 ### Fixed
 

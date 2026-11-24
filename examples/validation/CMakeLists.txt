@@ -933,6 +933,10 @@ if (CHUNK_DEVICE_CORE_CHECK)
   enable_language(CUDA)
   add_executable(device_core_validation device_core_validation.cu)
   set_target_properties(device_core_validation PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON)
+  # nvcc only warns (#20013) when a CHUNK_HD function calls a constexpr host function
+  # (std::complex::real(), std::array::size()...): an error here, or the check proves nothing.
+  target_compile_options(device_core_validation PRIVATE
+          $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:-Werror=all-warnings>)
   target_include_directories(device_core_validation PRIVATE
           $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_INCLUDE_DIRECTORIES>
           ${PROJECT_SOURCE_DIR}/fast_allocators/public)
