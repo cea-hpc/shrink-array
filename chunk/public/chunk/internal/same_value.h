@@ -73,9 +73,11 @@ template <typename F>
 {
     using U = std::conditional_t<sizeof(F) == 4, std::uint32_t, std::uint64_t>;
     static_assert(sizeof(U) == sizeof(F));
-    // std::bit_cast is a host function to nvcc (constexpr, without --expt-relaxed-constexpr):
-    // the memcpy, which the device compilers turn into a register move, there.
-#if defined(__cpp_lib_bit_cast) && !defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)
+    // Device code: std::bit_cast is a host function to nvcc (constexpr, without
+    // --expt-relaxed-constexpr), and HIP has no device std::memcpy; the builtin is neither.
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    return __builtin_bit_cast(U, v);
+#elif defined(__cpp_lib_bit_cast)
     return std::bit_cast<U>(v);
 #else
     U u;

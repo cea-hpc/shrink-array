@@ -97,6 +97,12 @@ the tag's checksum to the recipe.
   `same_value` and `identity_less` read the parts of a `std::complex` or a `std::array` through
   `internal::part()`, since `real()`, `imag()` and `std::array::operator[]` are host functions
   to nvcc. nvcc only warns about such a call, so the check builds with `-Werror=all-warnings`.
+  `float_bits` uses `__builtin_bit_cast` in device code (HIP has no device `std::memcpy`).
+- `chunk/device/` (experimental, outside the frozen interface): `device::ChunkDesc`, the
+  device format of a chunk (its buffer, or `nullptr` and its constant), and `device::View`,
+  its read path and the uniformity test of the compression pass, all `CHUNK_HD`.
+  `device_core_validation` reads views on the device and on the host and compares them
+  (`double`, `float`, `int`, `std::complex<double>`; S = 256 and 1024).
 
 ### Fixed
 

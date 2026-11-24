@@ -17,8 +17,9 @@
 /**
  * @file device_core_validation.cu
  * @brief The core layer (chunk/internal/host_device.h) on the device: same_value,
- *        identity_less, walk_constant, StaticChunkSize and log2int, computed by a CUDA
- *        kernel and compared with the same calls on the host.
+ *        identity_less, walk_constant, StaticChunkSize, log2int and the read path of
+ *        device::View (chunk/device/view.h), computed by a CUDA kernel and compared with
+ *        the same calls on the host.
  *
  * @details Built with -DCHUNK_DEVICE_CORE_CHECK=ON (needs a CUDA compiler: nvcc or clang).
  *          The CPU builds never see CUDA; this program checks that the functions marked
@@ -37,6 +38,7 @@
 
 #include <cuda_runtime.h>
 
+#include "chunk/device/view.h"                // device::View, device::ChunkDesc
 #include "chunk/internal/chunk_size_policy.h" // StaticChunkSize, ChunkElems
 #include "chunk/internal/constant_walk.h"     // internal::walk_constant
 #include "chunk/internal/pow2.h"              // log2int
@@ -258,6 +260,119 @@ double nan_with_payload(std::uint64_t payload)
     return d;
 }
 
+/// @brief Every element of @p v read by a kernel, and each chunk's uniform() answer.
+template <typename T, unsigned S>
+__global__ void view_kernel(sa::device::View<T, S> v, T* out, int* uniform, T* uniform_value)
+{
+    const long stride = static_cast<long>(gridDim.x) * blockDim.x;
+    for (long i = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x; i < v.size(); i += stride)
+    {
+        out[i] = v(i);
+    }
+    for (long c = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x; c < v.n_chunks(); c += stride)
+    {
+        // Straight into the output: no T built in the kernel (std::complex's
+        // constructors are host functions to nvcc).
+        uniform[c] = v.uniform(c, uniform_value[c]) ? 1 : 0;
+    }
+}
+
+/**
+ * @brief device::View read on the device against the same View read on the host, over
+ *        descriptors built twice (host buffers, device buffers) from one layout: compressed
+ *        chunks at @p a and @p b, a ramp, a materialised chunk uniform at @p b, one uniform
+ *        but for its last element, and a partial last chunk.
+ */
+template <typename T, unsigned S>
+void check_view(const char* type_name, T a, T b, T (*ramp)(long))
+{
+    using Desc                         = sa::device::ChunkDesc<T>;
+    const int                   chunks = 6;
+    const long                  n      = static_cast<long>(chunks) * S - 37;
+    std::vector<std::vector<T>> host_bufs(chunks);
+    std::vector<Desc>           host_desc(chunks), dev_desc(chunks);
+    std::vector<T*>             dev_bufs;
+    const T                     constants[chunks] = {a, b, a, b, a, b};
+    for (int c = 0; c < chunks; ++c)
+    {
+        host_desc[c] = Desc{nullptr, constants[c]};
+        dev_desc[c]  = Desc{nullptr, constants[c]};
+        if (c < 2)
+        {
+            continue; // compressed
+        }
+        std::vector<T>& buf = host_bufs[c];
+        buf.assign(S, b);
+        if (c == 2)
+        {
+            for (unsigned j = 0; j < S; ++j)
+            {
+                buf[j] = ramp(static_cast<long>(c) * S + j);
+            }
+        }
+        else if (c == 4)
+        {
+            buf[S - 1] = a; // uniform but for its last element
+        }
+        host_desc[c].buf = buf.data();
+        dev_desc[c].buf  = to_device(buf);
+        dev_bufs.push_back(dev_desc[c].buf);
+    }
+    Desc* d_desc = to_device(dev_desc);
+    T*    d_out  = nullptr;
+    int*  d_uni  = nullptr;
+    T*    d_uval = nullptr;
+    DEVICE_CHECK(cudaMalloc(&d_out, sizeof(T) * n));
+    DEVICE_CHECK(cudaMalloc(&d_uni, sizeof(int) * chunks));
+    DEVICE_CHECK(cudaMalloc(&d_uval, sizeof(T) * chunks));
+    view_kernel<T, S><<<64, 128>>>(sa::device::View<T, S>{d_desc, n}, d_out, d_uni, d_uval);
+    DEVICE_CHECK(cudaGetLastError());
+    const std::vector<T>         got  = to_host(d_out, static_cast<std::size_t>(n));
+    const std::vector<int>       uni  = to_host(d_uni, static_cast<std::size_t>(chunks));
+    const std::vector<T>         uval = to_host(d_uval, static_cast<std::size_t>(chunks));
+    const sa::device::View<T, S> host_view{host_desc.data(), n};
+    int                          bad = host_view.n_chunks() == chunks ? 0 : 1;
+    for (long i = 0; i < n; ++i)
+    {
+        bad += sa::same_value(got[i], host_view(i)) ? 0 : 1;
+    }
+    for (int c = 0; c < chunks; ++c)
+    {
+        T          value{};
+        const bool u = host_view.uniform(c, value);
+        bad += (uni[c] == (u ? 1 : 0) && sa::same_value(uval[c], value)) ? 0 : 1;
+    }
+    // The layout's answers: chunks 0, 1 (compressed), 3 and 5 (materialised at b) uniform.
+    const int expected[chunks] = {1, 1, 0, 1, 0, 1};
+    for (int c = 0; c < chunks; ++c)
+    {
+        bad += uni[c] == expected[c] ? 0 : 1;
+    }
+    char what[96];
+    std::snprintf(what, sizeof what, "device::View<%s, %u>: %ld elements, %d chunks, %d differ", type_name, S, n,
+                  chunks, bad);
+    expect(bad == 0, what);
+    for (T* p : dev_bufs)
+    {
+        (void)cudaFree(p);
+    }
+    (void)cudaFree(d_desc);
+    (void)cudaFree(d_out);
+    (void)cudaFree(d_uni);
+    (void)cudaFree(d_uval);
+}
+
+template <typename T>
+T ramp_of(long i)
+{
+    return static_cast<T>(i % 97);
+}
+
+std::complex<double> complex_ramp(long i)
+{
+    return {static_cast<double>(i % 13), -static_cast<double>(i % 7)};
+}
+
 } // namespace
 
 int main()
@@ -291,6 +406,11 @@ int main()
     check_walks<cd>("complex<double>, -0.0 imag in a run of 0", cd(0.0, 0.0), cd(0.0, -0.0));
     check_walks<a3>("array<double, 3>", a3{1.0, 2.0, 3.0}, a3{1.0, 2.0, -3.0});
     check_geometry();
+    check_view<double, 256>("double", 0.0, -0.0, ramp_of<double>);
+    check_view<double, 1024>("double", nan_with_payload(3), 2.5, ramp_of<double>);
+    check_view<float, 1024>("float", 0.0F, 1.0F, ramp_of<float>);
+    check_view<int, 256>("int", 0, 7, ramp_of<int>);
+    check_view<std::complex<double>, 1024>("complex<double>", {0.0, 0.0}, {0.0, -0.0}, complex_ramp);
     std::printf("%s: %d failure(s)\n", g_failures == 0 ? "PASSED" : "FAILED", g_failures);
     return g_failures == 0 ? 0 : 1;
 }

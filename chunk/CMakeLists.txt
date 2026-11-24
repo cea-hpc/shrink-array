@@ -368,6 +368,8 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/pow2.h
         public/chunk/internal/global_check.h
         public/chunk/internal/host_device.h
+        public/chunk/device/chunk_desc.h
+        public/chunk/device/view.h
         public/chunk/internal/immortal.h
         public/chunk/internal/in_t.h
         public/chunk/internal/invariant_check.h
