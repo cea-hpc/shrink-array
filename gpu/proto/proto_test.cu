@@ -242,12 +242,14 @@ void chunk_rounds(unsigned           seed,
                   long               n,
                   unsigned long long arena_chunks,
                   unsigned long long append_capacity,
-                  const char*        label)
+                  const char*        label,
+                  bool               relaxed_publish = false)
 {
     constexpr int BLOCK = 256;
-    std::printf("[%s, chunk-aligned] S=%d n=%ld arena=%llu chunks append=%llu\n", label, S, n, arena_chunks,
-                append_capacity);
+    std::printf("[%s, chunk-aligned%s] S=%d n=%ld arena=%llu chunks append=%llu\n", label,
+                relaxed_publish ? ", relaxed publication" : "", S, n, arena_chunks, append_capacity);
     sa::DeviceArray<double, S> a(n, arena_chunks, append_capacity);
+    a.set_relaxed_publish(relaxed_publish);
     std::vector<double>        mirror(static_cast<std::size_t>(n), 0.0);
     std::vector<double>        target(mirror.size());
     std::mt19937_64            rng(seed);
@@ -299,7 +301,11 @@ void chunk_rounds(unsigned           seed,
             Span* d_spans = nullptr;
             SA_GPU(gpuMalloc(&d_spans, sizeof(Span) * spans.size()));
             SA_GPU(gpuMemcpy(d_spans, spans.data(), sizeof(Span) * spans.size(), gpuMemcpyHostToDevice));
-            write_spans<BLOCK, S><<<1024, BLOCK>>>(a.view(), d_spans, static_cast<long>(spans.size()), f);
+            // Two kernels, half the spans each: with the relaxed publication the second one
+            // meets the first one's fresh buffers, not settled yet.
+            const auto half = static_cast<long>(spans.size() / 2);
+            write_spans<BLOCK, S><<<1024, BLOCK>>>(a.view(), d_spans, half, f);
+            write_spans<BLOCK, S><<<1024, BLOCK>>>(a.view(), d_spans + half, static_cast<long>(spans.size()) - half, f);
             SA_GPU(gpuGetLastError());
             SA_GPU(gpuDeviceSynchronize());
             (void)gpuFree(d_spans);
@@ -394,6 +400,9 @@ int main(int argc, char** argv)
     run([&] { chunk_rounds<256>(seed + 7, 1L << 20, 1L << 12, 1L << 16, "exact arena"); });
     run([&] { chunk_rounds<1024>(seed + 8, (1L << 20) + 300, (1L << 10) + 1, 1L << 16, "exact arena, tail chunk"); });
     run([&] { chunk_rounds<256>(seed + 9, 1L << 18, 16, 1L << 18, "small arena"); });
+    run([&] { chunk_rounds<256>(seed + 13, 1L << 20, 1L << 12, 1L << 16, "exact arena", true); });
+    run([&] { chunk_rounds<1024>(seed + 14, (1L << 20) + 300, (1L << 10) + 1, 1L << 16, "exact arena, tail chunk", true); });
+    run([&] { chunk_rounds<256>(seed + 15, 1L << 18, 16, 1L << 18, "small arena", true); });
     run([&] { append_overflow(); });
     std::printf("%s: %d failure(s)\n", g_failures == 0 ? "PASSED" : "FAILED", g_failures);
     return g_failures == 0 ? 0 : 1;

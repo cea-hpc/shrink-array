@@ -248,6 +248,16 @@ __device__ inline unsigned long long fetch_add(unsigned long long* counter, unsi
     return atomicAdd(counter, v);
 }
 
+/// @brief Relaxed device-scope atomic or on a 32-bit word; returns the former value.
+__device__ inline unsigned fetch_or(unsigned* word, unsigned bits) noexcept
+{
+#if defined(SA_HIP)
+    return __hip_atomic_fetch_or(word, bits, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+#else
+    return atomicOr(word, bits);
+#endif
+}
+
 /// @brief atomicAdd on a signed 64-bit counter (the free stack's top, which may go below 0).
 __device__ inline long long fetch_add(long long* counter, long long v) noexcept
 {

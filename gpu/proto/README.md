@@ -234,6 +234,19 @@ same kernel published (rare on aligned ranges), or publications batched per bloc
   at S = 1024 (1.2x on a first write); at S = 256 one 256-thread block per chunk pays four
   barriers per 2 KiB, and claim is as good.
 
+- **chunk-aligned, relaxed publication** (`set_relaxed_publish(true)`, after the MI300A
+  measurements): no device-scope acquire or release in the kernel. The descriptor is loaded
+  relaxed (a buffer of an earlier kernel is ordered by the kernel boundary). A block that
+  covers its whole chunk fills a buffer and publishes it by a relaxed CAS. A partial range
+  publishes an unfilled buffer tagged fresh (bit 1 of `buf`); every block writes only its own
+  elements into it and sets their bits in the chunk's `written` bitmap (S/32 words, one
+  relaxed atomic or per 32 elements); after the kernel, `settle_fresh` puts the constant where
+  no bit is set and removes the tag (`parallel_for_chunks` and `compress()` call it). The
+  blocks write disjoint elements, so nothing in the kernel has to order one block's stores
+  before another's. `proto_test` checks it with two kernels per round, the second meeting
+  the first one's unsettled buffers, and fails if the settle writes a wrong constant. T1000:
+  first write 2.16x / 0.79x (S = 256 / 1024, against 2.42x / 0.83x), range rewrites equal.
+
 Conclusion for the facade: the Kokkos / Arcane `parallel_for` over an array takes the
 chunk-aligned path; arbitrary user kernels go through `assign()` with claim. Race stays as the
 reference.

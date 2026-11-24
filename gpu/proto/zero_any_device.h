@@ -117,6 +117,30 @@ __host__ __device__ inline T* busy_mark() noexcept
     return reinterpret_cast<T*>(std::uintptr_t{1});
 }
 
+/// @brief The tag of a buffer that block_write published in relaxed mode (View::relaxed_publish)
+///        and that is not settled yet: its elements are valid only where the chunk's `written`
+///        bitmap says so, the others take the constant at settle_fresh. Bit 1: buffers are
+///        aligned on T, 4 or 8 bytes, and busy_mark() is bit 0.
+inline constexpr std::uintptr_t fresh_tag = 2;
+
+template <typename T>
+__host__ __device__ inline bool is_fresh(T* p) noexcept
+{
+    return (reinterpret_cast<std::uintptr_t>(p) & fresh_tag) != 0;
+}
+
+template <typename T>
+__host__ __device__ inline T* tag_fresh(T* p) noexcept
+{
+    return reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(p) | fresh_tag);
+}
+
+template <typename T>
+__host__ __device__ inline T* untag(T* p) noexcept
+{
+    return reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(p) & ~fresh_tag);
+}
+
 /// @brief How the warps that need one compressed chunk in a write kernel coordinate.
 enum class Coordination : int
 {
@@ -238,6 +262,16 @@ struct View
     Coordination       coord;          ///< how assign() coordinates the warps of one chunk
     unsigned           claim_spin_max; ///< Coordination::claim: backoff rounds before giving up
     WriteLoad          write_load;     ///< how assign() reads `buf`
+    /// block_write without device-scope acquire or release (MI300A: each one invalidates or
+    /// writes back an XCD's L2). The descriptor is loaded relaxed; a block that covers its
+    /// whole chunk fills a buffer and publishes it by a relaxed CAS; a partial range publishes
+    /// an unfilled buffer tagged fresh, every block writes only its own elements into it and
+    /// marks them in `written`, and settle_fresh (after the kernel) puts the constant in the
+    /// others. Nothing in the kernel orders one block's stores before another's: they write
+    /// disjoint elements, and the kernel boundary orders them for the readers.
+    bool               relaxed_publish;
+    unsigned*          written; ///< relaxed_publish: S/32 words per chunk, one bit per element
+    static constexpr int words = S / 32;
 
     /// @brief a(i), in a read kernel (section 5): no barrier, one descriptor per warp.
     __device__ T operator()(long i) const noexcept
@@ -262,6 +296,10 @@ struct View
     template <int BLOCK, typename F>
     __device__ void block_write(long c, long lo, long hi, const F& f) const noexcept;
 
+    /// @brief block_write with relaxed_publish (see the member).
+    template <int BLOCK, typename F>
+    __device__ void block_write_relaxed(long c, long lo, long hi, const F& f) const noexcept;
+
     /// @brief @p buf back to the free-stack segment of its shard (compress() only: no pop runs).
     __device__ void give_back(T* buf) const noexcept;
 
@@ -277,6 +315,8 @@ struct View
     __device__ T*   take_spare() const noexcept;
     __device__ T*   publish_cas(ChunkDesc<T>& d, T* mine) const noexcept;
     __device__ void append(long i, T v) const noexcept;
+    template <int BLOCK>
+    __device__ void write_marked(T* buf, long c, long lo, long hi, const T* vals) const noexcept;
 };
 
 /**
@@ -657,6 +697,11 @@ __device__ void View<T, S>::block_write(long c, long lo, long hi, const F& f) co
 {
     static_assert(S % BLOCK == 0 && BLOCK % warp_size == 0, "BLOCK divides S, a multiple of the warp size");
     constexpr int K = S / BLOCK; // elements per thread
+    if (relaxed_publish)
+    {
+        block_write_relaxed<BLOCK>(c, lo, hi, f);
+        return;
+    }
     __shared__ T* s_buf;
     ChunkDesc<T>& d    = desc[c];
     const long    base = c * S;
@@ -776,6 +821,186 @@ __device__ void View<T, S>::block_write(long c, long lo, long hi, const F& f) co
     }
 }
 
+/// @brief The in-range elements of the block (vals[j]: element t + j * BLOCK of chunk @p c)
+///        into @p buf, a fresh buffer, each marked in the chunk's `written` bitmap: one
+///        relaxed atomic or per 32 elements (the 32 lanes of a warp, or half a wavefront,
+///        write 32 consecutive elements).
+template <typename T, int S>
+template <int BLOCK>
+__device__ void View<T, S>::write_marked(T* buf, long c, long lo, long hi, const T* vals) const noexcept
+{
+    constexpr int  K    = S / BLOCK;
+    const long     base = c * S;
+    const int      t    = static_cast<int>(threadIdx.x);
+    const int      lane = lane_id();
+    const LaneMask warp = active_lanes();
+    for (int j = 0; j < K; ++j)
+    {
+        const int  e        = t + j * BLOCK;
+        const long i        = base + e;
+        const bool in_range = i >= lo && i < hi;
+        if (in_range)
+        {
+            buf[e] = vals[j];
+        }
+        const LaneMask m = ballot(warp, in_range);
+        if ((lane & 31) == 0)
+        {
+            const auto bits = static_cast<unsigned>(m >> lane);
+            if (bits != 0)
+            {
+                fetch_or(&written[c * words + (e >> 5)], bits);
+            }
+        }
+    }
+}
+
+template <typename T, int S>
+template <int BLOCK, typename F>
+__device__ void View<T, S>::block_write_relaxed(long c, long lo, long hi, const F& f) const noexcept
+{
+    constexpr int K = S / BLOCK;
+    __shared__ T* s_buf;
+    ChunkDesc<T>& d    = desc[c];
+    const long    base = c * S;
+    const int     t    = static_cast<int>(threadIdx.x);
+
+    __syncthreads(); // every thread has read s_buf of the previous call
+    if (t == 0)
+    {
+        s_buf = load_ptr_relaxed(&d.buf);
+    }
+    __syncthreads();
+    T* buf = s_buf;
+    T  vals[K];
+    for (int j = 0; j < K; ++j)
+    {
+        const long i = base + t + j * BLOCK;
+        vals[j]      = i >= lo && i < hi ? f(i) : T{};
+    }
+    // A buffer of an earlier kernel (settled): the kernel boundary ordered it, write.
+    if (buf != nullptr && buf != busy_mark<T>() && !is_fresh(buf))
+    {
+        for (int j = 0; j < K; ++j)
+        {
+            const long i = base + t + j * BLOCK;
+            if (i >= lo && i < hi)
+            {
+                buf[i - base] = vals[j];
+            }
+        }
+        return;
+    }
+    // Another block's fresh buffer (this kernel or an unsettled earlier one): our elements, marked.
+    if (is_fresh(buf))
+    {
+        write_marked<BLOCK>(untag(buf), c, lo, hi, vals);
+        return;
+    }
+    if (buf == busy_mark<T>())
+    {
+        // An assign() claim in the same kernel (outside the facade's contract): append.
+        for (int j = 0; j < K; ++j)
+        {
+            const long i = base + t + j * BLOCK;
+            if (i >= lo && i < hi)
+            {
+                append(i, vals[j]);
+            }
+        }
+        return;
+    }
+    // Compressed: the vote first (the constant onto its own chunk costs nothing).
+    const T  constant = d.constant;
+    unsigned differs  = 0;
+    for (int j = 0; j < K; ++j)
+    {
+        const long i = base + t + j * BLOCK;
+        if (i >= lo && i < hi)
+        {
+            differs |= same_bits(vals[j], constant) ? 0U : 1U << j;
+        }
+        else
+        {
+            vals[j] = constant;
+        }
+    }
+    if (__syncthreads_or(differs != 0) == 0)
+    {
+        return;
+    }
+    // The whole chunk (its valid part) is ours: fill, publish untagged; nobody else writes it
+    // in this kernel. Otherwise publish first, tagged fresh, and write our elements only.
+    const long valid_hi = base + S < n ? base + S : n;
+    const bool whole    = lo <= base && hi >= valid_hi;
+    if (t == 0)
+    {
+        T* m  = take_spare();
+        s_buf = m != nullptr ? m : take_buffer(c);
+    }
+    __syncthreads();
+    T* const mine = s_buf;
+    if (mine == nullptr)
+    {
+        if (t == 0)
+        {
+            fetch_add(&counters->arena_fail, 1ULL);
+        }
+        for (int j = 0; j < K; ++j)
+        {
+            if (((differs >> j) & 1U) != 0)
+            {
+                append(base + t + j * BLOCK, vals[j]);
+            }
+        }
+        return;
+    }
+    if (whole)
+    {
+        for (int j = 0; j < K; ++j)
+        {
+            mine[t + j * BLOCK] = vals[j];
+        }
+    }
+    __syncthreads(); // every thread has read s_buf
+    if (t == 0)
+    {
+        T* found = cas_ptr(&d.buf, static_cast<T*>(nullptr), whole ? mine : tag_fresh(mine));
+        if (found == nullptr)
+        {
+            fetch_add(&counters->materialise, 1ULL);
+            s_buf = whole ? mine : tag_fresh(mine);
+        }
+        else
+        {
+            fetch_add(&counters->cas_lost, 1ULL);
+            park(mine);
+            s_buf = found;
+        }
+    }
+    __syncthreads();
+    T* const winner = s_buf;
+    if (winner == mine)
+    {
+        return; // whole chunk, written
+    }
+    if (is_fresh(winner))
+    {
+        write_marked<BLOCK>(untag(winner), c, lo, hi, vals);
+        return;
+    }
+    // Lost to a whole-chunk writer or a claim of the same kernel: overlapping writes, outside
+    // the contract; append so that the replay orders them after.
+    for (int j = 0; j < K; ++j)
+    {
+        const long i = base + t + j * BLOCK;
+        if (i >= lo && i < hi)
+        {
+            append(i, vals[j]);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Kernels of the host operations
 // ---------------------------------------------------------------------------
@@ -818,6 +1043,45 @@ __global__ void reclaim_parked(View<T, S> v)
         {
             v.spare[k] = nullptr;
             v.give_back(buf);
+        }
+    }
+}
+
+/// @brief After a relaxed_publish write kernel: each fresh buffer gets the constant where no
+///        block wrote (its `written` bit clear), its bitmap cleared, its tag removed. One warp
+///        per chunk, grid-stride.
+template <typename T, int S>
+__global__ void settle_fresh(View<T, S> v, long n_chunks)
+{
+    const int  lane  = lane_id();
+    const long warps = static_cast<long>(gridDim.x) * (blockDim.x / warp_size);
+    const long first = (blockIdx.x * static_cast<long>(blockDim.x) + threadIdx.x) / warp_size;
+    for (long c = first; c < n_chunks; c += warps)
+    {
+        ChunkDesc<T>& d   = v.desc[c];
+        T* const      buf = d.buf;
+        if (!is_fresh(buf))
+        {
+            continue; // uniform per warp
+        }
+        T* const        p        = untag(buf);
+        const T         constant = d.constant;
+        unsigned* const w        = v.written + c * View<T, S>::words;
+        for (int e = lane; e < S; e += warp_size)
+        {
+            if (((w[e >> 5] >> (e & 31)) & 1U) == 0)
+            {
+                p[e] = constant;
+            }
+        }
+        sync_lanes(active_lanes()); // every lane has read the bitmap
+        for (int k = lane; k < View<T, S>::words; k += warp_size)
+        {
+            w[k] = 0;
+        }
+        if (lane == 0)
+        {
+            d.buf = p;
         }
     }
 }
@@ -992,6 +1256,18 @@ class DeviceArray
         view_.write_load = w;
     }
 
+    /// @brief block_write without device-scope acquire or release (View::relaxed_publish;
+    ///        default off). parallel_for_chunks() then settles after its kernel; a kernel of
+    ///        the caller that calls block_write must be followed by settle() (or finalize())
+    ///        before any read kernel or assign().
+    void set_relaxed_publish(bool on) noexcept
+    {
+        view_.relaxed_publish = on;
+    }
+
+    /// @brief After a relaxed_publish write kernel: the fresh buffers completed (settle_fresh).
+    void settle();
+
     /// @brief compress() with one warp per chunk instead of one block (default: per warp).
     void set_compress_per_warp(bool per_warp) noexcept
     {
@@ -1007,6 +1283,10 @@ class DeviceArray
             const long chunks = (hi + S - 1) / S - lo / S;
             const auto blocks = static_cast<unsigned>(chunks < grid ? chunks : grid);
             kernels::for_each_chunk<BLOCK><<<blocks, BLOCK>>>(view_, lo, hi, f);
+            if (view_.relaxed_publish)
+            {
+                settle();
+            }
         }
     }
 
@@ -1060,6 +1340,9 @@ DeviceArray<T, S>::DeviceArray(long n, unsigned long long arena_chunks, unsigned
     view_.write_load     = WriteLoad::acquire;
     SA_GPU(gpuMalloc(&view_.desc, sizeof(ChunkDesc<T>) * n_chunks_));
     SA_GPU(gpuMemset(view_.desc, 0, sizeof(ChunkDesc<T>) * n_chunks_)); // {nullptr, T{}} for arithmetic T
+    view_.relaxed_publish = false;
+    SA_GPU(gpuMalloc(&view_.written, sizeof(unsigned) * View<T, S>::words * n_chunks_));
+    SA_GPU(gpuMemset(view_.written, 0, sizeof(unsigned) * View<T, S>::words * n_chunks_));
     view_.spare_slots = 1ULL << 16; // more than the warps resident on an H100 or an MI300A
     SA_GPU(gpuMalloc(&view_.spare, sizeof(T*) * view_.spare_slots));
     SA_GPU(gpuMemset(view_.spare, 0, sizeof(T*) * view_.spare_slots));
@@ -1085,6 +1368,7 @@ DeviceArray<T, S>::~DeviceArray()
     }
     (void)gpuFree(view_.arenas);
     (void)gpuFree(view_.desc);
+    (void)gpuFree(view_.written);
     (void)gpuFree(view_.counters);
     (void)gpuFree(view_.append_index);
     (void)gpuFree(view_.append_value);
@@ -1152,9 +1436,22 @@ ArenaCounters DeviceArray<T, S>::read_counters() const
 }
 
 template <typename T, int S>
+void DeviceArray<T, S>::settle()
+{
+    if (n_chunks_ > 0)
+    {
+        const long warps_per_block = 256 / warp_size;
+        const long blocks          = (n_chunks_ + warps_per_block - 1) / warps_per_block;
+        kernels::settle_fresh<<<static_cast<unsigned>(blocks < 65536 ? blocks : 65536), 256>>>(view_, n_chunks_);
+        SA_GPU(gpuGetLastError());
+    }
+}
+
+template <typename T, int S>
 void DeviceArray<T, S>::compress()
 {
     SA_GPU(gpuDeviceSynchronize());
+    settle(); // a caller's relaxed_publish kernel may have left fresh buffers
     kernels::normalise_shards<<<1, n_shards>>>(view_);
     kernels::reclaim_parked<<<64, 256>>>(view_);
     kernels::clear_lost<<<1, 1>>>(view_.counters);

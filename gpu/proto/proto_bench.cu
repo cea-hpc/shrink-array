@@ -326,12 +326,15 @@ void bench(long n, int reps)
     //    `buf` once per block, the load mode does not apply to it.
     const char* mode_name[] = {"race", "claim", "chunk-aligned"};
     const char* load_name[] = {"acquire", "relaxed", "plain"};
-    for (int run = 0; run < 5; ++run)
+    //    Last, the chunk-aligned path with the relaxed publication (no acquire, no release;
+    //    parallel_for_chunks settles after its kernel, inside the timing).
+    for (int run = 0; run < 6; ++run)
     {
-        const int mode = run < 3 ? run : run - 3; // race, claim, aligned, then race, claim relaxed
+        const int mode = run < 3 ? run : run == 5 ? 2 : run - 3; // race, claim, aligned, race, claim, aligned
         const int wl   = run < 3 ? 0 : 1;
         a.set_coordination(mode == 1 ? sa::Coordination::claim : sa::Coordination::race);
         a.set_write_load(static_cast<sa::WriteLoad>(wl));
+        a.set_relaxed_publish(run == 5);
         std::vector<float> t;
         sa::Stats          before{}, after{};
         for (int r = 0; r < reps; ++r)
@@ -356,7 +359,8 @@ void bench(long n, int reps)
         char what[64];
         if (mode == 2)
         {
-            std::snprintf(what, sizeof what, "first write, %s", mode_name[mode]);
+            std::snprintf(what, sizeof what, "first write, %s%s", mode_name[mode],
+                          run == 5 ? ", relaxed publication" : "");
         }
         else
         {
@@ -372,6 +376,7 @@ void bench(long n, int reps)
     }
     a.set_coordination(sa::Coordination::race);
     a.set_write_load(sa::WriteLoad::acquire);
+    a.set_relaxed_publish(false);
 
     // 1. Read, every chunk compressed (descriptors only), then every chunk materialised.
     const float read_compressed = time_ms(reps, [&] { read_sum<<<grid, block>>>(a.view(), n, d_sum); });
@@ -395,6 +400,10 @@ void bench(long n, int reps)
     line("write into materialised chunks, 4 loads ahead", write_ahead, flat_write, "");
     const float write_materialised_chunked = time_ms(reps, [&] { a.parallel_for_chunks(0, n, Ramp{2.0}); });
     line("write into materialised chunks, chunk-aligned", write_materialised_chunked, flat_write, "");
+    a.set_relaxed_publish(true);
+    const float write_materialised_relaxed = time_ms(reps, [&] { a.parallel_for_chunks(0, n, Ramp{2.0}); });
+    a.set_relaxed_publish(false);
+    line("write into materialised chunks, chunk-aligned, relaxed", write_materialised_relaxed, flat_write, "");
 
     // 3. Random range rewrites, as shrink_bench's phases: lengths up to 4 chunks, a third of
     //    the ranges zeros, a third one constant, a third varying; then compress().
@@ -427,9 +436,9 @@ void bench(long n, int reps)
     const auto  n_kept   = static_cast<long>(kept.size());
     const float flat_rng = time_ms(reps, [&] { write_ranges<<<grid, block>>>(flat, d_ranges, n_kept); });
     // The array starts half materialised (every other chunk at a varying ramp) for each rep.
-    for (int run = 0; run < 5; ++run)
+    for (int run = 0; run < 6; ++run)
     {
-        const int mode = run < 3 ? run : run - 3; // as the first write
+        const int mode = run < 3 ? run : run == 5 ? 2 : run - 3; // as the first write
         const int wl   = run < 3 ? 0 : 1;
         a.set_coordination(mode == 1 ? sa::Coordination::claim : sa::Coordination::race);
         a.set_write_load(static_cast<sa::WriteLoad>(wl));
@@ -445,7 +454,13 @@ void bench(long n, int reps)
                 {
                     if (mode == 2)
                     {
+                        a.set_relaxed_publish(run == 5);
                         write_ranges_chunked<block, S><<<grid, block>>>(a.view(), d_ranges, n_kept);
+                        if (run == 5)
+                        {
+                            a.settle(); // part of the write: the fresh buffers completed
+                        }
+                        a.set_relaxed_publish(false);
                     }
                     else
                     {
@@ -459,7 +474,8 @@ void bench(long n, int reps)
         const sa::Stats st           = a.stats();
         std::printf("  random ranges, %s%s%s: %ld non-overlapping ranges; after compress %llu/%ld chunks "
                     "materialised; so far %llu lost CAS, %llu claim waits, %llu given up, %llu replays\n",
-                    mode_name[mode], mode == 2 ? "" : ", ", mode == 2 ? "" : load_name[wl], n_kept, st.materialised, st.n_chunks, st.cas_lost, st.claim_wait, st.claim_spin,
+                    mode_name[mode], mode == 2 ? "" : ", ",
+                    mode == 2 ? (run == 5 ? ", relaxed publication" : "") : load_name[wl], n_kept, st.materialised, st.n_chunks, st.cas_lost, st.claim_wait, st.claim_spin,
                     st.replays);
         line("  write kernel", rng_write, flat_rng, "");
         line("  finalize() (compress)", rng_compress, flat_rng, "");
