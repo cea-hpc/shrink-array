@@ -75,6 +75,18 @@
     #define CHUNK_READ_RECLAIM_SLOTS 1024
 #endif
 
+// EXPERIMENT (branch exp/optimistic-read): what a pure read costs under each
+// read-side protocol. Measurement only -- modes 1 and 2 are NOT safe against a
+// pass releasing a buffer under a reader.
+//   0  the announce (default): odd release store + light fence ... even release store
+//   1  nothing: the upper bound of any change to the read side
+//   2  the cost of an optimistic read on its success path: an acquire load of the
+//      reclaim epoch before, an acquire fence + a load + a compare after; the
+//      retry is not implemented (a mismatch is only counted)
+#ifndef CHUNK_READ_SECTION_MODE
+    #define CHUNK_READ_SECTION_MODE 0
+#endif
+
 namespace shrink_array::read_reclaim
 {
 
@@ -98,6 +110,15 @@ inline std::atomic<int>                   g_nslots{0}; ///< Slots claimed so far
 inline std::atomic<long>        g_overflow_readers{0};
 inline thread_local ReaderSlot* t_slot     = nullptr; ///< This thread's slot, once claimed.
 inline thread_local bool        t_overflow = false;   ///< This thread found no slot left.
+
+/// @brief EXPERIMENT mode 2: bumped by every grace period, before its releases.
+alignas(64) inline std::atomic<std::uint64_t> g_reclaim_epoch{0};
+/// @brief EXPERIMENT mode 2: reads that saw the epoch move (would have retried).
+inline thread_local long t_optimistic_conflicts = 0;
+[[gnu::noinline, gnu::cold]] inline void note_optimistic_conflict() noexcept
+{
+    ++t_optimistic_conflicts;
+}
 
 /// @brief First read of this thread: claim a slot (or join the overflow).
 inline ReaderSlot* claim_slot() noexcept
@@ -157,8 +178,9 @@ class ReadSection
  */
 inline void wait_for_readers() noexcept
 {
+    g_reclaim_epoch.fetch_add(1, std::memory_order_seq_cst); // EXPERIMENT mode 2
     dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
-    const int         nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
+    const int        nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
     const ReaderSlot* mine   = t_slot;
     for (int i = 0; i < nslots; ++i)
     {

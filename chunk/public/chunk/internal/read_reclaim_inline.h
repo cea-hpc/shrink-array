@@ -28,7 +28,11 @@ namespace shrink_array
 
 inline read_reclaim::ReadSection::ReadSection() noexcept
 {
-    if constexpr (enabled)
+    if constexpr (enabled && CHUNK_READ_SECTION_MODE == 2)
+    {
+        seq_ = g_reclaim_epoch.load(std::memory_order_acquire);
+    }
+    else if constexpr (enabled && CHUNK_READ_SECTION_MODE == 0)
     {
         ReaderSlot* slot = t_slot;
         if (slot == nullptr) [[unlikely]]
@@ -66,7 +70,15 @@ inline read_reclaim::ReadSection::ReadSection() noexcept
 
 inline read_reclaim::ReadSection::~ReadSection()
 {
-    if constexpr (enabled)
+    if constexpr (enabled && CHUNK_READ_SECTION_MODE == 2)
+    {
+        std::atomic_thread_fence(std::memory_order_acquire); // the element loads before the re-check
+        if (g_reclaim_epoch.load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        {
+            note_optimistic_conflict();
+        }
+    }
+    else if constexpr (enabled && CHUNK_READ_SECTION_MODE == 0)
     {
         if (slot_ != nullptr) [[likely]]
         {
