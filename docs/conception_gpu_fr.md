@@ -727,6 +727,20 @@ qui publie par un CAS relaxed et qui, au lieu d'écrire dans un buffer qu'un aut
 noyau a publié, passe par l'append-buffer (rare sur des plages alignées), ou des publications
 groupées par bloc.
 
+**Publication relaxed sur le MI300A** (e1b224191, `set_relaxed_publish(true)` : voir
+[gpu/proto](../gpu/proto/README.md), « Coordination per chunk »). `proto_test` passe, ses trois
+cas relaxed compris. Le chemin aligné, avant -> après :
+
+| | S = 256 | S = 1024 | GH200, acquire/release (S = 256 / 1024) |
+|---|---|---|---|
+| première écriture | 47x -> 13,9x | 15x -> 3,4x | 5,0x / 2,3x |
+| écriture dans des chunks matérialisés | 16,6x -> 1,53x | 4,2x -> 0,79x | 1,71x / 1,43x |
+| réécritures de plages + `finalize()` | 36x -> 7,6x | 13,6x -> 3,0x | 4,5x / 2,4x |
+
+Sans acquire ni release dans le noyau, le MI300A à S = 1024 arrive à 1,5x du GH200 avec. La
+publication relaxed devient le chemin aligné de l'étape 1, sur les deux constructeurs si le
+GH200 confirme qu'elle n'y coûte rien (T1000 : égale ou un peu plus rapide).
+
 **Étape 1, commencée (novembre 2026).** Les fonctions que partagent les versions hôte et device
 sont dans la bibliothèque, compilées pour les deux :
 

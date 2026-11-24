@@ -191,6 +191,20 @@ no release per materialisation -- for instance a chunk-aligned path that publish
 relaxed CAS and appends, instead of writing into it, to a buffer that another block of the
 same kernel published (rare on aligned ranges), or publications batched per block.
 
+**Relaxed publication on the MI300A** (e1b224191, `set_relaxed_publish(true)`: see
+"Coordination per chunk" below). `proto_test` passes, its three
+relaxed cases included. The chunk-aligned path, before -> after:
+
+| | S = 256 | S = 1024 | GH200, acquire/release (S = 256 / 1024) |
+|---|---|---|---|
+| first write | 47x -> 13.9x | 15x -> 3.4x | 5.0x / 2.3x |
+| write into materialised chunks | 16.6x -> 1.53x | 4.2x -> 0.79x | 1.71x / 1.43x |
+| range rewrites + `finalize()` | 36x -> 7.6x | 13.6x -> 3.0x | 4.5x / 2.4x |
+
+Without acquire or release in the kernel, the MI300A at S = 1024 comes within 1.5x of the
+GH200 with them. The relaxed publication becomes the chunk-aligned path of stage 1, on both
+vendors if the GH200 confirms it costs nothing there (T1000: equal or slightly faster).
+
 ## What the prototype changed in the design
 
 - **A chunk spans S/32 warps** (S/64 wavefronts): warp aggregation (6.2) gives one
