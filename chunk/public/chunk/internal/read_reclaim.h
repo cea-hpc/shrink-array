@@ -63,6 +63,8 @@
 #include <algorithm>   // std::min
 #include <atomic>      // std::atomic, std::atomic_thread_fence, std::memory_order
 #include <cstdint>     // std::uint64_t
+#include <cstdio>      // std::fprintf (EXPERIMENT mode 5 report)
+#include <cstdlib>     // std::abort (EXPERIMENT mode 5)
 #include <cstring>     // std::memcpy (EXPERIMENT mode 3)
 #include <type_traits> // std::is_trivially_copyable_v (EXPERIMENT mode 3)
 #include <thread>      // std::this_thread::yield
@@ -94,6 +96,12 @@
 //      element_at's `values` load depends on it by address (dep()); the element load
 //      depends on `values`, the re-check on the element (pass()). Other call sites
 //      get no ordering from the entry load (measurement only)
+//   5  quiescent-state reclamation (QSBR): a read does nothing; a thread announces a
+//      quiescent point -- no pointer read from a chunk held -- on every write entry and
+//      after the phase-end barrier, and comes online at begin_parallel_phase(). A pass
+//      in a region parks the buffers it releases, tagged with a new epoch; they are
+//      released by the same thread at its next pass once every other online thread
+//      has passed a quiescent point since, and by finalize_parallel_phase() otherwise
 #ifndef CHUNK_READ_SECTION_MODE
     #define CHUNK_READ_SECTION_MODE 0
 #endif
@@ -110,8 +118,19 @@ inline constexpr int slot_count = CHUNK_READ_RECLAIM_SLOTS;
 /// @brief One reader's sequence number, on a cache line of its own.
 struct alignas(64) ReaderSlot
 {
-    std::atomic<std::uint64_t> seq{0}; ///< Odd while a read is in flight.
+    std::atomic<std::uint64_t> seq{0};        ///< Odd while a read is in flight. Mode 5: the last quiescent epoch.
+    std::atomic<bool>          online{false}; ///< EXPERIMENT mode 5: in the current phase
+    std::atomic<std::uint64_t> scan_seq{0};   ///< EXPERIMENT mode 5: odd while a ScanSection is open
 };
+
+/// @brief EXPERIMENT mode 5: wait_for_readers() and ScanSection use scan_seq.
+inline constexpr bool scan_announce = CHUNK_READ_SECTION_MODE == 5;
+
+/// @brief The sequence wait_for_readers() waits on.
+inline std::atomic<std::uint64_t>& announce_seq(ReaderSlot& slot) noexcept
+{
+    return scan_announce ? slot.scan_seq : slot.seq;
+}
 
 inline std::array<ReaderSlot, slot_count> g_slots;     ///< The reader slots, claimed in order.
 inline std::atomic<int>                   g_nslots{0}; ///< Slots claimed so far (may exceed slot_count).
@@ -202,6 +221,62 @@ class ReadSection
 };
 
 /**
+ * @brief EXPERIMENT mode 5: a read section that announces itself, for the
+ *        library's own scans (a compressor's start() reading the chunk a writer
+ *        published): what ArrayChunkCore::await_chunk_readers() waits for. In
+ *        mode 5 a ReadSection does nothing; in the other modes this IS one.
+ */
+#if CHUNK_READ_SECTION_MODE == 5
+class ScanSection
+{
+  public:
+    ScanSection() noexcept
+    {
+        if constexpr (enabled)
+        {
+            ReaderSlot* slot = t_slot != nullptr ? t_slot : claim_slot();
+            if (slot != nullptr) [[likely]]
+            {
+                slot_ = slot;
+                seq_  = slot->scan_seq.load(std::memory_order_relaxed) + 1; // odd
+                slot->scan_seq.store(seq_, std::memory_order_release);
+                light_fence();
+            }
+            else
+            {
+                g_overflow_readers.fetch_add(1, std::memory_order_seq_cst);
+                light_fence();
+            }
+        }
+    }
+    ~ScanSection()
+    {
+        if constexpr (enabled)
+        {
+            if (slot_ != nullptr) [[likely]]
+            {
+                slot_->scan_seq.store(seq_ + 1, std::memory_order_release);
+            }
+            else
+            {
+                g_overflow_readers.fetch_sub(1, std::memory_order_release);
+            }
+        }
+    }
+    ScanSection(const ScanSection&)            = delete;
+    ScanSection& operator=(const ScanSection&) = delete;
+    ScanSection(ScanSection&&)                 = delete;
+    ScanSection& operator=(ScanSection&&)      = delete;
+
+  private:
+    ReaderSlot*   slot_ = nullptr;
+    std::uint64_t seq_  = 0;
+};
+#else
+using ScanSection = ReadSection;
+#endif
+
+/**
  * @brief The grace period: every read in flight when it starts has ended when
  *        it returns. The caller has already swapped the pointers it is about
  *        to release.
@@ -218,12 +293,12 @@ inline void wait_for_readers() noexcept
         {
             continue;
         }
-        const std::uint64_t seq = g_slots[i].seq.load(std::memory_order_acquire);
+        const std::uint64_t seq = announce_seq(g_slots[i]).load(std::memory_order_acquire);
         if ((seq & 1U) == 0U)
         {
             continue;
         }
-        for (int spins = 0; g_slots[i].seq.load(std::memory_order_acquire) == seq;)
+        for (int spins = 0; announce_seq(g_slots[i]).load(std::memory_order_acquire) == seq;)
         {
             CHUNK_CPU_PAUSE();
             if (++spins == 1000)
@@ -309,6 +384,183 @@ inline bool defer_release(void (*release)(void*, int, void*) noexcept, void* chu
         }
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// EXPERIMENT mode 5: quiescent-state reclamation
+// ---------------------------------------------------------------------------
+
+/// @brief Mode 5 is compiled in.
+inline constexpr bool qsbr = enabled && CHUNK_READ_SECTION_MODE == 5;
+
+/// @brief A buffer parked by a pass, with the epoch its pass opened.
+struct QPending
+{
+    Deferred      d;
+    std::uint64_t epoch;
+};
+
+/// @brief Per slot: touched by its own thread in a region, by finalize outside one.
+inline std::array<std::vector<QPending>, slot_count> g_qpending;
+inline std::atomic<long>                             g_qheld{0};      ///< Buffers parked now.
+inline std::atomic<long>                             g_qheld_peak{0}; ///< Most buffers parked at once.
+inline std::atomic<long>                             g_qparked{0};    ///< Buffers parked in all.
+inline std::atomic<long> g_qdrained{0};     ///< Of those, released by finalize (not by a later pass).
+inline std::atomic<int>  g_qonline_peak{0}; ///< Most threads online in one phase.
+
+/// @brief The report, at exit.
+struct QReport
+{
+    QReport()                          = default;
+    QReport(const QReport&)            = delete;
+    QReport& operator=(const QReport&) = delete;
+    ~QReport()
+    {
+        if constexpr (qsbr)
+        {
+            std::fprintf(stderr,
+                         "[qsbr] buffers parked %ld, released at phase end %ld, parked at once (peak) %ld, "
+                         "threads online (peak) %d\n",
+                         g_qparked.load(), g_qdrained.load(), g_qheld_peak.load(), g_qonline_peak.load());
+        }
+    }
+};
+inline QReport g_qreport;
+
+/// @brief Release one parked buffer, under the geometry and key of its pass.
+inline void q_release(const QPending& pending) noexcept
+{
+    const unsigned int saved_size = t_active_chunk_size;
+    const unsigned int saved_key  = t_alloc_key;
+    t_active_chunk_size           = pending.d.chunk_size;
+    t_alloc_key                   = pending.d.alloc_key;
+    pending.d.release(pending.d.chunk, pending.d.thr, pending.d.block);
+    t_active_chunk_size = saved_size;
+    t_alloc_key         = saved_key;
+}
+
+/// @brief This thread's slot, claimed on first use; aborts past slot_count.
+inline ReaderSlot* q_slot() noexcept
+{
+    ReaderSlot* slot = t_slot != nullptr ? t_slot : claim_slot();
+    if (slot == nullptr) [[unlikely]]
+    {
+        std::fprintf(stderr, "[qsbr] more threads than CHUNK_READ_RECLAIM_SLOTS\n");
+        std::abort();
+    }
+    return slot;
+}
+
+/// @brief begin_parallel_phase(), on every thread of the team: online, at the current epoch.
+/// @details seq_cst against the reclaimer's epoch increment + online load: either
+///          it sees this thread online (and waits for its next quiescent point) or
+///          this load sees its epoch (and the thread reads after the pass's swaps).
+inline void q_online() noexcept
+{
+    if constexpr (qsbr)
+    {
+        ReaderSlot* slot = q_slot();
+        slot->online.store(true, std::memory_order_seq_cst);
+        slot->seq.store(g_reclaim_epoch.load(std::memory_order_seq_cst), std::memory_order_seq_cst);
+    }
+}
+
+/// @brief A point where this thread holds no pointer read from a chunk.
+/// @details Release: this thread's earlier element loads before the store; the
+///          acquire load of the epoch: a pass whose increment it sees has its
+///          swaps visible to this thread's later loads.
+CHUNK_FORCE_INLINE void quiescent_point() noexcept
+{
+    if constexpr (qsbr)
+    {
+        if (ReaderSlot* slot = t_slot; slot != nullptr) [[likely]]
+        {
+            slot->seq.store(g_reclaim_epoch.load(std::memory_order_acquire), std::memory_order_release);
+        }
+    }
+}
+
+/// @brief Release this thread's parked buffers that every other online thread has passed.
+inline void q_try_release_own() noexcept
+{
+    ReaderSlot* mine = t_slot;
+    if (mine == nullptr)
+    {
+        return;
+    }
+    auto& parked = g_qpending[static_cast<std::size_t>(mine - g_slots.data())];
+    if (parked.empty())
+    {
+        return;
+    }
+    std::uint64_t oldest = ~std::uint64_t{0};
+    const int     nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
+    for (int i = 0; i < nslots; ++i)
+    {
+        if (&g_slots[i] == mine || !g_slots[i].online.load(std::memory_order_seq_cst))
+        {
+            continue;
+        }
+        oldest = std::min(oldest, g_slots[i].seq.load(std::memory_order_acquire));
+    }
+    std::size_t done = 0;
+    while (done < parked.size() && parked[done].epoch <= oldest)
+    {
+        q_release(parked[done]);
+        ++done;
+    }
+    if (done != 0)
+    {
+        parked.erase(parked.begin(), parked.begin() + static_cast<std::ptrdiff_t>(done));
+        g_qheld.fetch_sub(static_cast<long>(done), std::memory_order_relaxed);
+    }
+}
+
+/// @brief End of a pass (PassScope): park its batch under a new epoch, then release what may be.
+inline void q_park(std::vector<Deferred>& batch) noexcept
+{
+    ReaderSlot*         mine   = q_slot();
+    const std::uint64_t epoch  = g_reclaim_epoch.fetch_add(1, std::memory_order_seq_cst) + 1;
+    auto&               parked = g_qpending[static_cast<std::size_t>(mine - g_slots.data())];
+    for (const Deferred& deferred : batch)
+    {
+        parked.push_back(QPending{.d = deferred, .epoch = epoch});
+    }
+    const long n    = static_cast<long>(batch.size());
+    const long held = g_qheld.fetch_add(n, std::memory_order_relaxed) + n;
+    g_qparked.fetch_add(n, std::memory_order_relaxed);
+    for (long peak = g_qheld_peak.load(std::memory_order_relaxed);
+         held > peak && !g_qheld_peak.compare_exchange_weak(peak, held, std::memory_order_relaxed);)
+    {
+    }
+    batch.clear();
+    q_try_release_own();
+}
+
+/// @brief Outside any region (finalize_parallel_phase): release every parked buffer, every thread offline.
+inline void q_drain_all() noexcept
+{
+    if constexpr (qsbr)
+    {
+        const int nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
+        int       online = 0;
+        for (int i = 0; i < nslots; ++i)
+        {
+            auto& parked = g_qpending[static_cast<std::size_t>(i)];
+            for (const QPending& pending : parked)
+            {
+                q_release(pending);
+            }
+            g_qdrained.fetch_add(static_cast<long>(parked.size()), std::memory_order_relaxed);
+            g_qheld.fetch_sub(static_cast<long>(parked.size()), std::memory_order_relaxed);
+            parked.clear();
+            online += g_slots[i].online.exchange(false, std::memory_order_seq_cst) ? 1 : 0;
+        }
+        if (online > g_qonline_peak.load(std::memory_order_relaxed))
+        {
+            g_qonline_peak.store(online, std::memory_order_relaxed);
+        }
+    }
 }
 
 } // namespace shrink_array::read_reclaim

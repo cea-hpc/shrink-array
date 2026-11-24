@@ -460,6 +460,7 @@ template <typename WriteCallable, typename LbdInfo>
 ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&          write_body,
                                                              [[maybe_unused]] LbdInfo lbd_info) noexcept
 {
+    read_reclaim::quiescent_point(); // EXPERIMENT mode 5: no read pointer held at a write's entry
     if constexpr (chunk_config::use_fast_block_compression)
     {
         lbd_info(); // common initialization required for fast-path

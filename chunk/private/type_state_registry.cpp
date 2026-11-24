@@ -35,6 +35,7 @@
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/phases.h"                    // the declarations of the five phase functions below
+#include "chunk/internal/read_reclaim.h"     // EXPERIMENT mode 5: q_online / quiescent_point / q_drain_all
 #include "chunk/runtime.h"                   // Runtime::init (ensure_ready)
 
 // Must stay a directive: a std-alloc build does not put fast_allocators/public on the
@@ -139,6 +140,7 @@ void begin_parallel_phase()
         // of the std backend -- until finalize_parallel_phase(). Nothing otherwise.
         pmp::enter_application_phase();
         chunk_rank_cache() = CHUNK_PMP_THREAD_RANK;
+        read_reclaim::q_online(); // EXPERIMENT mode 5
     }
     phase_guard::check_begin(); // finalize forgotten before this region: stops, in every build
     // One top-level team at a time (phase_guard::teams): each thread of a
@@ -174,6 +176,7 @@ void finalize_parallel_phase_only_flush()
         //  - flush: each thread drains its OWN queue using its own rank,
         //    which is stable inside the current parallel region
         pmp::current_team().barrier();
+        read_reclaim::quiescent_point(); // EXPERIMENT mode 5: past the team's barrier
 
         auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
         type_registry.flush_all_deferred(true);
@@ -182,6 +185,7 @@ void finalize_parallel_phase_only_flush()
 
 void finalize_parallel_phase_after_flush()
 {
+    read_reclaim::q_drain_all();      // EXPERIMENT mode 5: no team running
     phase_guard::teams::manual_end(); // the phase is over: the next one may be any team's
     if constexpr (phase_guard::tracked)
     {
@@ -218,6 +222,7 @@ void finalize_parallel_phase()
     {
         return;
     }
+    read_reclaim::q_drain_all();      // EXPERIMENT mode 5: no team running
     phase_guard::teams::manual_end(); // the phase is over: the next one may be any team's
     // The application's threads stopped writing (the contract): close its
     // phase first, so the flush and the compression below run on teams of

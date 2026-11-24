@@ -153,6 +153,11 @@ inline read_reclaim::PassScope::~PassScope()
         }
         t_batch     = nullptr;
         auto& batch = storage();
+        if constexpr (qsbr)
+        {
+            q_park(batch); // EXPERIMENT mode 5: no wait, released later
+            return;
+        }
         if (batch.empty())
         {
             return;
