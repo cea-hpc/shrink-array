@@ -795,7 +795,7 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   prise en même temps) ; la fin du dernier chunk n'est pas comparée. `device_write_validation`
   la lance après chaque tour contre un modèle hôte (replis comptés, éléments, chunks
   matérialisés et buffers en usage vérifiés à nouveau), et échoue si la fin du dernier chunk
-  est comparée ou si un buffer n'est pas rendu.
+  est comparée ou si un buffer n'est pas rendu. Elle passe sur la T1000 et le GH200.
 
 - La conversion hôte <-> device : `Array::assign(state)` charge un `ArrayState` (l'`export_array()`
   d'un tableau hôte, `chunk_exchange.h`), `Array::image()` en rend un pour `import_array()`.
@@ -808,7 +808,8 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   `chunk_exchange.h` ne change pas). `device_convert_validation` est construit ainsi : un
   `zero_any::Array` hôte avec des chunks à la première valeur, à une seconde valeur et
   matérialisés part sur le device, y est écrit et compressé (dix chunks se replient sur 2,5,
-  de nouveau une seconde valeur côté hôte), et revient égal à un miroir hôte.
+  de nouveau une seconde valeur côté hôte), et revient égal à un miroir hôte. Il passe sur la
+  T1000 et le GH200.
 
 Suite : une façade au niveau des noyaux (Kokkos, section 13 étape 3) et le chemin `assign()`
 des noyaux quelconques sans acquire ni release à l'échelle du device (MI300A).
