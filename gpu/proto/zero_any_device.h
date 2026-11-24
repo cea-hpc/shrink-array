@@ -38,6 +38,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "device_intrinsics.h"
@@ -92,20 +93,10 @@ template <typename T>
 __host__ __device__ inline bool same_bits(const T& a, const T& b) noexcept
 {
     static_assert(sizeof(T) == 4 || sizeof(T) == 8, "the prototype handles 4- and 8-byte elements");
-    if constexpr (sizeof(T) == 8)
-    {
-        unsigned long long x, y;
-        std::memcpy(&x, &a, 8);
-        std::memcpy(&y, &b, 8);
-        return x == y;
-    }
-    else
-    {
-        unsigned int x, y;
-        std::memcpy(&x, &a, 4);
-        std::memcpy(&y, &b, 4);
-        return x == y;
-    }
+    // __builtin_bit_cast, not std::memcpy: HIP has no device std::memcpy (CUDA does), and
+    // std::bit_cast is a host function to nvcc. The builtin is neither (nvcc, clang, hipcc).
+    using U = std::conditional_t<sizeof(T) == 8, unsigned long long, unsigned int>;
+    return __builtin_bit_cast(U, a) == __builtin_bit_cast(U, b);
 }
 
 /// @brief A chunk (section 4.1): its buffer, or nullptr and its constant. Trivially
