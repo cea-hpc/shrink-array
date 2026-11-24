@@ -24,8 +24,8 @@
  *          the chunk-aligned write (first write over a compressed array, write into
  *          materialised chunks), with finish() inside the timing; random range rewrites by
  *          a kernel calling Writer::write, then compress(); compress() alone, every chunk
- *          folding back and none; the host <-> device conversion (assign() of a fully
- *          materialised state, image()).
+ *          folding back and none; then the host <-> device conversion (assign() of a fully
+ *          materialised state, image()) on 1 GiB at most.
  *
  *          The stage-0 criteria: read <= 1.5x the flat array, write into materialised chunks
  *          <= 2x, compress() of 10 GB <= 10 ms at 3.35 TB/s (reported as a fraction of this
@@ -288,37 +288,47 @@ void bench(std::int64_t n, int reps)
     report("compress(), nothing folds (scan)",
            time_median(reps, [&] { a.parallel_for_chunks(0, n, Ramp{1.0}); }, [&] { (void)a.compress(); }));
 
-    // 5. The host <-> device conversion of a fully materialised array.
-    {
-        std::vector<double> host(static_cast<std::size_t>(n));
-        for (std::size_t i = 0; i < host.size(); ++i)
-        {
-            host[i] = static_cast<double>(i);
-        }
-        shrink_array::ArrayState<double> state;
-        state.size       = host.size();
-        state.chunk_size = S;
-        state.chunks.resize(static_cast<std::size_t>(n_chunks));
-        for (std::size_t c = 0; c < state.chunks.size(); ++c)
-        {
-            state.chunks[c] = {shrink_array::ChunkKind::materialised, 0.0, host.data() + c * S};
-        }
-        // A last partial chunk reads past host's end in assign(): give it its own buffer.
-        std::vector<double> last(S, 0.0);
-        if (n % S != 0)
-        {
-            std::copy(host.end() - (n % S), host.end(), last.begin());
-            state.chunks.back().data = last.data();
-        }
-        const double t_assign = time_median(reps, nothing, [&] { a.assign(state); });
-        const double t_image  = time_median(reps, nothing, [&] { (void)a.image(); });
-        std::printf("  %-50s %9.3f ms  %7.1f GB/s\n", "assign(), every chunk materialised (host -> device)", t_assign,
-                    bytes / (t_assign * 1e6));
-        std::printf("  %-50s %9.3f ms  %7.1f GB/s\n", "image(), every chunk materialised (device -> host)", t_image,
-                    bytes / (t_image * 1e6));
-    }
     sd::release(flat);
     sd::release(sums);
+}
+
+/// @brief The host <-> device conversion of a fully materialised array of @p n elements, on
+///        an array of its own once bench() has freed its memory: on the MI300A the host and
+///        the device share the HBM, and the 8 GiB run (flat array, arena, host copy, image)
+///        was killed for lack of memory.
+template <unsigned int S>
+void bench_conversion(std::int64_t n, int reps)
+{
+    const std::int64_t   n_chunks = (n + S - 1) / S;
+    const double         bytes    = static_cast<double>(n) * sizeof(double);
+    const auto           nothing  = [] {};
+    sd::Array<double, S> a(n, static_cast<unsigned long long>(n_chunks));
+    std::printf("\n== conversion, S=%u, %lld doubles (%.2f GiB), every chunk materialised ==\n", S,
+                static_cast<long long>(n), bytes / (1 << 30));
+    std::vector<double> host(static_cast<std::size_t>(n));
+    for (std::size_t i = 0; i < host.size(); ++i)
+    {
+        host[i] = static_cast<double>(i);
+    }
+    shrink_array::ArrayState<double> state;
+    state.size       = host.size();
+    state.chunk_size = S;
+    state.chunks.resize(static_cast<std::size_t>(n_chunks));
+    for (std::size_t c = 0; c < state.chunks.size(); ++c)
+    {
+        state.chunks[c] = {shrink_array::ChunkKind::materialised, 0.0, host.data() + c * S};
+    }
+    // A last partial chunk would read past host's end in assign(): give it its own buffer.
+    std::vector<double> last(S, 0.0);
+    if (n % S != 0)
+    {
+        std::copy(host.end() - (n % S), host.end(), last.begin());
+        state.chunks.back().data = last.data();
+    }
+    const double t_assign = time_median(reps, nothing, [&] { a.assign(state); });
+    const double t_image  = time_median(reps, nothing, [&] { (void)a.image(); });
+    std::printf("  %-50s %9.3f ms  %7.1f GB/s\n", "assign() (host -> device)", t_assign, bytes / (t_assign * 1e6));
+    std::printf("  %-50s %9.3f ms  %7.1f GB/s\n", "image() (device -> host)", t_image, bytes / (t_image * 1e6));
 }
 
 } // namespace
@@ -333,6 +343,9 @@ int main(int argc, char** argv)
     {
         bench<256>(n, reps);
         bench<1024>(n, reps);
+        const std::int64_t n_conv = n < (std::int64_t{1} << 27) ? n : std::int64_t{1} << 27; // 1 GiB at most
+        bench_conversion<256>(n_conv, reps);
+        bench_conversion<1024>(n_conv, reps);
     }
     catch (const std::exception& e)
     {
