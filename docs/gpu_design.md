@@ -784,6 +784,22 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   1.59x / 0.86x, write into materialised chunks 0.92x / 0.80x, range rewrites + `compress()`
   4.8x / 2.0x, `compress()` of 10 GB 2.5 / 2.4 ms when everything folds; `assign()` and
   `image()` 3 GB/s (pageable host memory, a per-element staging loop: not tuned).
+  On the big GPUs (8 GiB of doubles), library against prototype (relaxed publication):
+
+  | S = 1024 | GH200 | GH200 proto | MI300A | MI300A proto |
+  |---|---|---|---|---|
+  | read, every chunk materialised | 1.04x | 1.03x | 1.32x | 1.45x |
+  | first write, chunk-aligned (+ `finish()`) | 1.56x | 1.83x | 1.60x | 3.4x |
+  | write into materialised chunks | 1.17x | 1.16x | 1.21x | 0.79x |
+  | range rewrites + `compress()` | 2.41x | 2.21x | 3.31x | 2.99x |
+  | `compress()` of 10 GB, every chunk folds | 3.5 ms | 3.5 ms | 3.7 ms | 2.9 ms |
+
+  At S = 256: read 1.04x / 1.33x, first write 3.50x / 4.33x, write into materialised chunks
+  1.67x / 2.02x, `compress()` 4.0 / 4.7 ms (GH200 / MI300A). The port lost nothing on the
+  GH200; on the MI300A the first write is twice as fast as the prototype's (which counted
+  every materialisation on one global counter) and the write into materialised chunks
+  slower (1.21x against 0.79x at S = 1024, 2.02x at S = 256: at the criterion), to be looked
+  at. The conversion: 12 to 18 GB/s on the GH200 (not tuned).
 
 Next: a kernel-level facade (Kokkos, section 13 stage 3) and the `assign()` path for
 arbitrary kernels without device-scope acquire or release (MI300A).

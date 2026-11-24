@@ -822,6 +822,22 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   réécritures de plages + `compress()` 4,8x / 2,0x, `compress()` de 10 Go 2,5 / 2,4 ms quand
   tout se replie ; `assign()` et `image()` 3 Go/s (mémoire hôte paginée, une boucle de copie
   élément par élément : pas optimisé).
+  Sur les gros GPU (8 Gio de doubles), bibliothèque contre prototype (publication relaxed) :
+
+  | S = 1024 | GH200 | GH200 proto | MI300A | MI300A proto |
+  |---|---|---|---|---|
+  | lecture, tous les chunks matérialisés | 1,04x | 1,03x | 1,32x | 1,45x |
+  | première écriture alignée (+ `finish()`) | 1,56x | 1,83x | 1,60x | 3,4x |
+  | écriture dans des chunks matérialisés | 1,17x | 1,16x | 1,21x | 0,79x |
+  | réécritures de plages + `compress()` | 2,41x | 2,21x | 3,31x | 2,99x |
+  | `compress()` de 10 Go, tout se replie | 3,5 ms | 3,5 ms | 3,7 ms | 2,9 ms |
+
+  À S = 256 : lecture 1,04x / 1,33x, première écriture 3,50x / 4,33x, écriture dans des chunks
+  matérialisés 1,67x / 2,02x, `compress()` 4,0 / 4,7 ms (GH200 / MI300A). Le portage n'a rien
+  perdu sur le GH200 ; sur le MI300A la première écriture est deux fois plus rapide que celle du
+  prototype (qui comptait chaque matérialisation sur un compteur global) et l'écriture dans des
+  chunks matérialisés plus lente (1,21x contre 0,79x à S = 1024, 2,02x à S = 256 : au
+  critère), à examiner. La conversion : 12 à 18 Go/s sur le GH200 (pas optimisée).
 
 Suite : une façade au niveau des noyaux (Kokkos, section 13 étape 3) et le chemin `assign()`
 des noyaux quelconques sans acquire ni release à l'échelle du device (MI300A).

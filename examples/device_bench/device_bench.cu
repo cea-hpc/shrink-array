@@ -33,6 +33,9 @@
  *          wall-clock around calls that wait for the device, medians of the repetitions.
  *
  *          Usage: device_bench [log2(elements), default 27] [repetitions, default 10]
+ *                              [log2(elements) of the conversion, default min(that, 27)]
+ *          The conversion holds two host copies of its array (the source and the image):
+ *          a job with little host memory takes a smaller one (MI300A: killed at 1 GiB).
  */
 
 #include <algorithm> // std::sort, std::shuffle
@@ -343,7 +346,8 @@ int main(int argc, char** argv)
     {
         bench<256>(n, reps);
         bench<1024>(n, reps);
-        const std::int64_t n_conv = n < (std::int64_t{1} << 27) ? n : std::int64_t{1} << 27; // 1 GiB at most
+        const int          log2c  = argc > 3 ? std::atoi(argv[3]) : (log2n < 27 ? log2n : 27);
+        const std::int64_t n_conv = std::int64_t{1} << log2c;
         bench_conversion<256>(n_conv, reps);
         bench_conversion<1024>(n_conv, reps);
     }
