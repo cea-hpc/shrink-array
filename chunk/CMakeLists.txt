@@ -374,6 +374,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/device/backend.h
         public/chunk/device/block_write.h
         public/chunk/device/chunk_desc.h
+        public/chunk/device/compress.h
         public/chunk/device/view.h
         public/chunk/device/warp.h
         public/chunk/internal/immortal.h

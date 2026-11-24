@@ -114,6 +114,9 @@ the tag's checksum to the recipe.
   `finish`): fresh buffers marked in a per-chunk bitmap and settled after the kernel, spans
   the arena could not serve written again after it grows. `device_write_validation` checks it
   against a host mirror.
+- `chunk/device/compress.h` (experimental): `device::Array::compress()`, the fold-back pass,
+  one warp per chunk; the buffers of the folded chunks go back to the arena.
+  `device_write_validation` runs it after every round against a host model.
 
 ### Fixed
 

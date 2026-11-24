@@ -173,7 +173,7 @@ __global__ void settle_fresh(Writer<T, S> w, std::int64_t n_chunks)
                 p[e] = constant;
             }
         }
-        sync_lanes(active_lanes()); // every lane has read the bitmap
+        sync_lanes(full_warp); // every lane has read the bitmap
         for (unsigned int k = static_cast<unsigned int>(lane); k < Writer<T, S>::words; k += warp_size)
         {
             bits[k] = 0;

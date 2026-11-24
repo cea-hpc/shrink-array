@@ -29,7 +29,8 @@
  *            itself (several spans per kernel, the same f in every call), then finish(f):
  *            fresh buffers settled, spans the arena could not serve written again after it
  *            grew, lost buffers given back.
- *          Next: compress() (the fold-back pass), the host <-> device conversion.
+ *          - compress(): the fold-back pass (compress.h), between phases.
+ *          Next: the host <-> device conversion.
  */
 
 #include <cstddef>     // std::size_t
@@ -43,6 +44,7 @@
 #include "chunk/device/backend.h"     // allocate, release, zero, copy, synchronize
 #include "chunk/device/block_write.h" // Writer, Span, WriteCounters, kernels
 #include "chunk/device/chunk_desc.h"  // ChunkDesc
+#include "chunk/device/compress.h"    // kernels::compress_chunks
 #include "chunk/device/view.h"        // View
 
 namespace shrink_array::device
@@ -127,6 +129,11 @@ class Array
     ///        growing it (as often as needed), gives the lost buffers back. Waits.
     template <int BLOCK = 256, typename F>
     void finish(const F& f);
+
+    /// @brief The compression pass (section 7), between phases: every materialised chunk
+    ///        whose elements below size() are one value folds back to it, its buffer back to
+    ///        the arena. Returns the chunks folded back. Waits.
+    unsigned long long compress();
 
     /// @brief Elements.
     [[nodiscard]] std::int64_t size() const noexcept
@@ -308,6 +315,31 @@ void Array<T, S>::reclaim_lost()
         c.n_lost = 0;
         copy(counters_, &c, 1);
     }
+}
+
+/// @details One warp per chunk (the prototype: 85% to 102% of the stream read at S = 1024 on
+///          the GH200 and the MI300A when every chunk folds back), at most 65536 blocks of 256
+///          threads, grid-stride beyond.
+template <typename T, unsigned int S>
+unsigned long long Array<T, S>::compress()
+{
+    synchronize();
+    settle(); // a fresh buffer left by a kernel without finish() would fold on unwritten elements
+    unsigned long long* d = allocate<unsigned long long>(1);
+    zero(d, 1);
+    arena_.normalise();
+    if (n_chunks_ > 0)
+    {
+        const std::int64_t warps_per_block = 256 / warp_size;
+        const std::int64_t blocks          = (n_chunks_ + warps_per_block - 1) / warps_per_block;
+        kernels::compress_chunks<T, S>
+            <<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(desc_, n_, arena_.ref(), d);
+    }
+    synchronize();
+    unsigned long long folded = 0;
+    copy(&folded, d, 1);
+    release(d);
+    return folded;
 }
 
 template <typename T, unsigned int S>

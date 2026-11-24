@@ -40,6 +40,10 @@ using LaneMask = std::uint64_t;
 using LaneMask = std::uint32_t;
 #endif
 
+/// Every lane of a warp: the mask of a ballot that every lane reaches, after a loop whose
+/// lanes may have left at different iterations (active_lanes() may then see only some).
+inline constexpr LaneMask full_warp = ~LaneMask{0};
+
 /// @brief This thread's lane in its warp.
 __device__ inline int lane_id() noexcept
 {

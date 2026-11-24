@@ -789,7 +789,15 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   constante non nulle), et échoue si le remplissage ou la réécriture des plages ratées est cassé.
   Il passe sur la T1000, le GH200 et le MI300A.
 
-Suite : `compress()` (la passe de repli) et la conversion hôte <-> device.
+- `compress.h` : la passe de compression, `Array::compress()`. Un warp par chunk, en
+  grid-stride ; un chunk matérialisé dont les éléments sous n sont une seule valeur
+  (`same_value`) la prend pour constante et rend son buffer à l'arène (après `normalise()`, sans
+  prise en même temps) ; la fin du dernier chunk n'est pas comparée. `device_write_validation`
+  la lance après chaque tour contre un modèle hôte (replis comptés, éléments, chunks
+  matérialisés et buffers en usage vérifiés à nouveau), et échoue si la fin du dernier chunk
+  est comparée ou si un buffer n'est pas rendu.
+
+Suite : la conversion hôte <-> device.
 
 ## 14. Risques et questions ouvertes
 

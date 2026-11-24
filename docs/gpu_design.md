@@ -753,7 +753,14 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   tail chunks, a non-zero constant), and fails when the settle or the rewrite of the failed
   spans is broken. It passes on the T1000, the GH200 and the MI300A.
 
-Next: `compress()` (the fold-back pass) and the host <-> device conversion.
+- `compress.h`: the compression pass, `Array::compress()`. One warp per chunk, grid-stride;
+  a materialised chunk whose elements below n are one value (`same_value`) takes it as its
+  constant and gives its buffer back to the arena (after `normalise()`, no take meanwhile);
+  the tail of the last chunk is not compared. `device_write_validation` runs it after every
+  round against a host model (folds counted, elements, materialised chunks and buffers in use
+  checked again), and fails when the tail is compared or a buffer is not given back.
+
+Next: the host <-> device conversion.
 
 ## 14. Risks and open questions
 
