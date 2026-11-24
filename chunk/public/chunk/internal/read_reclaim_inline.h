@@ -32,6 +32,10 @@ inline read_reclaim::ReadSection::ReadSection() noexcept
     {
         seq_ = g_reclaim_epoch.load(std::memory_order_acquire);
     }
+    else if constexpr (enabled && CHUNK_READ_SECTION_MODE == 4)
+    {
+        seq_ = g_reclaim_epoch.load(std::memory_order_relaxed); // ordered by dep(), not by an acquire
+    }
     else if constexpr (enabled && CHUNK_READ_SECTION_MODE == 0)
     {
         ReaderSlot* slot = t_slot;
@@ -78,7 +82,7 @@ inline read_reclaim::ReadSection::~ReadSection()
             note_optimistic_conflict();
         }
     }
-    else if constexpr (enabled && CHUNK_READ_SECTION_MODE == 3)
+    else if constexpr (enabled && (CHUNK_READ_SECTION_MODE == 3 || CHUNK_READ_SECTION_MODE == 4))
     {
         if (!passed_ && g_reclaim_epoch.load(std::memory_order_relaxed) != seq_) [[unlikely]]
         {
@@ -101,7 +105,8 @@ inline read_reclaim::ReadSection::~ReadSection()
 template <typename V>
 [[nodiscard]] CHUNK_FORCE_INLINE V read_reclaim::ReadSection::pass(V value) const noexcept
 {
-    if constexpr (enabled && CHUNK_READ_SECTION_MODE == 3 && std::is_trivially_copyable_v<V>)
+    if constexpr (enabled && (CHUNK_READ_SECTION_MODE == 3 || CHUNK_READ_SECTION_MODE == 4) &&
+                  std::is_trivially_copyable_v<V>)
     {
         std::uintptr_t raw = 0;
         std::memcpy(&raw, &value, sizeof(V) < sizeof(raw) ? sizeof(V) : sizeof(raw));

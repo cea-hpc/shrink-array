@@ -668,7 +668,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief values_load() for a pure read (element_at): the same acquire, or, under
     ///        chunk_config::read_dep_order (experimental, AArch64), a relaxed load whose
     ///        users must reach memory only THROUGH the returned pointer.
-    [[nodiscard]] const T* values_load_for_read() const noexcept;
+    [[nodiscard]] const T* values_load_for_read(std::uintptr_t dep = 0) const noexcept; // dep: EXPERIMENT mode 4
 
     /// @brief Store a pointer to the values with appropriate memory ordering
     /// @param new_values Pointer to store
@@ -1179,7 +1179,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief element_at() without the read section: the load of `values` and
     ///        the element, nothing else.
     template <bool Relaxed>
-    [[nodiscard]] T element_at_unguarded(int offset) const noexcept;
+    [[nodiscard]] T element_at_unguarded(int offset, std::uintptr_t dep = 0) const noexcept; // dep: EXPERIMENT mode 4
 
     /// @brief Return @p ptr to the allocator instance that carved it, found
     ///        through its slab (TCAllocator::owner / owner_rank), never

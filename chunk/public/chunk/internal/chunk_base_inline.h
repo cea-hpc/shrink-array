@@ -601,9 +601,20 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
-[[nodiscard]] CHUNK_FORCE_INLINE const T* ChunkBase<T, Derived>::values_load_for_read() const noexcept
+[[nodiscard]] CHUNK_FORCE_INLINE const T*
+ChunkBase<T, Derived>::values_load_for_read([[maybe_unused]] std::uintptr_t dep) const noexcept
 {
-    if constexpr (build_config::threaded && chunk_config::read_dep_order)
+    if constexpr (build_config::threaded && CHUNK_READ_SECTION_MODE == 4)
+    {
+        // EXPERIMENT mode 4: relaxed, at an address made to depend on the epoch the
+        // ReadSection loaded (dep is 0 at run time): ordered after that load by the
+        // Arm address-dependency rule, the element load after this one likewise.
+        const auto* slot = reinterpret_cast<const std::atomic<T*>*>(reinterpret_cast<std::uintptr_t>(&values_) + dep);
+        const T*    vals = slot->load(std::memory_order_relaxed);
+        __asm__ volatile("" : "+r"(vals));
+        return vals;
+    }
+    else if constexpr (build_config::threaded && chunk_config::read_dep_order)
     {
         // Relaxed: the loads that need to follow it go through the pointer (address
         // dependency, chunk_config::read_dep_order). The empty asm makes the value
@@ -780,7 +791,8 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
-CHUNK_FORCE_INLINE T ChunkBase<T, Derived>::operator[](int offset) const noexcept // EXPERIMENT: mode 3 left it out of line
+CHUNK_FORCE_INLINE T
+ChunkBase<T, Derived>::operator[](int offset) const noexcept // EXPERIMENT: mode 3 left it out of line
 {
     if constexpr (chunk_config::stats)
     {
@@ -1198,7 +1210,7 @@ template <bool Relaxed>
     else
     {
         const read_reclaim::ReadSection section;
-        return section.pass(element_at_unguarded<false>(offset));
+        return section.pass(element_at_unguarded<false>(offset, section.dep()));
     }
 }
 
@@ -1249,7 +1261,8 @@ template <bool Relaxed>
 
 template <typename T, typename Derived>
 template <bool Relaxed>
-[[nodiscard]] T ChunkBase<T, Derived>::element_at_unguarded(int offset) const noexcept
+[[nodiscard]] T ChunkBase<T, Derived>::element_at_unguarded(int                             offset,
+                                                            [[maybe_unused]] std::uintptr_t dep) const noexcept
 {
     // The one branch identifiers cost: a compressed-to-second-constant
     // chunk points into a region that was never written, so the
@@ -1284,7 +1297,7 @@ template <bool Relaxed>
             }, "a chunk of the zero_any family must provide is_second_value_ptr_of() and second_value_from_ptr(), "
                "or its own branch of the reads: its compressed chunks point at registry entries, not at "
                "their values");
-        const T* const vals = Relaxed ? values_load() : values_load_for_read();
+        const T* const vals = Relaxed ? values_load() : values_load_for_read(dep);
         if constexpr (!Relaxed)
         {
             test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
@@ -1313,7 +1326,7 @@ template <bool Relaxed>
         // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
         return load_at<Relaxed>(vals, offset);
     }
-    const T* const vals = Relaxed ? values_load() : values_load_for_read();
+    const T* const vals = Relaxed ? values_load() : values_load_for_read(dep);
     // TEST KNOB (test_hooks.h): widens the load -> dereference window
     // a concurrent compressor's CAS + free can fall into. Compiled out
     // unless CHUNK_TEST_READ_DELAY_EVERY > 0, and then only on threads

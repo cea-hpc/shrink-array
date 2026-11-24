@@ -59,14 +59,14 @@
  *          whenever any of it is touched.
  */
 
-#include <array>     // std::array (g_slots)
-#include <algorithm> // std::min
-#include <atomic>    // std::atomic, std::atomic_thread_fence, std::memory_order
-#include <cstdint>   // std::uint64_t
-#include <cstring>   // std::memcpy (EXPERIMENT mode 3)
+#include <array>       // std::array (g_slots)
+#include <algorithm>   // std::min
+#include <atomic>      // std::atomic, std::atomic_thread_fence, std::memory_order
+#include <cstdint>     // std::uint64_t
+#include <cstring>     // std::memcpy (EXPERIMENT mode 3)
 #include <type_traits> // std::is_trivially_copyable_v (EXPERIMENT mode 3)
-#include <thread>    // std::this_thread::yield
-#include <vector>    // std::vector
+#include <thread>      // std::this_thread::yield
+#include <vector>      // std::vector
 
 #include "chunk/config.h"                              // build_config::threaded
 #include "chunk/internal/chunk_size_policy.h"          // t_active_chunk_size / t_alloc_key, restored per released block
@@ -90,6 +90,10 @@
 //      whose ADDRESS depends on the element value (pass()), ordered after the element
 //      load by the Arm address-dependency rule; without pass() (the other call sites)
 //      a plain relaxed re-load, same cost, no ordering
+//   4  mode 3 with no acquire at all: the entry load of the epoch is relaxed, and
+//      element_at's `values` load depends on it by address (dep()); the element load
+//      depends on `values`, the re-check on the element (pass()). Other call sites
+//      get no ordering from the entry load (measurement only)
 #ifndef CHUNK_READ_SECTION_MODE
     #define CHUNK_READ_SECTION_MODE 0
 #endif
@@ -121,7 +125,7 @@ inline thread_local bool        t_overflow = false;   ///< This thread found no 
 /// @brief EXPERIMENT mode 2: bumped by every grace period, before its releases.
 alignas(64) inline std::atomic<std::uint64_t> g_reclaim_epoch{0};
 /// @brief EXPERIMENT mode 2: reads that saw the epoch move (would have retried).
-inline thread_local long t_optimistic_conflicts = 0;
+inline thread_local long                 t_optimistic_conflicts = 0;
 [[gnu::noinline, gnu::cold]] inline void note_optimistic_conflict() noexcept
 {
     ++t_optimistic_conflicts;
@@ -178,9 +182,22 @@ class ReadSection
     template <typename V>
     [[nodiscard]] V pass(V value) const noexcept;
 
+    /// @brief EXPERIMENT mode 4: 0 at run time, an address dependency on the
+    ///        entry load of the epoch for the CPU. Other modes: 0.
+    [[nodiscard]] std::uintptr_t dep() const noexcept
+    {
+        if constexpr (CHUNK_READ_SECTION_MODE == 4)
+        {
+            std::uintptr_t opaque = seq_;
+            __asm__ volatile("" : "+r"(opaque));
+            return opaque ^ seq_;
+        }
+        return 0;
+    }
+
   private:
-    ReaderSlot*   slot_ = nullptr;
-    std::uint64_t seq_  = 0;
+    ReaderSlot*   slot_   = nullptr;
+    std::uint64_t seq_    = 0;
     mutable bool  passed_ = false; ///< EXPERIMENT mode 3: pass() did the re-check
 };
 
@@ -193,7 +210,7 @@ inline void wait_for_readers() noexcept
 {
     g_reclaim_epoch.fetch_add(1, std::memory_order_seq_cst); // EXPERIMENT mode 2
     dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
-    const int        nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
+    const int         nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
     const ReaderSlot* mine   = t_slot;
     for (int i = 0; i < nslots; ++i)
     {
