@@ -53,7 +53,10 @@
 #include <cstddef>     // std::size_t
 #include <cstdint>     // std::uint32_t, std::uint64_t
 #include <cstring>     // std::memcpy
+#include <tuple>       // std::tuple_size_v
 #include <type_traits> // std::is_floating_point_v, std::conditional_t
+
+#include "chunk/internal/host_device.h" // CHUNK_HD: the core layer, host and device
 
 #if __has_include(<bit>)
     #include <bit> // std::bit_cast
@@ -66,11 +69,13 @@ namespace internal
 {
 /// @brief The unsigned integer with the object representation of @p v (float, double).
 template <typename F>
-[[nodiscard]] inline auto float_bits(F v) noexcept
+[[nodiscard]] CHUNK_HD inline auto float_bits(F v) noexcept
 {
     using U = std::conditional_t<sizeof(F) == 4, std::uint32_t, std::uint64_t>;
     static_assert(sizeof(U) == sizeof(F));
-#if defined(__cpp_lib_bit_cast)
+    // std::bit_cast is a host function to nvcc (constexpr, without --expt-relaxed-constexpr):
+    // the memcpy, which the device compilers turn into a register move, there.
+#if defined(__cpp_lib_bit_cast) && !defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)
     return std::bit_cast<U>(v);
 #else
     U u;
@@ -100,6 +105,45 @@ template <typename F>
 struct is_std_complex<std::complex<F>> : std::true_type
 {
 };
+
+/// @brief Number of parts of a std::complex (2) or a std::array (N), compared one by one.
+template <typename T>
+[[nodiscard]] CHUNK_HD constexpr std::size_t part_count() noexcept
+{
+    if constexpr (is_std_complex<T>::value)
+    {
+        return 2;
+    }
+    else
+    {
+        return std::tuple_size_v<T>;
+    }
+}
+
+/**
+ * @brief Part @p i of a std::complex (0 real, 1 imaginary) or of a std::array.
+ * @details real(), imag() and std::array::operator[] are constexpr host functions to nvcc
+ *          (without --expt-relaxed-constexpr): device code reads the parts through the
+ *          array view instead. For std::complex the standard guarantees it
+ *          ([complex.numbers.general]); a std::array is an aggregate holding a built-in
+ *          array, so its first element sits at its address.
+ */
+template <typename T>
+[[nodiscard]] CHUNK_HD inline const typename T::value_type& part(const T& a, std::size_t i) noexcept
+{
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    return reinterpret_cast<const typename T::value_type*>(&a)[i];
+#else
+    if constexpr (is_std_complex<T>::value)
+    {
+        return reinterpret_cast<const typename T::value_type(&)[2]>(a)[i];
+    }
+    else
+    {
+        return a[i];
+    }
+#endif
+}
 } // namespace internal
 
 /**
@@ -115,6 +159,7 @@ struct is_std_complex<std::complex<F>> : std::true_type
  *     }
  * };
  * @endcode
+ * A specialisation used in device code (CUDA, HIP) marks same() CHUNK_HD too.
  * A specialisation must be an equivalence relation that implies operator==
  * (the library still uses == nowhere for its decisions, but a value it calls
  * "the same" is read back in place of the other).
@@ -123,7 +168,7 @@ template <typename T>
 struct ValueIdentity
 {
     /// @brief Whether @p a and @p b are the same stored value (see same_value()).
-    [[nodiscard]] static bool same(const T& a, const T& b) noexcept;
+    [[nodiscard]] CHUNK_HD static bool same(const T& a, const T& b) noexcept;
 };
 
 /**
@@ -131,7 +176,7 @@ struct ValueIdentity
  *        the other. The comparison of every compression and skipped-write decision.
  */
 template <typename T>
-[[nodiscard]] inline bool same_value(const T& a, const T& b) noexcept
+[[nodiscard]] CHUNK_HD inline bool same_value(const T& a, const T& b) noexcept
 {
     return ValueIdentity<T>::same(a, b);
 }
@@ -144,7 +189,7 @@ template <typename T>
  */
 template <typename T, typename U>
     requires(!std::is_same_v<T, U>)
-[[nodiscard]] inline bool same_value(const T& a, const U& b) noexcept
+[[nodiscard]] CHUNK_HD inline bool same_value(const T& a, const U& b) noexcept
 {
     if constexpr (std::is_floating_point_v<T> || internal::is_std_complex<T>::value || internal::is_std_array<T>::value)
     {
@@ -157,7 +202,7 @@ template <typename T, typename U>
 }
 
 template <typename T>
-inline bool ValueIdentity<T>::same(const T& a, const T& b) noexcept
+CHUNK_HD inline bool ValueIdentity<T>::same(const T& a, const T& b) noexcept
 {
     if constexpr (internal::bitwise_float_v<T>)
     {
@@ -167,15 +212,11 @@ inline bool ValueIdentity<T>::same(const T& a, const T& b) noexcept
     {
         return a == b && std::signbit(a) == std::signbit(b);
     }
-    else if constexpr (internal::is_std_complex<T>::value)
+    else if constexpr (internal::is_std_complex<T>::value || internal::is_std_array<T>::value)
     {
-        return same_value(a.real(), b.real()) && same_value(a.imag(), b.imag());
-    }
-    else if constexpr (internal::is_std_array<T>::value)
-    {
-        for (std::size_t i = 0; i < a.size(); ++i)
+        for (std::size_t i = 0; i < internal::part_count<T>(); ++i)
         {
-            if (!same_value(a[i], b[i]))
+            if (!same_value(internal::part(a, i), internal::part(b, i)))
             {
                 return false;
             }
@@ -199,7 +240,7 @@ inline bool ValueIdentity<T>::same(const T& a, const T& b) noexcept
  * lexicographic.
  */
 template <typename T>
-[[nodiscard]] inline bool identity_less(const T& a, const T& b) noexcept
+[[nodiscard]] CHUNK_HD inline bool identity_less(const T& a, const T& b) noexcept
 {
     if constexpr (internal::bitwise_float_v<T>)
     {
@@ -209,28 +250,18 @@ template <typename T>
     {
         return a < b || (a == b && std::signbit(a) && !std::signbit(b));
     }
-    else if constexpr (internal::is_std_complex<T>::value)
-    {
-        if (identity_less(a.real(), b.real()))
-        {
-            return true;
-        }
-        if (identity_less(b.real(), a.real()))
-        {
-            return false;
-        }
-        return identity_less(a.imag(), b.imag());
-    }
     else
     {
-        static_assert(internal::is_std_array<T>::value, "identity_less: floating point, std::complex or std::array");
-        for (std::size_t i = 0; i < a.size(); ++i)
+        static_assert(internal::is_std_complex<T>::value || internal::is_std_array<T>::value,
+                      "identity_less: floating point, std::complex or std::array");
+        // Lexicographic: (real, imaginary) for std::complex, element by element for std::array.
+        for (std::size_t i = 0; i < internal::part_count<T>(); ++i)
         {
-            if (identity_less(a[i], b[i]))
+            if (identity_less(internal::part(a, i), internal::part(b, i)))
             {
                 return true;
             }
-            if (identity_less(b[i], a[i]))
+            if (identity_less(internal::part(b, i), internal::part(a, i)))
             {
                 return false;
             }

@@ -35,7 +35,8 @@
 //   whole array      swap, copy- and move-construction and assignment;
 //   compression      compress, shrink_to_fit, reclaim_second_values (zero_any);
 //   ranges           fill_range, copy_range, read_range, for_each_value,
-//                    fill_range_mt and copy_range_mt from two threads;
+//                    fill_range_mt, copy_range_mt and transform_ranges_mt
+//                    from two threads;
 //   raw access       alloc_chunk(i) then operator()(i);
 //   exchange         export_array / import_array into a third array;
 //   parallel         a phase writing every element, or two elements in three;
@@ -601,13 +602,16 @@ void op_ranges_mt(Run<T>& run)
     if (draw(run, 2) == 0)
     {
         const T v = draw_value(run);
-        begin_phase();
-#pragma omp parallel sections
+#pragma omp parallel
         {
+            begin_phase();
+#pragma omp sections
+            {
 #pragma omp section
-            fill_range_mt(run.a, std::size_t{0}, half, v);
+                fill_range_mt(run.a, std::size_t{0}, half, v);
 #pragma omp section
-            fill_range_mt(run.a, half, size, v);
+                fill_range_mt(run.a, half, size, v);
+            }
         }
         end_phase();
         run.ra.assign(size, v);
@@ -616,18 +620,78 @@ void op_ranges_mt(Run<T>& run)
     else
     {
         const std::vector<T> source = draw_source(run, count);
-        begin_phase();
-#pragma omp parallel sections
+#pragma omp parallel
         {
+            begin_phase();
+#pragma omp sections
+            {
 #pragma omp section
-            copy_range_mt(run.a, std::size_t{0}, half, source.begin());
+                copy_range_mt(run.a, std::size_t{0}, half, source.begin());
 #pragma omp section
-            copy_range_mt(run.a, half, size, source.begin() + static_cast<std::ptrdiff_t>(half));
+                copy_range_mt(run.a, half, size, source.begin() + static_cast<std::ptrdiff_t>(half));
+            }
         }
         end_phase();
         run.ra = source;
         run.trace.emplace_back("copy_range_mt, two halves");
     }
+}
+
+template <typename T>
+void op_transform_ranges(Run<T>& run)
+{
+    const int count = static_cast<int>(run.ra.size());
+    if (count < 2)
+    {
+        return;
+    }
+    // a[i] = op(b[i], v[i]) where b is long enough, op(w[i], v[i]) otherwise:
+    // a chunked source and a contiguous one, or two contiguous ones.
+    const std::vector<T> second_source = draw_source(run, count);
+    const std::vector<T> first_source  = draw_source(run, count);
+    const bool           from_b        = run.rb.size() >= run.ra.size();
+    const auto           op            = [](const T& x, const T& y) -> T
+    {
+        if constexpr (std::is_same_v<T, bool>)
+        {
+            return x != y;
+        }
+        else
+        {
+            return static_cast<T>(x + y);
+        }
+    };
+    const auto half  = static_cast<std::size_t>(count / 2);
+    const auto size  = static_cast<std::size_t>(count);
+    const auto apply = [&](std::size_t first, std::size_t last)
+    {
+        if (from_b)
+        {
+            transform_ranges_mt(run.a, first, last, op, std::as_const(run.b), second_source);
+        }
+        else
+        {
+            transform_ranges_mt(run.a, first, last, op, first_source, second_source);
+        }
+    };
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp sections
+        {
+#pragma omp section
+            apply(std::size_t{0}, half);
+#pragma omp section
+            apply(half, size);
+        }
+    }
+    end_phase();
+    for (std::size_t i = 0; i < size; ++i)
+    {
+        run.ra[i] = op(from_b ? T{run.rb[i]} : T{first_source[i]}, T{second_source[i]});
+    }
+    run.trace.emplace_back(from_b ? "transform_ranges_mt(a, op, b, a vector), two halves"
+                                  : "transform_ranges_mt(a, op, two vectors), two halves");
 }
 
 // ---- raw access, exchange, parallel, geometry -------------------------------
@@ -679,17 +743,20 @@ void op_parallel_phase(Run<T>& run)
     const int  count = static_cast<int>(run.ra.size());
     const bool every = draw(run, 2) == 0;
     const T    v     = draw_value(run);
-    begin_phase();
-#pragma omp parallel for
-    for (int i = 0; i < count; ++i)
+#pragma omp parallel
     {
-        if (every)
+        begin_phase(); // every thread, before its first write (chunk/phases.h)
+#pragma omp for
+        for (int i = 0; i < count; ++i)
         {
-            run.a[i] = v;
-        }
-        else if (i % 3 != 1)
-        {
-            run.a[i] = phase_value(run, i);
+            if (every)
+            {
+                run.a[i] = v;
+            }
+            else if (i % 3 != 1)
+            {
+                run.a[i] = phase_value(run, i);
+            }
         }
     }
     end_phase();
@@ -794,7 +861,14 @@ bool step(Run<T>& run)
             ok = op_bulk_reads(run);
             break;
         case 23:
-            op_ranges_mt(run);
+            if (draw(run, 2) == 0)
+            {
+                op_ranges_mt(run);
+            }
+            else
+            {
+                op_transform_ranges(run);
+            }
             break;
         case 24:
             op_alloc_chunk(run);

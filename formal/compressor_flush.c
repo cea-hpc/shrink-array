@@ -204,10 +204,9 @@ static void replay(int idx, int v)
 {
     while (true)
     {
-        int* vals = values_load();
-        if (vals == cst1)
+        if (values_load() == cst1)
         {
-            vals = materialise(-1);                     /* no flag: waits on the mark */
+            (void)materialise(-1);                      /* no flag: waits on the mark */
         }
         int* values_before = values_load();
         if (values_before == cst1)                      /* pre-store guard: back through the loop */

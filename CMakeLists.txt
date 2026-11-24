@@ -144,6 +144,7 @@ message(STATUS "Threading backend: ${CHUNK_THREADS_BACKEND}")
 # registered there only. Off by default: no new dependency for the default
 # build.
 option(CHUNK_WITH_TBB "Build the TBB adaptor's validation (needs oneTBB; the library does not link it)" OFF)
+option(CHUNK_DEVICE_CORE_CHECK "Build device_core_validation: the CHUNK_HD core layer on a CUDA device against the host (needs a CUDA compiler)" OFF)
 if(CHUNK_WITH_TBB)
     find_package(TBB REQUIRED)
     if(CHUNK_THREADS_BACKEND STREQUAL "openmp")
@@ -582,6 +583,83 @@ else ()
         "need the toolchain module loaded at runtime (LD_LIBRARY_PATH).")
 endif ()
 
+# ── Profile-guided optimisation (compile_all.sh --pgo=generate|use) ────────
+# Two passes in the same build directory. GENERATE instruments the C++ code;
+# running its executables (a shrink_bench run, a few hundred iterations are
+# enough) writes the profiles into CHUNK_PGO_DIR. USE recompiles with them.
+# The same directory for both, so that the profile of each object is found
+# under its own name (GCC names a .gcda after the object's path), and two
+# configurations never mix theirs.
+#   GCC        -fprofile-generate=<dir> -fprofile-update=prefer-atomic (the
+#              counters are shared by the threads: exact, but an instrumented
+#              run is several times slower in parallel), then -fprofile-use
+#              -fprofile-partial-training: what the training did not run keeps
+#              its normal optimisation. A source changed since the profiles is
+#              a warning (coverage-mismatch), not an error: its stale profile
+#              is dropped, the build goes on.
+#   Clang, IntelLLVM  -fprofile-generate=<dir> writes .profraw files; USE merges
+#              them with llvm-profdata (from the compiler's directory first) into
+#              <dir>/merged.profdata at configure time, then -fprofile-use.
+# C (formal/) is left out, as for LTO. Debug or sanitizer builds: compile_all.sh
+# passes OFF.
+set(CHUNK_PGO "OFF" CACHE STRING "Profile-guided optimisation: OFF, GENERATE, USE (two passes, same build dir)")
+set_property(CACHE CHUNK_PGO PROPERTY STRINGS OFF GENERATE USE)
+set(CHUNK_PGO_DIR "${CMAKE_BINARY_DIR}/pgo-profile" CACHE PATH "Where CHUNK_PGO=GENERATE writes the profiles, and USE reads them")
+string(TOUPPER "${CHUNK_PGO}" _chunk_pgo)
+if(_chunk_pgo STREQUAL "GENERATE" OR _chunk_pgo STREQUAL "USE")
+    set(_pgo_opts "")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        if(_chunk_pgo STREQUAL "GENERATE")
+            set(_pgo_opts "-fprofile-generate=${CHUNK_PGO_DIR}" "-fprofile-update=prefer-atomic")
+        else()
+            file(GLOB_RECURSE _pgo_found "${CHUNK_PGO_DIR}/*.gcda")
+            if(NOT _pgo_found)
+                message(WARNING "CHUNK_PGO=USE: no .gcda in ${CHUNK_PGO_DIR} -- build with GENERATE and "
+                                "run its executables first; the build is optimised as without PGO")
+            endif()
+            set(_pgo_opts "-fprofile-use=${CHUNK_PGO_DIR}" "-fprofile-partial-training"
+                          "-Wno-missing-profile" "-Wno-error=coverage-mismatch")
+        endif()
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|IntelLLVM")
+        if(_chunk_pgo STREQUAL "GENERATE")
+            set(_pgo_opts "-fprofile-generate=${CHUNK_PGO_DIR}" "-fprofile-update=atomic")
+        else()
+            get_filename_component(_cxx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+            find_program(CHUNK_LLVM_PROFDATA llvm-profdata HINTS "${_cxx_dir}" "${_cxx_dir}/compiler")
+            file(GLOB _pgo_raw "${CHUNK_PGO_DIR}/*.profraw")
+            set(_pgo_data "${CHUNK_PGO_DIR}/merged.profdata")
+            if(_pgo_raw AND CHUNK_LLVM_PROFDATA)
+                execute_process(COMMAND "${CHUNK_LLVM_PROFDATA}" merge -o "${_pgo_data}" ${_pgo_raw}
+                                RESULT_VARIABLE _pgo_rc ERROR_VARIABLE _pgo_err)
+                if(NOT _pgo_rc EQUAL 0)
+                    message(WARNING "CHUNK_PGO=USE: llvm-profdata merge failed: ${_pgo_err}")
+                endif()
+            elseif(NOT CHUNK_LLVM_PROFDATA)
+                message(WARNING "CHUNK_PGO=USE: llvm-profdata not found next to ${CMAKE_CXX_COMPILER}")
+            endif()
+            if(EXISTS "${_pgo_data}")
+                set(_pgo_opts "-fprofile-use=${_pgo_data}" "-Wno-profile-instr-unprofiled"
+                              "-Wno-profile-instr-out-of-date" "-Wno-backend-plugin")
+            else()
+                message(WARNING "CHUNK_PGO=USE: no profile in ${CHUNK_PGO_DIR} -- build with GENERATE "
+                                "and run its executables first; the build is optimised as without PGO")
+            endif()
+        endif()
+    else()
+        message(WARNING "CHUNK_PGO=${CHUNK_PGO}: not supported with ${CMAKE_CXX_COMPILER_ID}, ignored")
+    endif()
+    if(_pgo_opts)
+        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:${_pgo_opts}>")
+        if(_chunk_pgo STREQUAL "GENERATE")
+            add_link_options("$<$<LINK_LANGUAGE:CXX>:${_pgo_opts}>")
+        endif()
+        string(JOIN " " _pgo_text ${_pgo_opts})
+        message(STATUS "PGO: ${_chunk_pgo} -- ${_pgo_text}")
+    endif()
+elseif(NOT _chunk_pgo STREQUAL "OFF")
+    message(FATAL_ERROR "CHUNK_PGO=${CHUNK_PGO}: expected OFF, GENERATE or USE")
+endif()
+
 # ── Linker: use mold when available ──────────────────────────────────────────
 # This tree relinks ~15 executables per debug iteration across ~20 build dirs;
 # mold cuts each link from seconds to tenths. AUTO = use it if found and the
@@ -591,7 +669,33 @@ endif ()
 set(CHUNK_USE_MOLD "AUTO" CACHE STRING "Link with mold: AUTO, ON, OFF")
 set_property(CACHE CHUNK_USE_MOLD PROPERTY STRINGS AUTO ON OFF)
 
-if(NOT CHUNK_USE_MOLD STREQUAL "OFF")
+# LTO (CMAKE_INTERPROCEDURAL_OPTIMIZATION, compile_all.sh --lto) with a
+# Clang-based compiler: the objects are LLVM bitcode, which mold and ld.bfd
+# read only through LLVMgold.so -- absent from some LLVM installs (llvm 23.2
+# on the development machine: "mold: fatal: could not open plugin file
+# .../lib/LLVMgold.so"). lld reads bitcode itself: it is taken instead of
+# mold, from the compiler's own directory first. GCC's LTO goes through its
+# liblto_plugin, which mold and ld.bfd load: nothing changes there.
+set(_chunk_lto_lld FALSE)
+if(CMAKE_INTERPROCEDURAL_OPTIMIZATION AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|IntelLLVM")
+    get_filename_component(_cxx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    find_program(CHUNK_LLD_EXECUTABLE ld.lld HINTS "${_cxx_dir}" "${_cxx_dir}/compiler")
+    if(CHUNK_LLD_EXECUTABLE)
+        get_filename_component(_lld_dir "${CHUNK_LLD_EXECUTABLE}" DIRECTORY)
+        set(_lld_link_opts "-fuse-ld=lld")
+        if(NOT _lld_dir STREQUAL _cxx_dir)
+            list(APPEND _lld_link_opts "--ld-path=${CHUNK_LLD_EXECUTABLE}")
+        endif()
+        add_link_options("$<$<LINK_LANGUAGE:CXX>:${_lld_link_opts}>")
+        set(_chunk_lto_lld TRUE)
+        message(STATUS "Linker: lld for LTO -- ${CHUNK_LLD_EXECUTABLE} (mold and ld.bfd need LLVMgold.so)")
+    else()
+        message(WARNING "LTO with ${CMAKE_CXX_COMPILER_ID} and no ld.lld found: the link needs "
+                        "LLVMgold.so next to the compiler (lib/LLVMgold.so), or the build fails")
+    endif()
+endif()
+
+if(NOT CHUNK_USE_MOLD STREQUAL "OFF" AND NOT _chunk_lto_lld)
     # CHUNK_MOLD_PATH is set by scripts/compile_all.sh, which resolves mold in a
     # subshell: on x86 the mold module conflicts with the gnu version the build
     # uses, so its path is extracted without letting the module state leak here.

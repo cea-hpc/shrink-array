@@ -51,7 +51,7 @@ What to run, depending on what the change touches:
 | compression marking, the passes | `mark_path_validation`, `compress_roundtrip_validation`, the benchmark in check mode |
 | allocators, reuse lists, slabs | `pool_accounting_validation`, `slab_geometry_validation`, `blk_allocator_validation`, the ledger build (`--with-ledger`), ASan in a std-alloc build |
 | re-chunk, dynamic geometry | `rechunk_validation`, `dyn_geometry_validation`, the benchmark with `--force_rechunk <size> --force_rechunk_toggle` |
-| range operations | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_or_value_validation`, `range_counters_validation` |
+| range operations | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_or_value_validation`, `range_counters_validation`, `transform_ranges_validation` |
 | thread ranks, regions | `thread_growth_validation`, `nested_region_validation` |
 | container interface | `iterator_validation`, `swap_move_validation`, `differential_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
 | documentation | `check_docs` |

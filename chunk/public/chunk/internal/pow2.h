@@ -18,12 +18,14 @@
 
 #include <cstddef> // size_t
 
+#include "chunk/internal/host_device.h" // CHUNK_HD
+
 namespace shrink_array
 {
 
 /// @brief Integer base-2 logarithm, rounded down.
 /// @return floor(log2(@p value)); 0 for values below 2.
-constexpr size_t log2int(size_t value) noexcept
+CHUNK_HD constexpr size_t log2int(size_t value) noexcept
 {
     return (value < 2) ? 0 : 1 + log2int(value / 2);
 }

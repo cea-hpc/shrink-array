@@ -321,12 +321,11 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
     {
         if CONSTEXPR (check_sum)
         {
-            static constexpr std::array<const char*, 17> names{
-                "arr1",          "arr2",        "arr3",        "arr4",
-                "arr5",          "array_int",   "array_bool",  "array_bool_bits",
-                "array_complex", "array_float", "array_short", "array_char",
-                "array_long",    "array_ulong", "array_quant", "array_point",
-                "array_cell"};
+            static constexpr std::array names{"arr1",          "arr2",        "arr3",        "arr4",
+                                              "arr5",          "array_int",   "array_bool",  "array_bool_bits",
+                                              "array_complex", "array_float", "array_short", "array_char",
+                                              "array_long",    "array_ulong", "array_quant", "array_point",
+                                              "array_cell"};
             // array_bool_bits' checksum equals array_bool's: a Bit is one byte
             // holding 0 or 1, as a bool.
             print_checksums(names.data(), arr1, arr2, arr3, arr4, arr5, array_int, array_bool, array_bool_bits,
@@ -337,7 +336,7 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
             }
             if (bench_arr.with_conn) // --no_conn
             {
-                static constexpr std::array<const char*, 1> conn_name{"array_conn"};
+                static constexpr std::array conn_name{"array_conn"};
                 print_checksums(conn_name.data(), array_conn);
             }
         }

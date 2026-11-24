@@ -596,19 +596,29 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
 
     /**
      * @brief Handle chunk that became fully first_value
-     * @details Frees allocated storage and sets chunk to compressed first_value state.
-     *          Resets value counter to zero.
-     * @post Chunk compressed; memory freed; values points to const storage
+     * @details Frees allocated storage and sets chunk to compressed first_value state,
+     *          once the buffer confirms the counter (count_raw_equal()): a raw store
+     *          bypasses the counters, and compressing on their word alone would lose
+     *          it. When the buffer disagrees, the pending write is stored and both
+     *          counters are re-stated from the buffer instead.
+     * @param pending the caller has not stored its first_value yet (it returns right
+     *        after this call).
+     * @post Chunk compressed, or kept with exact counters
      */
-    void manage_full_first_value() const;
+    void manage_full_first_value(bool pending = false) const;
 
     /**
      * @brief Handle chunk that became fully second_value
-     * @details Frees allocated storage and sets chunk to compressed second_value state.
-     *          Resets value counter to zero.
-     * @post Chunk compressed; memory freed; values points to second_value storage
+     * @details As manage_full_first_value(), for the second value.
+     * @param pending the caller has not stored its second_value yet.
+     * @post Chunk compressed, or kept with exact counters
      */
-    void manage_full_second_value() const;
+    void manage_full_second_value(bool pending = false) const;
+
+  private:
+    /// @brief The counters disagreed with the buffer: store the pending @p value, then
+    ///        re-state both counters from the buffer.
+    void restate_counters(InT<T> value, bool pending) const;
 
   protected:
     /**

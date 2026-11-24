@@ -113,6 +113,10 @@ endif()
 
 add_library(shrink_build_stamp OBJECT "${_shrink_stamp_cpp}")
 add_dependencies(shrink_build_stamp shrink_build_stamp_gen)
+# PIC: one object linked into every executable, whatever its linker's default.
+# ROCm's clang/lld links a HIP executable as PIE; a GCC built without
+# --enable-default-pie compiled the stamp non-PIC (R_X86_64_32, MI300A).
+set_target_properties(shrink_build_stamp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # --- Per-directory hook ---------------------------------------------------------
 # Links the stamp into every executable of the CALLING directory (same

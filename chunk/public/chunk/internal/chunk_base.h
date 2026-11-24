@@ -39,6 +39,7 @@
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"           // const_buffer_size, thread_chunk_size, alloc_chunk_count
 #include "chunk/internal/in_t.h"                        // InT<T>: the scans' constants, by value or by reference
+#include "chunk/internal/constant_walk.h"               // internal::walk_constant: the core layer's uniformity test
 #include "chunk/internal/bit_words.h"                   // bits::scan_words / WordT: the Bit scans
 #include "chunk/internal/element_access.h"              // elem_get: Bit buffers are words of bits
 #include "chunk/internal/relaxed_element.h"             // element_at<true>: the marking filter's reads
@@ -1127,14 +1128,10 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /// @brief Elements per branch-free block of the constant scans.
     ///        A quarter of a 256-element chunk: four early-exit points, and a
     ///        block long enough for the vector loop to matter.
-    static constexpr unsigned int scan_block = 64;
+    static constexpr unsigned int scan_block = internal::constant_walk_block;
 
-    /// @brief Where walk_constant() stopped, and whether the run held.
-    struct ConstantWalk
-    {
-        bool         holds = true; ///< elements [from, count) all equal the value
-        unsigned int end   = 0;    ///< the walk's end: count, or the end of the block that disproved it
-    };
+    /// @brief Where walk_constant() stopped, and whether the run held (constant_walk.h).
+    using ConstantWalk = internal::ConstantWalk;
 
     /// @brief The constant walk of is_constant_to(), from element @p from:
     ///        branch-free blocks of scan_block, an exit between them.
