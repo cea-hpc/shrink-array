@@ -556,10 +556,11 @@ void TypeStateRegistryParallelInterface<Derived, true>::clear_list_block_free_th
     const auto& types = self.get_list_type_chunk();
 
     // One prepare per type, in list order (views::transform is lazy: ranges::to
-    // runs it once per element, front to back).
-    const auto n_buckets = types |
-                           std::views::transform([](const auto& elm) { return elm->clear_list_block_free_prepare(); }) |
-                           std::ranges::to<std::vector>();
+    // runs it once per element, front to back). ranges::to in its call form, not
+    // `| std::ranges::to<std::vector>()`: clang 23.1 (the apt.llvm.org snapshot of
+    // the nightly) rejects the pipe's closure object with libstdc++ 14.
+    const auto n_buckets = std::ranges::to<std::vector>(
+        types | std::views::transform([](const auto& elm) { return elm->clear_list_block_free_prepare(); }));
 
     pmp::team(pmp::Options{},
               [&](pmp::Team& team)
