@@ -738,8 +738,22 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   once, exhaustion, no overlap), give-backs, growth and home shards; it builds for CUDA or HIP
   (`-DCHUNK_DEVICE_LANGUAGE=HIP`) and passes on the T1000 and the MI300A.
 
-Next: the chunk-aligned write with the relaxed publication (13), then `compress()` and the
-host <-> device conversion.
+- `warp.h`, `block_write.h`, `array.h`: the chunk-aligned write with the relaxed publication
+  (13). `Writer::write` (one block per call, a part of one chunk): descriptor loaded relaxed,
+  vote, a buffer from the arena published by a relaxed CAS, tagged fresh when the block
+  writes only part of the chunk (`is_fresh`, `chunk_desc.h`); every block marks its elements
+  in the chunk's `written` bitmap, and `settle_fresh` fills the others with the constant
+  after the kernel. `device::Array` owns the descriptors, the arena and the lists:
+  `parallel_for_chunks(lo, hi, f)`, or `writer()` in a kernel of the caller's and
+  `finish(f)` after it. When the arena runs out, a block writes nothing in that chunk and
+  records its span; `finish` grows the arena and writes the span again with the same f (no
+  append-buffer: f must be a function of i). A lost CAS parks its buffer in a list given back
+  at `finish`. `device_write_validation` checks it against a host mirror (ranges shared by
+  two blocks, two kernels before one `finish`, writes of the constant only, small arenas,
+  tail chunks, a non-zero constant), and fails when the settle or the rewrite of the failed
+  spans is broken.
+
+Next: `compress()` (the fold-back pass) and the host <-> device conversion.
 
 ## 14. Risks and open questions
 

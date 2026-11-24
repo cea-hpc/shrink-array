@@ -109,6 +109,11 @@ the tag's checksum to the recipe.
   or HIP, chosen by the compiler) and `atomics.h` (relaxed device atomics).
   `device_arena_validation` checks it under concurrent takes; `-DCHUNK_DEVICE_LANGUAGE=HIP`
   builds it for AMD. `check_naming` accepts the CUDA / HIP runtime's spellings.
+- `chunk/device/block_write.h`, `array.h` (experimental): the chunk-aligned write with no
+  device-scope acquire or release (`device::Writer::write`, `device::Array::parallel_for_chunks`,
+  `finish`): fresh buffers marked in a per-chunk bitmap and settled after the kernel, spans
+  the arena could not serve written again after it grows. `device_write_validation` checks it
+  against a host mirror.
 
 ### Fixed
 

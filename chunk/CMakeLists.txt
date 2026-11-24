@@ -369,10 +369,13 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/global_check.h
         public/chunk/internal/host_device.h
         public/chunk/device/arena.h
+        public/chunk/device/array.h
         public/chunk/device/atomics.h
         public/chunk/device/backend.h
+        public/chunk/device/block_write.h
         public/chunk/device/chunk_desc.h
         public/chunk/device/view.h
+        public/chunk/device/warp.h
         public/chunk/internal/immortal.h
         public/chunk/internal/in_t.h
         public/chunk/internal/invariant_check.h

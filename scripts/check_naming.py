@@ -66,7 +66,7 @@ TEMPLATE_PARAM = re.compile(r"\b(?:typename|class)\s+([A-Z][A-Z_]*[A-Z_][A-Z0-9_
 RESERVED = re.compile(r"(?<![\w])(__[a-z]\w*)")
 RESERVED_OK = re.compile(r"__(cpp_|has_|attribute__|builtin_|int128|asm__|volatile__|cxa_|sanitizer_|alloc_token_|"
                          r"kmp_|lsan_|asan_|tsan_|msan_|ubsan_|gcov_|forceinline|declspec|restrict|typeof|extension__|"
-                         r"device__|global__|host__|shared__|launch_bounds__|hip_|syncthreads|threadfence|shfl|"
+                         r"device__|global__|host__|shared__|launch_bounds__|hip_|syncthreads|syncwarp|threadfence|shfl|"
                          r"ballot|activemask|nanosleep|popc|ffs)")
 # The CUDA / HIP runtime's names (chunk/device/), camelCase by their vendors.
 GPU_RUNTIME = re.compile(r"(cuda|hip)[A-Z]\w*|atomic[A-Z]\w*|(thread|block)Idx|(block|grid)Dim")

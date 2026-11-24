@@ -774,8 +774,21 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   croissance et les shards d'origine ; il se compile en CUDA ou en HIP
   (`-DCHUNK_DEVICE_LANGUAGE=HIP`) et passe sur la T1000 et le MI300A.
 
-Suite : l'écriture alignée sur les chunks avec la publication relaxed (13), puis `compress()` et
-la conversion hôte <-> device.
+- `warp.h`, `block_write.h`, `array.h` : l'écriture alignée sur les chunks avec la publication
+  relaxed (13). `Writer::write` (un bloc par appel, une partie d'un chunk) : descripteur lu en
+  relaxed, vote, un buffer pris dans l'arène et publié par un CAS relaxed, marqué frais quand
+  le bloc n'écrit qu'une partie du chunk (`is_fresh`, `chunk_desc.h`) ; chaque bloc note ses
+  éléments dans le bitmap `written` du chunk, et `settle_fresh` met la constante dans les
+  autres après le noyau. `device::Array` possède les descripteurs, l'arène et les listes :
+  `parallel_for_chunks(lo, hi, f)`, ou `writer()` dans un noyau de l'appelant et `finish(f)`
+  après. Quand l'arène est épuisée, un bloc n'écrit rien dans ce chunk et note sa plage ;
+  `finish` agrandit l'arène et réécrit la plage avec le même f (pas d'append-buffer : f doit
+  être une fonction de i). Un CAS perdu range son buffer dans une liste rendue à `finish`.
+  `device_write_validation` le compare à un miroir hôte (plages partagées par deux blocs, deux
+  noyaux avant un seul `finish`, écritures de la constante seule, petites arènes, chunks de fin,
+  constante non nulle), et échoue si le remplissage ou la réécriture des plages ratées est cassé.
+
+Suite : `compress()` (la passe de repli) et la conversion hôte <-> device.
 
 ## 14. Risques et questions ouvertes
 

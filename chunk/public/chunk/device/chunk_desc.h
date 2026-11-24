@@ -46,7 +46,9 @@ template <typename T>
 struct ChunkDesc
 {
     /// nullptr: the chunk is compressed and reads `constant`; busy_mark<T>(): a write kernel
-    /// is materialising it (never seen by a read kernel); otherwise a buffer of S elements.
+    /// is materialising it; tag_fresh(b): buffer b, published by a chunk-aligned write of
+    /// part of the chunk and not settled yet (block_write.h). Neither is seen by a read
+    /// kernel. Otherwise a buffer of S elements.
     T* buf;
     /// The value of every element while `buf` is nullptr (the pre-fill of a materialisation).
     T constant;
@@ -60,6 +62,32 @@ template <typename T>
 [[nodiscard]] CHUNK_HD inline T* busy_mark() noexcept
 {
     return reinterpret_cast<T*>(std::uintptr_t{1});
+}
+
+/// The bit of ChunkDesc::buf that marks a fresh buffer: its elements are valid only where the
+/// chunk's `written` bitmap says so, the others take the constant when it is settled. Bit 1:
+/// a buffer is aligned on its elements (4 bytes at least) and busy_mark() is bit 0.
+inline constexpr std::uintptr_t fresh_tag = 2;
+
+/// @brief Whether @p p is a fresh buffer (tag_fresh()).
+template <typename T>
+[[nodiscard]] CHUNK_HD inline bool is_fresh(const T* p) noexcept
+{
+    return (reinterpret_cast<std::uintptr_t>(p) & fresh_tag) != 0;
+}
+
+/// @brief Buffer @p p marked fresh.
+template <typename T>
+[[nodiscard]] CHUNK_HD inline T* tag_fresh(T* p) noexcept
+{
+    return reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(p) | fresh_tag);
+}
+
+/// @brief The buffer behind a fresh mark (identity on an unmarked one).
+template <typename T>
+[[nodiscard]] CHUNK_HD inline T* untag(T* p) noexcept
+{
+    return reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(p) & ~fresh_tag);
 }
 
 } // namespace shrink_array::device
