@@ -63,8 +63,10 @@ for cfg in $CONFIGS; do
     ninja -C "$B" -j "$JOBS" access_cost_zero_256 access_cost_zero_or_value_256 access_cost_zero_any_256 \
         > "$B.build.log" 2>&1 || { echo "[optread] build FAILED $cfg"; tail -20 "$B.build.log"; exit 1; }
     # What the read loop is made of: calls (an inlining miss), and the ordering instructions.
-    objdump -d --no-show-raw-insn --disassemble=$LOOP_SYM "$B/examples/access_cost/access_cost_zero_or_value_256" \
-        > "$B.loop.s" 2>/dev/null
+    bin="$B/examples/access_cost/access_cost_zero_or_value_256"
+    # The mangled name differs between compilers (gcc 16: ..._1L8arr_read...): found by nm.
+    sym=$(nm "$bin" | grep -E 'arr_read.*omp_fn' | grep -vE 'random|bulk' | awk '{print $3}' | head -1)
+    objdump -d --no-show-raw-insn --disassemble="${sym:-$LOOP_SYM}" "$bin" > "$B.loop.s" 2>/dev/null
     echo "[optread] $cfg loop: $(grep -cE '\sbl\s' "$B.loop.s") bl, $(grep -c dmb "$B.loop.s") dmb," \
          "$(grep -c stlr "$B.loop.s") stlr, $(grep -cE 'ldar\s' "$B.loop.s") ldar, $(grep -c ldapr "$B.loop.s") ldapr" \
          "($(grep -c . "$B.loop.s") lines, $B.loop.s)"
