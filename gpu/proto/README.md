@@ -151,7 +151,45 @@ carry into stage 1:
 - Arena counters sharded per arena (folds at S = 256: 36% -> 62%); `compress()` one warp
   per chunk.
 
-Left for stage 0: the MI300A (HIP build, wavefronts of 64, the bounded wait on divergent paths).
+**MI300A** (2026-11-24, gfx942, 228 CUs in six XCDs, HBM3, 8 GiB of doubles, 57b489d70).
+`proto_test` passes every case: wavefronts of 64, the claim (no wait given up), the relaxed
+and plain loads, the chunk-aligned path, the replays.
+
+| | S = 256 | S = 1024 | criterion |
+|---|---|---|---|
+| read, every chunk materialised | 1.47x | 1.45x | <= 1.5x: met, barely |
+| write into materialised chunks, acquire / relaxed load | 66x / 1.40x | 64x / 1.34x | <= 2x: met with the relaxed load only |
+| write into materialised chunks, 4 relaxed loads ahead / chunk-aligned | 1.11x / 16.7x | 1.09x / 4.2x | -- |
+| `compress()` by warp, every chunk folds back: 10 GB at 3.35 TB/s | 3.9 ms | 2.8 ms | <= 10 ms: met |
+| first write, race / claim, acquire load | 366x / 504x | 393x / 603x | -- |
+| first write, race / claim, relaxed load | 306x / 436x | 323x / 538x | -- |
+| first write, chunk-aligned | 48x | 15x | -- |
+| range rewrites + `finalize()`, race / claim, acquire load | 113x / 136x | 103x / 136x | -- |
+| range rewrites + `finalize()`, race / claim, relaxed load | 64x / 84x | 39x / 64x | -- |
+| range rewrites + `finalize()`, chunk-aligned | 37x | 14x | -- |
+
+- **An agent-scope acquire or release is a cache operation, not an ordering of one
+  address.** The L2 of gfx942 belongs to one XCD and is not coherent with the five others:
+  an acquire invalidates it (`buffer_inv sc1`), a release writes its dirty lines back
+  (`buffer_wbl2 sc1`). The assembly of both programs holds them (88 and 196 occurrences,
+  `-save-temps`). Their cost is per operation, whatever the address: one acquire per block and
+  chunk, and no release, already makes the chunk-aligned write into materialised chunks 16.7x
+  (S = 256, four times the chunks) and 4.2x (S = 1024); the first write adds the release of
+  each publication (48x and 15x, against 5.0x and 2.3x on the GH200).
+- **The relaxed load is the write path on AMD** (1.34x to 1.40x, 1.1x four loads ahead), and
+  `proto_test` validates it there. It does not save the first write by `assign()` (-15%):
+  that cost is in the materialisation, its acquires, its spins and its release.
+- **Race on AMD**: ~12 lost CAS per chunk at S = 1024 (5 on the GH200) exhausted a roomy
+  arena; the first run lost writes to a full append-buffer (the test, which stopped at the
+  first error, now runs every case and gives the roomy cases n entries).
+
+Stage 0 on the MI300A: the three criteria hold, the write with the relaxed load; the
+materialisation does not, 15x at best. Open for stage 1, to measure before writing the
+device arena: no agent-scope acquire on the write path (a kernel boundary already orders what
+earlier kernels published; only the chunks published in the running kernel need more), and
+no release per materialisation -- for instance a chunk-aligned path that publishes with a
+relaxed CAS and appends, instead of writing into it, to a buffer that another block of the
+same kernel published (rare on aligned ranges), or publications batched per block.
 
 ## What the prototype changed in the design
 

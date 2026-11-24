@@ -6,7 +6,7 @@
 > prototype de l'étape 0 ([gpu/proto](../gpu/proto/README.md) : RTX A1000 du portable, puis
 > GH200). Ce document fixe ce qu'un backend GPU de shrink-array devrait être, ce qu'il reprend
 > de la version CPU et ce qu'il abandonne, et le plan pour trancher par la mesure. La section 13
-> donne les chiffres de l'étape 0, portable et GH200 ; le MI300A reste à mesurer. Les décisions
+> donne les chiffres de l'étape 0, portable, GH200 et MI300A. Les décisions
 > marquées **(tranché par le prototype)** étaient ouvertes dans la première version. L'étape 1
 > a commencé (fin de la section 13).
 
@@ -263,7 +263,8 @@ D'où une coordination par chunk, entre warps **(tranché par le prototype)** :
 - **Une attente bornée.** Au-delà d'un nombre de pauses, l'écriture part dans l'append-buffer
   (6.4). La borne couvre un cas : deux appels à `assign()` sur des branches divergentes d'un
   même wavefront AMD, qui n'a pas d'ordonnancement indépendant des threads. Ce cas coûte un
-  rejeu, pas un interblocage. À vérifier sur le MI300A.
+  rejeu, pas un interblocage. Sur le MI300A, aucune attente n'a été abandonnée dans
+  `proto_test` ni dans le banc ; un test de ce cas précis reste à écrire.
 - **La course** (le schéma des étapes 1 à 4) reste dans le prototype comme référence. Ses
   perdants gardent leur tampon dans un **emplacement de réserve** par warp (un échange
   atomique), pour leur matérialisation suivante ; `compress()` reprend les réserves.
@@ -558,8 +559,8 @@ doubles, rapports au tableau plat (détails et bench dans [gpu/proto](../gpu/pro
 | première écriture, réservation / alignée (course) | 2,2× / 1,9× (5,5×) | 3,4× / 1,2× (25×) | -- |
 | réécriture de plages + `finalize()`, réservation / alignée (course) | 3,7× / 4,2× (4,4×) | 2,1× / 1,9× (4,1×) | -- |
 
-Les critères tiennent sur le portable et sur le GH200 (ci-dessous) ; le MI300A est le suivant
-(le prototype se compile en HIP avec `-DPROTO_HIP=ON`, pas encore essayé). Le prototype n'utilise ni
+Les critères tiennent sur le portable, sur le GH200 et sur le MI300A (ci-dessous ; sur le
+MI300A, l'écriture avec le load relaxed seulement). Le prototype n'utilise ni
 CUB ni hipCUB : `compress()` lance un bloc par chunk avec un vote `__syncthreads_and`, et les
 tampons retournent à la pile libre sans passe de compaction.
 
@@ -682,8 +683,49 @@ conclusions qui passent à l'étape 1 :
 - Compteurs d'arène partitionnés par arène (replis à S = 256 : 36 % → 62 %) ; `compress()`
   avec un warp par chunk.
 
-Reste pour l'étape 0 : le MI300A (compilation HIP, wavefronts de 64, attente bornée sur des
-branches divergentes).
+**MI300A** (24/11/2026, gfx942, 228 CU en six XCD, HBM3, 8 Gio de doubles, 57b489d70).
+`proto_test` passe tous les cas : wavefronts de 64, claim (aucune attente abandonnée), loads
+relaxed et plain, chemin aligné sur les chunks, rejeux.
+
+| | S = 256 | S = 1024 | critère |
+|---|---|---|---|
+| lecture, tous les chunks matérialisés | 1,47x | 1,45x | <= 1,5x : tenu, de justesse |
+| écriture dans des chunks matérialisés, load acquire / relaxed | 66x / 1,40x | 64x / 1,34x | <= 2x : tenu avec le load relaxed seulement |
+| écriture dans des chunks matérialisés, 4 loads relaxed d'avance / alignée | 1,11x / 16,7x | 1,09x / 4,2x | -- |
+| `compress()` par warp, tous les chunks se replient : 10 Go à 3,35 To/s | 3,9 ms | 2,8 ms | <= 10 ms : tenu |
+| première écriture, race / claim, load acquire | 366x / 504x | 393x / 603x | -- |
+| première écriture, race / claim, load relaxed | 306x / 436x | 323x / 538x | -- |
+| première écriture, alignée | 48x | 15x | -- |
+| réécritures de plages + `finalize()`, race / claim, load acquire | 113x / 136x | 103x / 136x | -- |
+| réécritures de plages + `finalize()`, race / claim, load relaxed | 64x / 84x | 39x / 64x | -- |
+| réécritures de plages + `finalize()`, alignée | 37x | 14x | -- |
+
+- **Un acquire ou un release à l'échelle du device est une opération de cache, pas
+  l'ordonnancement d'une adresse.** Le L2 du gfx942 appartient à un XCD et n'est pas cohérent
+  avec les cinq autres : un acquire l'invalide (`buffer_inv sc1`), un release réécrit ses
+  lignes modifiées (`buffer_wbl2 sc1`). L'assembleur des deux programmes en contient (88 et
+  196 occurrences, `-save-temps`). Leur coût est par opération, quelle que soit l'adresse : un
+  acquire par bloc et par chunk, sans release, rend déjà l'écriture alignée dans des chunks
+  matérialisés 16,7x (S = 256, quatre fois plus de chunks) et 4,2x (S = 1024) ; la première
+  écriture ajoute le release de chaque publication (48x et 15x, contre 5,0x et 2,3x sur le
+  GH200).
+- **Le load relaxed est le chemin d'écriture sur AMD** (1,34x à 1,40x, 1,1x avec quatre loads
+  d'avance), et `proto_test` le valide sur le MI300A. Il ne sauve pas la première écriture par
+  `assign()` (-15 %) : ce coût est dans la matérialisation, ses acquires, ses attentes et son
+  release.
+- **Race sur AMD** : ~12 CAS perdus par chunk à S = 1024 (5 sur le GH200) ont épuisé une arène
+  large ; le premier passage a perdu des écritures sur un append-buffer plein (le test, qui
+  s'arrêtait à la première erreur, fait maintenant tourner chaque cas et donne n entrées aux
+  cas larges).
+
+Étape 0 sur le MI300A : les trois critères tiennent, l'écriture avec le load relaxed ; la
+matérialisation non, 15x au mieux. Ouvert pour l'étape 1, à mesurer avant d'écrire l'arène
+device : pas d'acquire à l'échelle du device sur le chemin d'écriture (une frontière de noyau
+ordonne déjà ce que les noyaux précédents ont publié ; seuls les chunks publiés dans le noyau
+en cours demandent plus), et pas de release par matérialisation -- par exemple un chemin aligné
+qui publie par un CAS relaxed et qui, au lieu d'écrire dans un buffer qu'un autre bloc du même
+noyau a publié, passe par l'append-buffer (rare sur des plages alignées), ou des publications
+groupées par bloc.
 
 **Étape 1, commencée (novembre 2026).** Les fonctions que partagent les versions hôte et device
 sont dans la bibliothèque, compilées pour les deux :
@@ -713,8 +755,10 @@ le descripteur de chunk et le chemin de lecture d'abord, puis l'arène, la rése
   accès ne sont plus coalescés -- mais ils ne le seraient pas non plus sur un tableau plat.
   À mesurer séparément.
 - **Les CAS perdus** : pas rares, finalement : S/32 warps par chunk sur une boucle régulière
-  (6.2). La réservation les supprime. Il reste son attente, et la borne de cette attente sur
-  AMD, à mesurer sur le MI300A (`claim_wait` et `claim_spin` dans les stats du prototype).
+  (6.2). La réservation les supprime. Il reste son attente (aucune abandonnée sur le MI300A).
+- **Acquire et release à l'échelle du device sur AMD** (13, MI300A) : chacun invalide ou
+  réécrit le L2, ce qui y rend chaque matérialisation 15x à 600x une écriture plate. L'étape 1
+  doit les retirer du chemin d'écriture, pas les régler.
 - **nvcc** sur le code template de la bibliothèque : temps de compilation et bugs de
   front-end sur les concepts ; clang-CUDA est la sortie de secours.
 - **Le registre de motifs** de `pattern` entretenu par l'hôte : détection coûteuse si le

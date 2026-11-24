@@ -6,7 +6,7 @@
 > stage-0 prototype ([gpu/proto](../gpu/proto/README.md): a laptop RTX A1000, then a GH200).
 > This document sets out what a GPU backend of shrink-array should be, what it takes from the
 > CPU version and what it leaves behind, and the plan for deciding by measurement. Section 13
-> gives the stage-0 figures, laptop and GH200; the MI300A is still to be measured. The
+> gives the stage-0 figures, laptop, GH200 and MI300A. The
 > decisions marked **(decided by the prototype)** were open in the first version. Stage 1 has
 > started (end of section 13).
 
@@ -250,8 +250,9 @@ chunk. Hence a coordination per chunk, between warps **(decided by the prototype
   claim, arena exhausted, sends the write to the append-buffer).
 - **A bounded wait.** Past a number of backoff rounds the write goes to the append-buffer
   (6.4). What the bound covers: two `assign()` calls on divergent paths of one AMD wavefront,
-  which has no independent thread scheduling. It costs a replay, not a deadlock. To be checked
-  on the MI300A.
+  which has no independent thread scheduling. It costs a replay, not a deadlock. On the MI300A
+  no wait was given up in `proto_test` or the bench; a test of that exact case is still to
+  write.
 - **Race** (the scheme of steps 1 to 4) stays in the prototype as the reference. Its losers keep
   their buffer in a per-warp **spare slot** (an atomic exchange) for their next
   materialisation; `compress()` takes the spares back.
@@ -541,8 +542,8 @@ against a flat array (details and the bench in [gpu/proto](../gpu/proto/README.m
 | first write, claim / chunk-aligned (race) | 2.2x / 1.9x (5.5x) | 3.4x / 1.2x (25x) | -- |
 | range rewrites + `finalize()`, claim / chunk-aligned (race) | 3.7x / 4.2x (4.4x) | 2.1x / 1.9x (4.1x) | -- |
 
-The criteria hold on the laptop and on the GH200 (below); the MI300A is next (the prototype
-builds with HIP, `-DPROTO_HIP=ON`, not tried yet). The prototype uses neither
+The criteria hold on the laptop, on the GH200 and on the MI300A (below; on the MI300A the
+write with the relaxed load only). The prototype uses neither
 CUB nor hipCUB: `compress()` is one block per chunk with a `__syncthreads_and` vote, and the
 buffers go back to the free stack with no compaction pass.
 
@@ -653,7 +654,45 @@ carry into stage 1:
 - Arena counters sharded per arena (folds at S = 256: 36% -> 62%); `compress()` one warp
   per chunk.
 
-Left for stage 0: the MI300A (HIP build, wavefronts of 64, the bounded wait on divergent paths).
+**MI300A** (2026-11-24, gfx942, 228 CUs in six XCDs, HBM3, 8 GiB of doubles, 57b489d70).
+`proto_test` passes every case: wavefronts of 64, the claim (no wait given up), the relaxed
+and plain loads, the chunk-aligned path, the replays.
+
+| | S = 256 | S = 1024 | criterion |
+|---|---|---|---|
+| read, every chunk materialised | 1.47x | 1.45x | <= 1.5x: met, barely |
+| write into materialised chunks, acquire / relaxed load | 66x / 1.40x | 64x / 1.34x | <= 2x: met with the relaxed load only |
+| write into materialised chunks, 4 relaxed loads ahead / chunk-aligned | 1.11x / 16.7x | 1.09x / 4.2x | -- |
+| `compress()` by warp, every chunk folds back: 10 GB at 3.35 TB/s | 3.9 ms | 2.8 ms | <= 10 ms: met |
+| first write, race / claim, acquire load | 366x / 504x | 393x / 603x | -- |
+| first write, race / claim, relaxed load | 306x / 436x | 323x / 538x | -- |
+| first write, chunk-aligned | 48x | 15x | -- |
+| range rewrites + `finalize()`, race / claim, acquire load | 113x / 136x | 103x / 136x | -- |
+| range rewrites + `finalize()`, race / claim, relaxed load | 64x / 84x | 39x / 64x | -- |
+| range rewrites + `finalize()`, chunk-aligned | 37x | 14x | -- |
+
+- **An agent-scope acquire or release is a cache operation, not an ordering of one
+  address.** The L2 of gfx942 belongs to one XCD and is not coherent with the five others:
+  an acquire invalidates it (`buffer_inv sc1`), a release writes its dirty lines back
+  (`buffer_wbl2 sc1`). The assembly of both programs holds them (88 and 196 occurrences,
+  `-save-temps`). Their cost is per operation, whatever the address: one acquire per block and
+  chunk, and no release, already makes the chunk-aligned write into materialised chunks 16.7x
+  (S = 256, four times the chunks) and 4.2x (S = 1024); the first write adds the release of
+  each publication (48x and 15x, against 5.0x and 2.3x on the GH200).
+- **The relaxed load is the write path on AMD** (1.34x to 1.40x, 1.1x four loads ahead), and
+  `proto_test` validates it there. It does not save the first write by `assign()` (-15%):
+  that cost is in the materialisation, its acquires, its spins and its release.
+- **Race on AMD**: ~12 lost CAS per chunk at S = 1024 (5 on the GH200) exhausted a roomy
+  arena; the first run lost writes to a full append-buffer (the test, which stopped at the
+  first error, now runs every case and gives the roomy cases n entries).
+
+Stage 0 on the MI300A: the three criteria hold, the write with the relaxed load; the
+materialisation does not, 15x at best. Open for stage 1, to measure before writing the
+device arena: no agent-scope acquire on the write path (a kernel boundary already orders what
+earlier kernels published; only the chunks published in the running kernel need more), and
+no release per materialisation -- for instance a chunk-aligned path that publishes with a
+relaxed CAS and appends, instead of writing into it, to a buffer that another block of the
+same kernel published (rare on aligned ranges), or publications batched per block.
 
 **Stage 1, started (November 2026).** The functions the host and device versions share are in
 the library, compiled for both:
@@ -682,8 +721,10 @@ host <-> device conversion.
   chunks, warp aggregation degrades into several allocations, and the accesses are no longer
   coalesced -- but they would not be on a flat array either. To be measured separately.
 - **Lost CAS**: not rare, as it turned out: S/32 warps per chunk on a regular loop (6.2). The
-  claim removes them; what is left is the claim's wait, and its bound on AMD, to be measured on
-  the MI300A (`claim_wait` and `claim_spin` in the prototype's stats).
+  claim removes them; what is left is the claim's wait (no wait given up on the MI300A).
+- **Agent-scope acquire and release on AMD** (13, MI300A): an L2 invalidation or write-back
+  each, which makes every materialisation 15x to 600x a flat write there. Stage 1 has to
+  remove them from the write path, not tune them.
 - **nvcc** on the library's template code: compile time and front-end bugs on concepts;
   clang-CUDA is the way out.
 - **The motif registry** of `pattern` maintained by the host: detection is costly if the
