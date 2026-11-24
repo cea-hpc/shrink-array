@@ -342,6 +342,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/chunk_func.h
         public/chunk/internal/chunk_size_config.h
         public/chunk/internal/chunk_size_policy.h
+        public/chunk/internal/chunk_state.h
         public/chunk/internal/chunk_size_predictor.h
         public/chunk/internal/chunk_size_scan.h
         public/chunk/internal/chunk_size_scan_inline.h

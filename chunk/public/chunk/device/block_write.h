@@ -113,9 +113,10 @@ struct Writer
   private:
     template <int BLOCK>
     __device__ void
-    write_marked(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* vals) const noexcept;
+    write_marked(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept;
     template <int BLOCK>
-    __device__ void write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* vals) const noexcept;
+    __device__ void
+    write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept;
     __device__ void park(T* buf) const noexcept;
     __device__ void fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept;
 };
@@ -220,21 +221,21 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
     }
     __syncthreads();
     T* const buf = s_buf;
-    T        vals[per_thread];
+    T        new_vals[per_thread];
     for (int j = 0; j < per_thread; ++j)
     {
         const std::int64_t i = base + t + j * BLOCK;
-        vals[j]              = i >= lo && i < hi ? f(i) : d.constant;
+        new_vals[j]          = i >= lo && i < hi ? f(i) : d.constant;
     }
     if (buf != nullptr)
     {
         if (is_fresh(buf))
         {
-            write_marked<BLOCK>(untag(buf), c, lo, hi, vals); // another block's, this kernel or unsettled
+            write_marked<BLOCK>(untag(buf), c, lo, hi, new_vals); // another block's, this kernel or unsettled
         }
         else
         {
-            write_plain<BLOCK>(buf, c, lo, hi, vals); // an earlier kernel's
+            write_plain<BLOCK>(buf, c, lo, hi, new_vals); // an earlier kernel's
         }
         return;
     }
@@ -242,7 +243,7 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
     bool differs = false;
     for (int j = 0; j < per_thread; ++j)
     {
-        differs = differs || !same_value(vals[j], d.constant);
+        differs = differs || !same_value(new_vals[j], d.constant);
     }
     if (__syncthreads_or(differs ? 1 : 0) == 0)
     {
@@ -268,7 +269,7 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
     {
         for (int j = 0; j < per_thread; ++j)
         {
-            mine[t + j * BLOCK] = vals[j]; // values, the constant past n
+            mine[t + j * BLOCK] = new_vals[j]; // values, the constant past n
         }
     }
     __syncthreads(); // every thread has read s_buf
@@ -291,11 +292,11 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
     }
     if (is_fresh(winner))
     {
-        write_marked<BLOCK>(untag(winner), c, lo, hi, vals);
+        write_marked<BLOCK>(untag(winner), c, lo, hi, new_vals);
     }
     else
     {
-        write_plain<BLOCK>(winner, c, lo, hi, vals); // a whole-chunk writer overlapped: outside the contract
+        write_plain<BLOCK>(winner, c, lo, hi, new_vals); // a whole-chunk writer overlapped: outside the contract
     }
 }
 
@@ -304,7 +305,7 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
 template <typename T, unsigned int S>
 template <int BLOCK>
 __device__ void
-Writer<T, S>::write_marked(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* vals) const noexcept
+Writer<T, S>::write_marked(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept
 {
     constexpr int      per_thread = static_cast<int>(S) / BLOCK;
     const std::int64_t base       = c * S;
@@ -318,7 +319,7 @@ Writer<T, S>::write_marked(T* buf, std::int64_t c, std::int64_t lo, std::int64_t
         const bool         in_range = i >= lo && i < hi;
         if (in_range)
         {
-            buf[e] = vals[j];
+            buf[e] = new_vals[j];
         }
         const LaneMask m = ballot(warp, in_range);
         if ((lane & 31) == 0)
@@ -335,7 +336,7 @@ Writer<T, S>::write_marked(T* buf, std::int64_t c, std::int64_t lo, std::int64_t
 template <typename T, unsigned int S>
 template <int BLOCK>
 __device__ void
-Writer<T, S>::write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* vals) const noexcept
+Writer<T, S>::write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept
 {
     constexpr int      per_thread = static_cast<int>(S) / BLOCK;
     const std::int64_t base       = c * S;
@@ -344,7 +345,7 @@ Writer<T, S>::write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t 
         const int e = static_cast<int>(threadIdx.x) + j * BLOCK;
         if (base + e >= lo && base + e < hi)
         {
-            buf[e] = vals[j];
+            buf[e] = new_vals[j];
         }
     }
 }

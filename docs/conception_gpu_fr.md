@@ -797,7 +797,21 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   matérialisés et buffers en usage vérifiés à nouveau), et échoue si la fin du dernier chunk
   est comparée ou si un buffer n'est pas rendu.
 
-Suite : la conversion hôte <-> device.
+- La conversion hôte <-> device : `Array::assign(state)` charge un `ArrayState` (l'`export_array()`
+  d'un tableau hôte, `chunk_exchange.h`), `Array::image()` en rend un pour `import_array()`.
+  Seuls les chunks matérialisés voyagent (un motif est déplié), par lots de 64 Mio ; un chunk
+  compressé se réduit à son descripteur. nvcc ne compile pas les en-têtes des tableaux hôte (il
+  rejette leurs membres statiques inline de templates, section 14) : un programme convertit donc
+  en deux unités de compilation, `export_array()` / `import_array()` dans une unité C++,
+  `assign()` / `image()` dans l'unité device, l'état passant de l'une à l'autre. Les types de
+  l'état sont passés dans `chunk/internal/chunk_state.h`, que les deux incluent (l'interface de
+  `chunk_exchange.h` ne change pas). `device_convert_validation` est construit ainsi : un
+  `zero_any::Array` hôte avec des chunks à la première valeur, à une seconde valeur et
+  matérialisés part sur le device, y est écrit et compressé (dix chunks se replient sur 2,5,
+  de nouveau une seconde valeur côté hôte), et revient égal à un miroir hôte.
+
+Suite : une façade au niveau des noyaux (Kokkos, section 13 étape 3) et le chemin `assign()`
+des noyaux quelconques sans acquire ni release à l'échelle du device (MI300A).
 
 ## 14. Risques et questions ouvertes
 

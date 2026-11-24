@@ -760,7 +760,21 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   round against a host model (folds counted, elements, materialised chunks and buffers in use
   checked again), and fails when the tail is compared or a buffer is not given back.
 
-Next: the host <-> device conversion.
+- The host <-> device conversion: `Array::assign(state)` loads an `ArrayState` (the
+  `export_array()` of a host array, `chunk_exchange.h`), `Array::image()` gives one back for
+  `import_array()`. Only the materialised chunks move (a motif expanded), in batches of 64 MiB;
+  a compressed chunk is its descriptor. nvcc cannot compile the host arrays' headers (it
+  rejects their inline static data members of templates, section 14), so a program converts
+  in two translation units: `export_array()` / `import_array()` in a C++ one, `assign()` /
+  `image()` in the device one, the state passed between. The state's types moved to
+  `chunk/internal/chunk_state.h`, which both include (`chunk_exchange.h`'s interface is
+  unchanged). `device_convert_validation` is built that way: a host `zero_any::Array` with
+  first-value, second-value and materialised chunks goes to the device, is written and
+  compressed there (ten chunks fold to 2.5, a second value again on the host), and comes back
+  equal to a host mirror.
+
+Next: a kernel-level facade (Kokkos, section 13 stage 3) and the `assign()` path for
+arbitrary kernels without device-scope acquire or release (MI300A).
 
 ## 14. Risks and open questions
 

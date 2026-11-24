@@ -117,6 +117,11 @@ the tag's checksum to the recipe.
 - `chunk/device/compress.h` (experimental): `device::Array::compress()`, the fold-back pass,
   one warp per chunk; the buffers of the folded chunks go back to the arena.
   `device_write_validation` runs it after every round against a host model.
+- Host <-> device conversion (experimental): `device::Array::assign(ArrayState)` and
+  `image()`, with `export_array()` / `import_array()` on the host side, in two translation
+  units (nvcc cannot compile the host arrays' headers). `ChunkKind`, `ChunkState` and
+  `ArrayState` moved to `chunk/internal/chunk_state.h`, included by `chunk_exchange.h`: its
+  interface is unchanged. `device_convert_validation` checks a round trip.
 
 ### Fixed
 

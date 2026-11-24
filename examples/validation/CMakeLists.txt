@@ -959,6 +959,36 @@ if (CHUNK_DEVICE_CORE_CHECK)
     add_test(NAME ${_t} COMMAND ${_t})
     set_property(TEST ${_t} PROPERTY LABELS validation)
   endforeach()
+
+  # device_convert_validation: a host zero_any::Array <-> device::Array, in two halves:
+  # the C++ one (export_array / import_array, the library) and the device one
+  # (device::Array::assign / image), as a program must do it -- nvcc cannot compile the
+  # host arrays' headers. Linked by the C++ linker with the GPU runtime (the library's
+  # objects are not position-independent; ROCm's linker makes a PIE).
+  if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+    add_library(device_convert_device OBJECT device_convert_device.cu)
+    set_source_files_properties(device_convert_device.cu PROPERTIES LANGUAGE ${_dev_lang})
+    set_target_properties(device_convert_device PROPERTIES ${_dev_lang}_STANDARD 20 ${_dev_lang}_STANDARD_REQUIRED ON
+                          POSITION_INDEPENDENT_CODE ON)
+    target_compile_options(device_convert_device PRIVATE $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:-Werror=all-warnings>)
+    target_include_directories(device_convert_device PRIVATE
+            $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_INCLUDE_DIRECTORIES>
+            ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+    add_executable(device_convert_validation device_convert_validation.cpp $<TARGET_OBJECTS:device_convert_device>)
+    target_link_libraries(device_convert_validation PRIVATE chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+    validation_variant_defs(device_convert_validation CHUNK_VARIANT_ZERO_ANY ${CHUNK_DEFAULT_SIZE})
+    validation_setup_target(device_convert_validation)
+    set_target_properties(device_convert_validation PROPERTIES LINKER_LANGUAGE CXX)
+    if (_dev_lang STREQUAL "CUDA")
+      find_package(CUDAToolkit REQUIRED)
+      target_link_libraries(device_convert_validation PRIVATE CUDA::cudart)
+    else()
+      find_package(hip REQUIRED)
+      target_link_libraries(device_convert_validation PRIVATE hip::host)
+    endif()
+    add_test(NAME device_convert_validation COMMAND device_convert_validation)
+    set_property(TEST device_convert_validation PROPERTY LABELS validation)
+  endif()
 endif()
 
 # shrink-build-stamp: every executable of this directory prints the build stamp

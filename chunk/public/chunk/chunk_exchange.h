@@ -51,16 +51,15 @@
  */
 
 #include <cstddef>     // std::size_t
-#include <cstdint>     // std::uint8_t
 #include <memory>      // std::make_unique_for_overwrite (a motif chunk's elements)
-#include <type_traits> // std::is_same_v, std::is_integral_v, std::make_unsigned_t
+#include <type_traits> // std::is_same_v
 #include <utility>     // std::move (import_array)
-#include <vector>      // std::vector (ArrayState's chunks)
 
 #include "chunk/range_ops.h"                  // copy_range, fill_range, assume_drained, internal::is_v*_v
 #include "chunk/bit.h"                        // is_packed_bit_v
 #include "chunk/internal/chunk_traits.h"      // is_zero_any_family_v, has_motif_state_v
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
+#include "chunk/internal/chunk_state.h"       // ChunkKind, ChunkState, ArrayState, detail::motif_element
 #include "chunk/internal/const_slot.h"        // ConstSlot
 #include "chunk/internal/relaxed_element.h"   // load_element_relaxed (a motif chunk's offset)
 #include "chunk/config.h"                     // build_config::chunk_dynamic
@@ -68,58 +67,6 @@
 
 namespace shrink_array
 {
-
-/// @brief What a chunk holds.
-enum class ChunkKind : std::uint8_t
-{
-    first_value,  ///< Compressed to the first value (ChunkState::value): no buffer.
-    second_value, ///< Compressed to ChunkState::value: no buffer.
-    motif,        ///< pattern: element k is data[k] + value (wrapping), data a shared motif.
-    materialised, ///< A buffer of its own: ChunkState::data.
-};
-
-/// @brief One chunk, as export_chunk() reads it and import_chunk() writes it.
-template <typename T>
-struct ChunkState
-{
-    ChunkKind kind  = ChunkKind::first_value; ///< What the chunk holds.
-    T         value = T{};                    ///< The constant, or a motif chunk's offset.
-    /// materialised: the chunk's elements; motif: the motif (see the file
-    /// comment). Valid until the array is written again; nullptr otherwise.
-    const T* data = nullptr;
-};
-
-/// @brief A whole array, as export_array() reads it and import_array() writes it.
-template <typename T>
-struct ArrayState
-{
-    std::size_t                size             = 0;     ///< Element count.
-    unsigned int               chunk_size       = 0;     ///< S, the elements per chunk.
-    bool                       has_second_value = false; ///< zero_or_value (not bool): a second value declared.
-    T                          second_value     = T{};   ///< That second value.
-    std::vector<ChunkState<T>> chunks;                   ///< One per chunk, in order.
-};
-
-namespace detail
-{
-
-/// @brief A motif chunk's element: @p motif + @p offset, wrapping on an
-///        integer (pattern::Chunk::wrapping_add's arithmetic).
-template <typename T>
-[[nodiscard]] T motif_element(T motif, T offset) noexcept
-{
-    if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
-    {
-        using U = std::make_unsigned_t<T>;
-        return static_cast<T>(static_cast<U>(static_cast<U>(motif) + static_cast<U>(offset)));
-    }
-    else
-    {
-        return static_cast<T>(motif + offset);
-    }
-}
-
-} // namespace detail
 
 /// @brief The arrays these functions take: every variant, every element type but Bit.
 template <typename Arr>

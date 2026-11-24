@@ -30,22 +30,30 @@
  *            fresh buffers settled, spans the arena could not serve written again after it
  *            grew, lost buffers given back.
  *          - compress(): the fold-back pass (compress.h), between phases.
- *          Next: the host <-> device conversion.
+ *          - assign(state) and image(): the host <-> device conversion, through the
+ *            ArrayState of chunk_exchange.h (chunk/internal/chunk_state.h). A program calls
+ *            export_array() / import_array() on its host array in a C++ translation unit
+ *            and assign() / image() in its device one: nvcc cannot compile the host arrays'
+ *            headers (docs/gpu_design.md, section 14). Only the materialised chunks move,
+ *            in batches of 64 MiB; a compressed chunk is its descriptor.
  */
 
 #include <cstddef>     // std::size_t
 #include <cstdint>     // std::int64_t
+#include <memory>      // std::unique_ptr, std::make_unique_for_overwrite
 #include <stdexcept>   // std::runtime_error
 #include <string>      // std::to_string
 #include <type_traits> // std::is_trivially_copyable_v
 #include <vector>      // std::vector
 
-#include "chunk/device/arena.h"       // DeviceArena
-#include "chunk/device/backend.h"     // allocate, release, zero, copy, synchronize
-#include "chunk/device/block_write.h" // Writer, Span, WriteCounters, kernels
-#include "chunk/device/chunk_desc.h"  // ChunkDesc
-#include "chunk/device/compress.h"    // kernels::compress_chunks
-#include "chunk/device/view.h"        // View
+#include "chunk/device/arena.h"         // DeviceArena
+#include "chunk/device/backend.h"       // allocate, release, zero, copy, synchronize
+#include "chunk/device/block_write.h"   // Writer, Span, WriteCounters, kernels
+#include "chunk/device/chunk_desc.h"    // ChunkDesc
+#include "chunk/device/compress.h"      // kernels::compress_chunks
+#include "chunk/device/view.h"          // View
+#include "chunk/internal/chunk_state.h" // ArrayState, ArrayImage, ChunkKind, detail::motif_element
+#include "chunk/internal/same_value.h"  // same_value
 
 namespace shrink_array::device
 {
@@ -89,6 +97,74 @@ __global__ void count_materialised(const ChunkDesc<T>* desc, std::int64_t n_chun
     fetch_add(out, mine);
 }
 
+/// @brief Every buffer back to the arena (after normalise()), every descriptor compressed.
+template <typename T, unsigned int S>
+__global__ void release_all(ChunkDesc<T>* desc, std::int64_t n_chunks, ArenaRef<T, S> arena)
+{
+    const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
+    for (std::int64_t c = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; c < n_chunks; c += stride)
+    {
+        if (desc[c].buf != nullptr)
+        {
+            arena.give_back(untag(desc[c].buf));
+            desc[c].buf = nullptr;
+        }
+    }
+}
+
+/// @brief Entry k: a buffer for chunk chunks[k], filled with staging[k * S, (k + 1) * S),
+///        published. One block per entry, grid-stride; @p fail set if the arena runs out.
+template <typename T, unsigned int S>
+__global__ void upload_chunks(ChunkDesc<T>*       desc,
+                              ArenaRef<T, S>      arena,
+                              const std::int64_t* chunks,
+                              const T*            staging,
+                              unsigned long long  count,
+                              unsigned long long* fail)
+{
+    __shared__ T* buf;
+    for (unsigned long long k = blockIdx.x; k < count; k += gridDim.x)
+    {
+        __syncthreads(); // every thread has read buf of the previous entry
+        if (threadIdx.x == 0)
+        {
+            buf = arena.take(chunks[k]);
+        }
+        __syncthreads();
+        if (buf == nullptr)
+        {
+            if (threadIdx.x == 0)
+            {
+                fetch_add(fail, 1ULL);
+            }
+            continue;
+        }
+        for (unsigned int e = threadIdx.x; e < S; e += blockDim.x)
+        {
+            buf[e] = staging[k * S + e];
+        }
+        if (threadIdx.x == 0)
+        {
+            desc[chunks[k]].buf = buf;
+        }
+    }
+}
+
+/// @brief Entry k: the buffer of chunk chunks[k] into staging[k * S, (k + 1) * S).
+template <typename T, unsigned int S>
+__global__ void
+gather_chunks(const ChunkDesc<T>* desc, const std::int64_t* chunks, T* staging, unsigned long long count)
+{
+    for (unsigned long long k = blockIdx.x; k < count; k += gridDim.x)
+    {
+        const T* buf = desc[chunks[k]].buf;
+        for (unsigned int e = threadIdx.x; e < S; e += blockDim.x)
+        {
+            staging[k * S + e] = buf[e];
+        }
+    }
+}
+
 } // namespace kernels
 
 /**
@@ -102,6 +178,9 @@ class Array
     static_assert(std::is_trivially_copyable_v<T>, "device::Array: trivially copyable elements");
 
   public:
+    /// Threads per block of the write kernels: 256, or S below it.
+    static constexpr int default_block = static_cast<int>(S < 256 ? S : 256);
+
     /// @brief @p n elements reading @p constant; an arena of @p arena_buffers buffers to start.
     Array(std::int64_t n, unsigned long long arena_buffers, T constant = T{});
     ~Array();
@@ -121,19 +200,30 @@ class Array
 
     /// @brief a(i) = f(i) for i in [@p lo, @p hi) by the chunk-aligned loop, then finish(f).
     ///        f: `T operator()(std::int64_t) const`, a function of i.
-    template <int BLOCK = 256, typename F>
+    template <int BLOCK = default_block, typename F>
     void parallel_for_chunks(std::int64_t lo, std::int64_t hi, const F& f, unsigned int grid = 4096);
 
     /// @brief The end of a write phase whose kernels called Writer::write with @p f: settles
     ///        the fresh buffers, writes the spans the arena could not serve again after
     ///        growing it (as often as needed), gives the lost buffers back. Waits.
-    template <int BLOCK = 256, typename F>
+    template <int BLOCK = default_block, typename F>
     void finish(const F& f);
 
     /// @brief The compression pass (section 7), between phases: every materialised chunk
     ///        whose elements below size() are one value folds back to it, its buffer back to
     ///        the arena. Returns the chunks folded back. Waits.
     unsigned long long compress();
+
+    /// @brief Makes this array the one @p state describes (export_array() of a host array
+    ///        of size() elements at chunk size S): what it held goes back to the arena, the
+    ///        arena grows if the materialised chunks need it. Between phases. Waits.
+    /// @throws std::runtime_error if @p state has another size or chunk size.
+    void assign(const ArrayState<T>& state);
+
+    /// @brief This array as an ArrayState that owns the materialised chunks' elements, for
+    ///        import_array() on a host array. A compressed chunk is first_value if its
+    ///        constant is T{}, second_value otherwise. Between phases. Waits.
+    [[nodiscard]] ArrayImage<T> image() const;
 
     /// @brief Elements.
     [[nodiscard]] std::int64_t size() const noexcept
@@ -163,8 +253,13 @@ class Array
     }
 
   private:
-    void settle();
-    void reclaim_lost();
+    void                      settle();
+    void                      reclaim_lost();
+    [[nodiscard]] std::size_t batch_chunks() const noexcept
+    {
+        constexpr std::size_t batch_bytes = std::size_t{64} << 20;
+        return batch_bytes / (S * sizeof(T)) > 0 ? batch_bytes / (S * sizeof(T)) : 1;
+    }
 
     std::int64_t       n_;
     std::int64_t       n_chunks_;
@@ -340,6 +435,135 @@ unsigned long long Array<T, S>::compress()
     copy(&folded, d, 1);
     release(d);
     return folded;
+}
+
+/// @details The materialised and motif chunks are filled on the host into a staging buffer
+///          (a motif expanded), copied in batches, and each batch's chunks take a buffer from
+///          the arena on the device; the tail of the last chunk holds T{}.
+template <typename T, unsigned int S>
+void Array<T, S>::assign(const ArrayState<T>& state)
+{
+    const auto nc = static_cast<std::size_t>(n_chunks_);
+    if (state.chunk_size != S || state.size != static_cast<std::size_t>(n_) || state.chunks.size() < nc)
+    {
+        throw std::runtime_error("shrink_array::device::Array::assign: a state of " + std::to_string(state.size) +
+                                 " elements at chunk size " + std::to_string(state.chunk_size) + " for an array of " +
+                                 std::to_string(n_) + " at " + std::to_string(S));
+    }
+    synchronize();
+    settle();
+    arena_.normalise();
+    if (n_chunks_ > 0)
+    {
+        kernels::release_all<T, S><<<256, 256>>>(desc_, n_chunks_, arena_.ref());
+    }
+    synchronize();
+    std::vector<ChunkDesc<T>> h(nc);
+    std::vector<std::int64_t> mats;
+    for (std::size_t c = 0; c < nc; ++c)
+    {
+        const ChunkState<T>& cs       = state.chunks[c];
+        const bool           constant = cs.kind == ChunkKind::first_value || cs.kind == ChunkKind::second_value;
+        h[c]                          = ChunkDesc<T>{nullptr, constant ? cs.value : T{}};
+        if (!constant)
+        {
+            mats.push_back(static_cast<std::int64_t>(c));
+        }
+    }
+    copy(desc_, h.data(), nc);
+    if (arena_.buffers() < mats.size())
+    {
+        arena_.grow(mats.size() - arena_.buffers()); // every buffer is free now
+    }
+    const std::size_t   batch   = batch_chunks();
+    const auto          staging = std::make_unique_for_overwrite<T[]>(batch * S);
+    T*                  d_stage = allocate<T>(batch * S);
+    std::int64_t*       d_idx   = allocate<std::int64_t>(batch);
+    unsigned long long* d_fail  = allocate<unsigned long long>(1);
+    zero(d_fail, 1);
+    for (std::size_t first = 0; first < mats.size(); first += batch)
+    {
+        const std::size_t count = mats.size() - first < batch ? mats.size() - first : batch;
+        for (std::size_t k = 0; k < count; ++k)
+        {
+            const auto           c     = static_cast<std::size_t>(mats[first + k]);
+            const ChunkState<T>& cs    = state.chunks[c];
+            const std::size_t    valid = state.size - c * S < S ? state.size - c * S : S;
+            T* const             out   = staging.get() + k * S;
+            for (std::size_t e = 0; e < S; ++e)
+            {
+                out[e] = e >= valid                           ? T{}
+                         : cs.kind == ChunkKind::materialised ? cs.data[e]
+                                                              : detail::motif_element(cs.data[e], cs.value);
+            }
+        }
+        copy(d_stage, staging.get(), count * S);
+        copy(d_idx, mats.data() + first, count);
+        kernels::upload_chunks<T, S><<<static_cast<unsigned int>(count < 65535 ? count : 65535), 256>>>(
+            desc_, arena_.ref(), d_idx, d_stage, count, d_fail);
+        synchronize();
+    }
+    unsigned long long failed = 0;
+    copy(&failed, d_fail, 1);
+    release(d_stage);
+    release(d_idx);
+    release(d_fail);
+    if (failed != 0)
+    {
+        throw std::runtime_error("shrink_array::device::Array::assign: the arena ran out");
+    }
+}
+
+template <typename T, unsigned int S>
+[[nodiscard]] ArrayImage<T> Array<T, S>::image() const
+{
+    const auto nc = static_cast<std::size_t>(n_chunks_);
+    synchronize();
+    std::vector<ChunkDesc<T>> h(nc);
+    copy(h.data(), desc_, nc);
+    ArrayImage<T> img;
+    img.state.size       = static_cast<std::size_t>(n_);
+    img.state.chunk_size = S;
+    img.state.chunks.resize(nc);
+    std::vector<std::int64_t> mats;
+    for (std::size_t c = 0; c < nc; ++c)
+    {
+        if (is_fresh(h[c].buf))
+        {
+            throw std::runtime_error("shrink_array::device::Array::image: a write phase without finish()");
+        }
+        if (h[c].buf == nullptr)
+        {
+            const bool first = same_value(h[c].constant, T{});
+            img.state.chunks[c] =
+                ChunkState<T>{first ? ChunkKind::first_value : ChunkKind::second_value, h[c].constant, nullptr};
+        }
+        else
+        {
+            mats.push_back(static_cast<std::int64_t>(c));
+        }
+    }
+    img.elements              = std::make_unique_for_overwrite<T[]>(mats.size() * S);
+    const std::size_t batch   = batch_chunks();
+    T*                d_stage = allocate<T>(batch * S);
+    std::int64_t*     d_idx   = allocate<std::int64_t>(batch);
+    for (std::size_t first = 0; first < mats.size(); first += batch)
+    {
+        const std::size_t count = mats.size() - first < batch ? mats.size() - first : batch;
+        copy(d_idx, mats.data() + first, count);
+        kernels::gather_chunks<T, S>
+            <<<static_cast<unsigned int>(count < 65535 ? count : 65535), 256>>>(desc_, d_idx, d_stage, count);
+        synchronize();
+        copy(img.elements.get() + first * S, d_stage, count * S);
+    }
+    release(d_stage);
+    release(d_idx);
+    for (std::size_t k = 0; k < mats.size(); ++k)
+    {
+        img.state.chunks[static_cast<std::size_t>(mats[k])] =
+            ChunkState<T>{ChunkKind::materialised, T{}, img.elements.get() + k * S};
+    }
+    return img;
 }
 
 template <typename T, unsigned int S>
