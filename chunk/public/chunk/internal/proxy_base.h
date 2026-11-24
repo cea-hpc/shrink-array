@@ -497,6 +497,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        (element_access.h). No sync, no check.
     [[nodiscard]] T raw_elem() const noexcept;
 
+    /// @brief Serial counter mode: how many elements of the chunk's buffer, over its full
+    ///        chunk_size() window, hold @p value -- this proxy's element counted as
+    ///        holding it when @p pending (a write about to store it).
+    /// @details The check of a counter that says "full" before the chunk is compressed:
+    ///          a raw store (arr(i) = v after alloc_chunk(), a bulk fill) bypasses the
+    ///          counters, which then claim a chunk all-constant that is not.
+    [[nodiscard]] unsigned int count_raw_equal(InT<T> value, bool pending) const noexcept;
+
     /// @brief This element, written raw: `values[elem_offset] = value`, or an atomic RMW
     ///        of its word for Bit. No sync; the NaN check of CHUNK_DO_CHECK builds.
     void raw_elem_set(InT<T> value) const noexcept

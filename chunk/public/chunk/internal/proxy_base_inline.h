@@ -1371,6 +1371,24 @@ template <typename Derived, typename T, typename ChunkT>
 }
 
 template <typename Derived, typename T, typename ChunkT>
+[[nodiscard]] unsigned int ProxyBase<Derived, T, ChunkT>::count_raw_equal(InT<T> value, bool pending) const noexcept
+{
+    static_assert(chunk_config::use_compression_with_counter || sizeof(T) == 0,
+                  "count_raw_equal(): serial counter mode only -- no concurrent pass may release the buffer");
+    const auto   size = static_cast<std::size_t>(this->chunk_size());
+    const auto   own  = static_cast<std::size_t>(elem_offset_);
+    const T*     vals = static_cast<const T*>(values_);
+    unsigned int n    = 0;
+    for (std::size_t i = 0; i < size; ++i)
+    {
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
+        const bool holds = (pending && i == own) || same_value(elem_get(vals, i), value);
+        n += holds ? 1U : 0U;
+    }
+    return n;
+}
+
+template <typename Derived, typename T, typename ChunkT>
 void ProxyBase<Derived, T, ChunkT>::store_value_at(T* const vals, InT<T> value) const noexcept
 {
     // The chunk must not be COMMITTED to a compressor here: a writer on a

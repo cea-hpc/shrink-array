@@ -56,6 +56,25 @@ const zero::Proxy<T>& zero::Proxy<T>::operator=(const zero::Proxy<T>& from) noex
     return *this;
 }
 
+template <typename Derived, typename T>
+void zero::ProxyFastCompPolicy<Derived, T, false>::manage_full_zero(bool pending) const
+{
+    const T            zero = Chunk<T>::first_value;
+    const unsigned int n    = this->count_raw_equal(zero, pending);
+    if (n == this->chunk_size())
+    {
+        chunk_.clear_st();
+        return;
+    }
+    // The counter drifted (a raw store): keep the chunk, finish the write, re-state the count.
+    if (pending)
+    {
+        this->raw_elem_set(zero);
+    }
+    // Through the proxy: the counter base of Chunk<T> befriends zero::Proxy<T> only.
+    static_cast<const Derived&>(*this).resync_n_val_eq_zero(static_cast<CounterValueT>(n));
+}
+
 template <typename T>
 T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
 {
@@ -73,7 +92,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
 
                 if (chunk_.is_full_zero(this->chunk_size()))
                 {
-                    this->manage_full_zero();
+                    this->manage_full_zero(/*pending=*/true);
                     return vals;
                 }
             }
@@ -341,7 +360,7 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
 
             if (chunk_.is_full_zero(this->chunk_size()))
             {
-                this->manage_full_zero();
+                this->manage_full_zero(/*pending=*/true);
                 return zero;
             }
         }
