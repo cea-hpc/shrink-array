@@ -778,6 +778,13 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   `-DCMAKE_HIP_FLAGS=--gcc-install-dir=<the C++ compiler's>`; the configure skips the test
   with that hint otherwise.
 
+- `examples/device_bench`: the measurements of the prototype's bench on `device::Array`
+  (read, chunk-aligned write, range rewrites, `compress()`, conversion), against a flat
+  array, to check the port. T1000 (0.5 GiB, S = 256 / 1024): read 1.02x / 0.96x, first write
+  1.59x / 0.86x, write into materialised chunks 0.92x / 0.80x, range rewrites + `compress()`
+  4.8x / 2.0x, `compress()` of 10 GB 2.5 / 2.4 ms when everything folds; `assign()` and
+  `image()` 3 GB/s (pageable host memory, a per-element staging loop: not tuned).
+
 Next: a kernel-level facade (Kokkos, section 13 stage 3) and the `assign()` path for
 arbitrary kernels without device-scope acquire or release (MI300A).
 

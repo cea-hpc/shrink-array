@@ -815,6 +815,14 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   `-DCMAKE_HIP_FLAGS=--gcc-install-dir=<celui du compilateur C++>`, sinon la configuration
   saute le test en le disant.
 
+- `examples/device_bench` : les mesures du banc du prototype sur `device::Array` (lecture,
+  écriture alignée, réécritures de plages, `compress()`, conversion), contre un tableau plat,
+  pour vérifier le portage. T1000 (0,5 Gio, S = 256 / 1024) : lecture 1,02x / 0,96x,
+  première écriture 1,59x / 0,86x, écriture dans des chunks matérialisés 0,92x / 0,80x,
+  réécritures de plages + `compress()` 4,8x / 2,0x, `compress()` de 10 Go 2,5 / 2,4 ms quand
+  tout se replie ; `assign()` et `image()` 3 Go/s (mémoire hôte paginée, une boucle de copie
+  élément par élément : pas optimisé).
+
 Suite : une façade au niveau des noyaux (Kokkos, section 13 étape 3) et le chemin `assign()`
 des noyaux quelconques sans acquire ni release à l'échelle du device (MI300A).
 

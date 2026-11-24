@@ -147,6 +147,11 @@ else()
     message(STATUS "Validation harnesses: not built (Debug, CHUNK_CHECK_OPTIM or a sanitizer only; -DCHUNK_BUILD_VALIDATION=ON forces them)")
 endif()
 
+# device::Array against a flat device array (CUDA or HIP), with the device validations
+if (CHUNK_DEVICE_CORE_CHECK)
+    add_subdirectory(device_bench)
+endif()
+
 # zero_or_value against zero_any on one workload (per-operation cost, compression)
 add_subdirectory(variant_compare)
 
