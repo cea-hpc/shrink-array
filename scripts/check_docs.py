@@ -66,6 +66,9 @@ DESIGN = {
     # the GPU backend, before any prototype
     "gpu_design.md",
     "conception_gpu_fr.md",
+    # assign() on the device without acquire or release, before its code
+    "gpu_assign.md",
+    "gpu_assign_fr.md",
 }
 
 # Real names that are not defined in this tree.

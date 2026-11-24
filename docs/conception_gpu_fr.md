@@ -839,8 +839,9 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   chunks matérialisés plus lente (1,21x contre 0,79x à S = 1024, 2,02x à S = 256 : au
   critère), à examiner. La conversion : 12 à 18 Go/s sur le GH200 (pas optimisée).
 
-Suite : une façade au niveau des noyaux (Kokkos, section 13 étape 3) et le chemin `assign()`
-des noyaux quelconques sans acquire ni release à l'échelle du device (MI300A).
+Suite : le chemin `assign()` des noyaux quelconques sans acquire ni release à l'échelle du
+device (MI300A), conçu dans [gpu_assign_fr.md](gpu_assign_fr.md) ; puis une façade au niveau des
+noyaux (Kokkos, section 13 étape 3).
 
 ## 14. Risques et questions ouvertes
 

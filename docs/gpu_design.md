@@ -801,8 +801,9 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   slower (1.21x against 0.79x at S = 1024, 2.02x at S = 256: at the criterion), to be looked
   at. The conversion: 12 to 18 GB/s on the GH200 (not tuned).
 
-Next: a kernel-level facade (Kokkos, section 13 stage 3) and the `assign()` path for
-arbitrary kernels without device-scope acquire or release (MI300A).
+Next: the `assign()` path for arbitrary kernels without device-scope acquire or release
+(MI300A), designed in [gpu_assign.md](gpu_assign.md); then a kernel-level facade (Kokkos,
+section 13 stage 3).
 
 ## 14. Risks and open questions
 
