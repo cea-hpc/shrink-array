@@ -2,10 +2,12 @@
 
 > Version française : [conception_gpu_fr.md](conception_gpu_fr.md).
 
-> Status: October 2026, **before any prototype**. This document sets out what a GPU backend of
-> shrink-array should be, what it takes from the CPU version and what it leaves behind, and the
-> plan for deciding by measurement. The figures given are expectations, not results.
-> The decisions marked **(to be decided)** wait for the prototype of section 13.
+> Status: written in October 2026 before any prototype; revised in November 2026 after the
+> stage-0 prototype ([gpu/proto](../gpu/proto/README.md), laptop RTX A1000). This document sets
+> out what a GPU backend of shrink-array should be, what it takes from the CPU version and what
+> it leaves behind, and the plan for deciding by measurement. The figures of section 13 are
+> laptop ratios against a flat array; the absolute times wait for the GH200 and the MI300A.
+> The decisions marked **(decided by the prototype)** were open in the first version.
 
 ***
 
@@ -72,14 +74,18 @@ starts. The design rests on a single invariant:
 | phase | role | possible conflict | resolution |
 |---|---|---|---|
 | user kernel, reading | readers | none | -- |
-| user kernel, writing | writers | two threads materialise the same chunk | CAS on the descriptor; the loser gives up its arena slot, reclaimed at the end of the phase (6.3) |
+| user kernel, writing | writers | several warps materialise the same chunk | a claim on the descriptor (CAS to a busy mark), one pre-fill, publication; the others wait for it (6.2) |
 | `compress()` (end of phase) | the pass | none: no writer, no reader | per-block vote + compaction (7) |
 | `rechunk_to()` | host + kernels | none | sequence of phases (9.3) |
 
 Consequences:
 
-- **nobody ever waits for anybody** in a kernel: the only atomic of the write path is a CAS
-  with no wait loop (the loser does not retry, it reads the winner);
+- **nobody waits while holding a claim**: the first version said "nobody ever waits", with a
+  CAS race where every warp pre-fills its own buffer and the loser reads the winner's. The
+  prototype measured that race at 5.5x to 25x a flat write on a first write (6.2), and replaced
+  it by a claim: the warps that find a chunk being claimed wait for its publication. The wait
+  ends because the holder is resident and waits for nothing between its claim and its
+  publication; a warp publishes its own claims before any of its lanes waits (6.2);
 - compression is no longer "in flight" but **at the end of the phase**: the memory peak of a
   phase is bounded by what that phase materialises (section 7.3 for the mitigations);
 - the phase API already exists on the CPU side (`parallel_phase`, `begin_parallel_phase`,
@@ -175,7 +181,7 @@ and that **sees the value before deciding**. The device proxy comes down to thre
 __device__ void assign(T v)
 {
     ChunkDesc<T>& d = desc_[nc];
-    T* buf = atomic_load_relaxed(d.buf);          // device scope
+    T* buf = atomic_load_acquire(d.buf);          // device scope; busy mark: see 6.2
     if (buf == nullptr)
     {
         if (v == d.constant) return;                   // 1. the constant onto its constant: nothing
@@ -185,7 +191,10 @@ __device__ void assign(T v)
 }
 ```
 
-Cases 1 and 3 are the hot path, uniform per warp, with no atomic. The rules of
+Cases 1 and 3 are the hot path, uniform per warp, with no atomic read-modify-write. The load
+of `buf` is an **acquire** (the first sketch had a relaxed load): without it a writer may write
+before the pre-fill of the buffer it sees has landed, and be overwritten by it. Its cost is not
+measurable (write into a materialised chunk: 0.82x and 1.08x a flat write). The rules of
 `zero_or_value` ("the second value onto an element that already holds it") and of `zero_any`
 ("discover", "leave", `may_become_uniform`) fed the candidate lists: they **disappear**, the
 end-of-phase pass needs no candidates. What remains to handle is `+=` and the other compound
@@ -206,9 +215,8 @@ operators, which read before writing: same cases, with `v` computed from `d.cons
 4. **Publication by CAS** of `nullptr` → `buf` on `d.buf`, device scope, `release` after the
    pre-fill (a `__threadfence()` before the CAS, or `atomic_ref::compare_exchange` with
    `memory_order_release`). The loser **does not retry**: it reads the winning `buf`
-   (`acquire`) and returns its buffer to the free stack (or gives it up until the end of the
-   phase: **to be decided**, the free stack costs one more atomic, giving it up costs memory
-   until `compress()`).
+   (`acquire`) and keeps its buffer for later (6.3). With the claim described below, the
+   publication is a release store, because the claim's CAS has already elected the writer.
 5. Every lane writes its value into `buf`.
 
 Why pre-filling before the CAS is safe: as long as the CAS has not happened, the buffer is
@@ -217,16 +225,47 @@ complete pre-fill. Two warps that materialise the same chunk each pre-fill their
 only one is published. No reader exists during this phase.
 
 These are exactly the mechanisms of GPU hash tables (bump allocation, insertion by CAS, warp
-aggregation): they are well known, portable to CUDA and HIP, and wait-free.
+aggregation): they are well known and portable to CUDA and HIP.
+
+**What the prototype found: a chunk spans S/32 warps** (S/64 wavefronts). Warp aggregation gives
+one materialisation per warp, not per chunk: on a grid-stride first write, 5.5 (S = 256) and
+22.8 (S = 1024) warps per chunk lose the CAS, each after pre-filling a whole buffer for nothing
+(first write 5.5x and 25x a flat write), and their buffers exhausted an arena sized at one per
+chunk. Hence a coordination per chunk, between warps **(decided by the prototype)**:
+
+- **Claim** (the default of the proxy): the elected lane installs a **busy mark** in `d.buf` (a
+  misaligned address, never a buffer) by CAS from `nullptr`; the winner takes a buffer, its
+  group pre-fills it, it publishes it (a release store). A lane that finds the mark waits for
+  the publication with a backoff. One pre-fill per chunk, no lost buffer, an arena of one
+  buffer per materialised chunk. First write: 2.2x (S = 256) and 3.4x (S = 1024). Case 1 of 6.1
+  still holds under the mark: the constant does not change before the publication, and the
+  pre-fill writes it.
+- **Publish before waiting.** A warp over two chunks (an unaligned range) has two groups; in
+  the first version one group held a claim while the other waited, and with SIMT reconvergence
+  the holder could be held back behind its waiting sibling: two warps in that state wait for
+  each other (measured: waits that only the bound ended, a range rewrite 80x slower). The warp
+  now goes through three phases: every group makes one attempt without waiting; the groups that
+  claimed pre-fill and publish; only then do the others wait, and they never claim (a released
+  claim, arena exhausted, sends the write to the append-buffer).
+- **A bounded wait.** Past a number of backoff rounds the write goes to the append-buffer
+  (6.4). What the bound covers: two `assign()` calls on divergent paths of one AMD wavefront,
+  which has no independent thread scheduling. It costs a replay, not a deadlock. To be checked
+  on the MI300A.
+- **Race** (the scheme of steps 1 to 4) stays in the prototype as the reference. Its losers keep
+  their buffer in a per-warp **spare slot** (an atomic exchange) for their next
+  materialisation; `compress()` takes the spares back.
+- **Chunk-aligned writes** (7.3, mitigation 2) avoid the question for the library's loops: one
+  block per chunk.
 
 ### 6.3 Free-buffer stack
 
 A LIFO stack of pointers, atomic top, **with no ABA** because no pop happens while a push is
-possible: pushes only happen in `compress()` (7.2) and in case 4 of 6.2 (the loser of a CAS,
-during a write kernel where pops are possible). **(To be decided)**: either the loser gives up
-its buffer until the end of the phase (no push during the pops, the stack is trivial), or the
-stack gets a generation counter. The first form is preferred for its simplicity; the cost is a
-transient memory bounded by the number of lost CAS, rare with warp aggregation.
+possible: pushes only happen in `compress()` (7.2). **(Decided by the prototype)**: no push
+during a write kernel. With the claim (6.2) no buffer is lost; the bump or pop that a claim
+makes is always used. A buffer taken for nothing still happens on the race reference and when
+two chunk-aligned blocks share a chunk (7.3). It waits in a per-warp spare slot, which the next
+materialisation of that warp reuses. A spare slot that is already occupied sends its buffer to a
+lost list. Both the slots and the list are given back by `compress()`.
 
 ### 6.4 Arena exhaustion: the append-buffer
 
@@ -252,7 +291,8 @@ direct write and an append-buffer entry.
 
 `compress()` is launched by the host after the write phase (after the `fence`). One **block
 per materialised chunk** (or one warp per chunk for S ≤ 1024, **to be decided by
-measurement**):
+measurement**; the prototype's block per chunk reaches 73% (S = 256) and 99% (S = 1024) of the
+stream read bandwidth when every chunk folds back):
 
 1. each lane reads its S/32 elements and compares them with `buf[0]`;
 2. `__all_sync` vote (`&&` reduction within the block);
@@ -292,6 +332,16 @@ order of preference:
    compression, with no concurrency, because the block is the chunk's only writer. This
    optimisation only holds for the kernels whose split is made by the library; a user kernel
    with arbitrary indices does not have it.
+
+   The prototype (`block_write`, `parallel_for_chunks`) does more than the vote. The block
+   computes its values once, votes with `__syncthreads_or` whether one of them differs from the
+   constant, and takes one buffer. It then writes the values and the constant around them in one
+   pass, so the elements written are never pre-filled. The CAS stays, for two ranges that share
+   a chunk. A first write costs 1.9x (S = 256) and 1.2x (S = 1024) a flat write, and a random
+   range rewrite with `finalize()` costs 1.9x at S = 1024. At S = 256 a 256-thread block per
+   2 KiB chunk pays its barriers, and the claim is as good. **For the facade**: the Kokkos or
+   Arcane `parallel_for` over an array takes this path, and arbitrary kernels go through the
+   proxy with the claim.
 3. **Memory pressure forces the phase.** When the arena is exhausted, the append-buffer (6.4)
    ends the phase in effect: the host compresses, grows, replays. The arena is therefore also
    a **budget**: setting it small forces frequent compressions, at the price of replays.
@@ -479,6 +529,131 @@ the only usage trap, and it is documented the way the thread rule is on the CPU 
 | 5. Dynamic geometry | 9.3 | device `rechunk_validation` |
 | 6. Hybrid | coherent memory (GH200, MI300A), phase mode of the CPU version | an array read and written alternately by CPU and GPU with no copy |
 
+**Stage 0, done on a laptop GPU (RTX A1000, sm_86, November 2026)**, 1 GiB of doubles, ratios
+against a flat array (details and the bench in [gpu/proto](../gpu/proto/README.md)):
+
+| | S = 256 | S = 1024 | criterion |
+|---|---|---|---|
+| read, every chunk materialised | 1.04x | 1.23x | <= 1.5x: met |
+| write into materialised chunks | 0.82x | 1.08x | <= 2x: met |
+| `compress()` of 10 GB, scaled to 3.35 TB/s | 4.1 ms | 3.0 ms | <= 10 ms: met |
+| first write, claim / chunk-aligned (race) | 2.2x / 1.9x (5.5x) | 3.4x / 1.2x (25x) | -- |
+| range rewrites + `finalize()`, claim / chunk-aligned (race) | 3.7x / 4.2x (4.4x) | 2.1x / 1.9x (4.1x) | -- |
+
+The criteria hold on the laptop and on the GH200 (below); the MI300A is next (the prototype
+builds with HIP, `-DPROTO_HIP=ON`, not tried yet). The prototype uses neither
+CUB nor hipCUB: `compress()` is one block per chunk with a `__syncthreads_and` vote, and the
+buffers go back to the free stack with no compaction pass.
+
+**GH200 (H100, 132 SMs, HBM3 at 3.7 TB/s measured), 8 GiB of doubles**, first run (the
+prototype at 91d7af328):
+
+| | S = 256 | S = 1024 | criterion |
+|---|---|---|---|
+| read, every chunk materialised | 1.04x | 1.04x | <= 1.5x: met |
+| write into materialised chunks (acquire load) | 1.46x | 1.75x | <= 2x: met, but close |
+| `compress()`, every chunk folds back: 10 GB extrapolated from 8 GiB | 7.7 ms | 4.6 ms | <= 10 ms: met |
+| first write, race / claim / chunk-aligned | 15.6x / 17.7x / 5.1x | 21.8x / 14.4x / 1.8x | -- |
+| range rewrites + `finalize()`, race / claim / chunk-aligned | 7.5x / 6.9x / 6.1x | 5.4x / 3.4x / 2.7x | -- |
+
+What the large GPU shows, and the laptop hid behind its 170 GB/s:
+
+- **The write path is bound by one descriptor load in flight per warp.** A store into a
+  buffer may alias the descriptors, so the compiler cannot issue the next write's descriptor
+  load before the current store: each warp waits ~1 us per write. A second run measured the
+  acquire, relaxed and plain loads (`WriteLoad`) equal (1.48x to 1.52x): the barrier was not
+  the cause. The chunk-aligned path, one descriptor load per block, costs 1.12x at S = 1024;
+  the bench now also measures four descriptors loaded ahead per thread (what a facade loop
+  can do).
+- **A materialisation is a chain of round trips, on two global counters** (the free stack's
+  top and the bump), paid once per grid-stride step: claim is no better than race at
+  S = 256. Two shortcuts tried in between made it worse and were reverted: a look at the free
+  stack before its atomic (the bench's first write follows a fold, so the stack is full and
+  the look is one more round trip) and one device fence by the leader after the warp barrier
+  instead of one per lane (the fences then run one after the other); first write 5.1x ->
+  9.0x (S = 256), 1.8x -> 2.5x (S = 1024). The counters are now **sharded**: each arena is
+  split into 128 shards, each with its own bump and free-stack segment; a chunk allocates in
+  its home shard (its index modulo 128), then the next ones, and a buffer goes back to the
+  shard of its address.
+- **`compress()`**: one warp per chunk is now the default (GH200: 83% of the stream bandwidth
+  at S = 1024, against 66% per block). At S = 256 both reach only 36-39% when every chunk
+  folds back: the cost is the free-stack push of each fold on one counter (a scan without
+  folds runs in 0.96 ms against 6.4 ms), which the shards spread.
+- **S = 1024 is the GPU geometry**: equal or better on every line but two (the race's first
+  write, and `assign()` into materialised chunks).
+- **A race-path bug found on the way**: the race grouping loop, which each lane left once its
+  own group was done, ran later shuffles with changing masks while other lanes were inside
+  their group's work. With clang-CUDA and the slower sharded allocation, some lanes then
+  pre-filled the wrong buffer, and published buffers kept never-written elements (one test
+  run in two). The grouping is now warp-uniform, as the claim path's already was
+  (`group_by_chunk`), and 16 runs out of 16 pass.
+
+**Third GH200 run** (eb29b07df: 128 shards, home shard = chunk index modulo 128), 8 GiB:
+
+| | S = 256 | S = 1024 |
+|---|---|---|
+| write into materialised chunks, acquire / 4 loads ahead | 1.85x / 1.24x | 1.79x / 1.21x |
+| write into materialised chunks, chunk-aligned | 1.71x | 1.43x |
+| first write, race / claim / chunk-aligned | 15.1x / 14.8x / 5.0x | 22.1x / 14.3x / 2.3x |
+| range rewrites + `finalize()`, race / claim / chunk-aligned | 5.9x / 4.5x / 4.5x | 5.1x / 2.7x / 2.4x |
+| `compress()` by warp, every chunk folds back | 62% | 67% |
+
+- Four descriptor loads ahead bring the write down to 1.2x: the one-load-in-flight
+  explanation holds, and the facade's loop will batch its descriptor loads.
+- The shards helped where the counters were contended (folds at S = 256: 36% -> 62%; claim
+  range rewrites), but writes into materialised chunks (1.48x -> 1.85x), the chunk-aligned
+  paths and the folds at S = 1024 (83% -> 67%) got slower. Not the buffers' placement: a home
+  shard per run of 1, 64 or 1024 chunks measured the same (and runs of 64 concentrated the
+  allocations on one 16-buffer shard: 9x more lost CAS, a roomy arena exhausted; dropped).
+  Nor the register count: the inlined slow path took the write kernel from 32 to 38
+  registers (48 resident warps per SM instead of 64), but forcing 32 registers with
+  `__launch_bounds__(256, 8)` gave 1.92x, and the 4-loads-ahead kernel, which then spilled
+  its pointers, went from 1.24x to 2.46x; reverted. The 1.5x to 1.9x of `assign()` into a
+  materialised chunk moves with unrelated code changes (1.75x at S = 1024 on the first run);
+  an Nsight Compute profile of the write kernel (occupancy, stall reasons) is the next step
+  instead of more guesses. What is robust: four descriptor loads ahead per thread give 1.2x,
+  and the facade's loops will be written that way.
+- The first write by `assign()` stays at 15x to 22x: its cost is the latency chain of a
+  materialisation more than the counters; the chunk-aligned path stays the facade's answer.
+
+**Nsight Compute profile on the GH200** (S = 256, 1 GiB, nvcc 12.4):
+
+| kernel | registers, occupancy (theoretical / achieved) | DRAM throughput | main stall |
+|---|---|---|---|
+| `write_ramp<Flat>` | 32, 100% / 82% | 90% | LG queue full (bandwidth-bound) |
+| `write_ramp<View>`, materialised chunks | 38, 75% / 66% | 46% | long scoreboard 69% (waits for the descriptor load) |
+| `write_ramp<View>`, first write (materialises) | 38, 75% / 74% | 7% | memory barrier 46%, then long scoreboard 31%; 26 active threads per warp |
+
+- The write into a materialised chunk is latency-bound on its descriptor load (one in flight
+  per warp), with the register-limited occupancy second: four loads ahead (1.2x) address the
+  first; the facade's loops will batch their descriptor loads, and `assign()` itself is not
+  tuned further.
+- The first write waits on the pre-fill's fences (one `__threadfence` per lane). The
+  publication now uses one release CAS (exchange) by the publishing lane after the warp or
+  block barrier (`PROTO_PUBLISH=1`, the default; `0` keeps the fence per lane, to compare).
+  The earlier leader-fence attempt was measured together with the free-stack look and
+  reverted with it, so this is its first measurement alone.
+
+**Publication, same session** (8 GiB): one release CAS instead of a fence per lane gives the
+chunk-aligned first write 4.95x -> 4.59x (S = 256) and 2.32x -> 2.17x (S = 1024), its range
+rewrites 4.51x -> 4.28x and 2.40x -> 2.35x; neutral on `assign()` (race and claim within
+2%). Kept as the default.
+
+**Stage 0 on NVIDIA: done.** The three criteria hold on the GH200 (read 1.04x, write into a
+materialised chunk under 2x, `compress()` of 10 GB in 4.4 to 4.8 ms). The conclusions that
+carry into stage 1:
+
+- S = 1024 is the GPU geometry.
+- The facade's loops take the chunk-aligned path (first write 2.2x, range rewrites with
+  `finalize()` 2.4x at S = 1024) and batch their descriptor loads (1.2x for writes into
+  materialised chunks).
+- `assign()` in arbitrary kernels uses the claim, with a warp-uniform grouping, and is a
+  correct fallback (first write 14x, range rewrites 2.7x at S = 1024), not a fast path.
+- Arena counters sharded per arena (folds at S = 256: 36% -> 62%); `compress()` one warp
+  per chunk.
+
+Left for stage 0: the MI300A (HIP build, wavefronts of 64, the bounded wait on divergent paths).
+
 ## 14. Risks and open questions
 
 - **Reads beyond 1.5×**: if the latency of the indirection is not hidden on a kernel that is
@@ -487,10 +662,9 @@ the only usage trap, and it is documented the way the thread rule is on the CPU 
 - **Kernels with arbitrary indices** (irregular gather/scatter): a warp then touches several
   chunks, warp aggregation degrades into several allocations, and the accesses are no longer
   coalesced -- but they would not be on a flat array either. To be measured separately.
-- **Lost CAS**: rare with warp aggregation on regular loops, but an irregular kernel that
-  materialises the same chunk from thousands of warps wastes as many buffers until the end of
-  the phase (6.3). A `cas_lost` counter in `stats()` will tell whether the free stack with a
-  generation counter is needed.
+- **Lost CAS**: not rare, as it turned out: S/32 warps per chunk on a regular loop (6.2). The
+  claim removes them; what is left is the claim's wait, and its bound on AMD, to be measured on
+  the MI300A (`claim_wait` and `claim_spin` in the prototype's stats).
 - **nvcc** on the library's template code: compile time and front-end bugs on concepts;
   clang-CUDA is the way out.
 - **The motif registry** of `pattern` maintained by the host: detection is costly if the
@@ -498,5 +672,5 @@ the only usage trap, and it is documented the way the thread rule is on the CPU 
 - **Which users**: Kokkos, Arcane, native CUDA/HIP codes? The answer decides whether the
   Kokkos facade is stage 3 or stage 1, and whether Arcane's accelerator layer should be a
   second facade.
-- **The measurement machines**: the Grace cluster has no GPU; stage 0 needs access to an
-  H100/GH200 or an MI250X/MI300A, even a modest one (the prototype is small).
+- **The measurement machines**: a GH200 and an MI300A are available on the cluster for the
+  absolute figures; the laptop's RTX A1000 gave the ratios of stage 0.

@@ -2,10 +2,13 @@
 
 > English version: [gpu_design.md](gpu_design.md).
 
-> État : octobre 2026, **avant tout prototype**. Ce document fixe ce qu'un backend GPU de
-> shrink-array devrait être, ce qu'il reprend de la version CPU et ce qu'il abandonne, et le
-> plan pour trancher par la mesure. Les chiffres annoncés sont des attentes, pas des résultats.
-> Les décisions marquées **(à trancher)** attendent le prototype de la section 13.
+> État : écrit en octobre 2026 avant tout prototype ; révisé en novembre 2026 après le
+> prototype de l'étape 0 ([gpu/proto](../gpu/proto/README.md), RTX A1000 du portable). Ce
+> document fixe ce qu'un backend GPU de shrink-array devrait être, ce qu'il reprend de la
+> version CPU et ce qu'il abandonne, et le plan pour trancher par la mesure. Les chiffres de la
+> section 13 sont des rapports au tableau plat mesurés sur le portable ; les temps absolus
+> attendent le GH200 et le MI300A. Les décisions marquées **(tranché par le prototype)** étaient
+> ouvertes dans la première version.
 
 ***
 
@@ -74,15 +77,20 @@ seul invariant :
 | phase | rôle | conflit possible | règlement |
 |---|---|---|---|
 | kernel utilisateur en lecture | lecteurs | aucun | -- |
-| kernel utilisateur en écriture | écrivains | deux threads matérialisent le même chunk | CAS sur le descripteur ; le perdant abandonne son emplacement d'arène, repris en fin de phase (6.3) |
+| kernel utilisateur en écriture | écrivains | plusieurs warps matérialisent le même chunk | une réservation du descripteur (CAS vers une marque « occupé »), un seul pré-remplissage, la publication ; les autres l'attendent (6.2) |
 | `compress()` (fin de phase) | la passe | aucun : ni écrivain ni lecteur | vote par bloc + compaction (7) |
 | `rechunk_to()` | hôte + kernels | aucun | séquence de phases (9.3) |
 
 Conséquences :
 
-- **personne n'attend jamais personne** dans un kernel : le seul atomique du chemin
-  d'écriture est un CAS sans boucle d'attente (le perdant ne réessaie pas, il lit le
-  gagnant) ;
+- **personne n'attend en tenant une réservation** : la première version disait « personne
+  n'attend jamais personne », avec une course au CAS où chaque warp pré-remplit son propre
+  tampon et où le perdant lit celui du gagnant. Le prototype a mesuré cette course à 5,5× et
+  25× une écriture plate lors d'une première écriture (6.2), et l'a remplacée par une
+  réservation : les warps qui trouvent un chunk réservé attendent sa publication. L'attente
+  se termine parce que le détenteur est résident et n'attend rien entre sa réservation et sa
+  publication ; un warp publie ses propres réservations avant qu'aucun de ses lanes n'attende
+  (6.2) ;
 - la compression n'est plus « en vol » mais **en fin de phase** : la crête mémoire d'une
   phase est bornée par ce que cette phase matérialise (section 7.3 pour les atténuations) ;
 - l'API de phases existe déjà côté CPU (`parallel_phase`, `begin_parallel_phase`,
@@ -180,7 +188,7 @@ et qui **voit la valeur avant de décider**. Le proxy device est réduit à troi
 __device__ void assign(T v)
 {
     ChunkDesc<T>& d = desc_[nc];
-    T* buf = atomic_load_relaxed(d.buf);          // portée device
+    T* buf = atomic_load_acquire(d.buf);          // portée device ; marque « occupé » : 6.2
     if (buf == nullptr)
     {
         if (v == d.constant) return;                   // 1. la constante sur sa constante : rien
@@ -190,7 +198,11 @@ __device__ void assign(T v)
 }
 ```
 
-Les cas 1 et 3 sont le chemin chaud, uniformes par warp, sans atomique. Les règles de
+Les cas 1 et 3 sont le chemin chaud, uniformes par warp, sans atomique de lecture-écriture.
+La lecture de `buf` est un **acquire** (la première esquisse avait une lecture relaxed) :
+sans lui, un écrivain peut écrire avant que le pré-remplissage du tampon qu'il voit soit
+arrivé, et être écrasé par lui. Son coût ne se mesure pas (écriture dans un chunk
+matérialisé : 0,82× et 1,08× une écriture plate). Les règles de
 `zero_or_value` (« la seconde valeur sur un élément qui la contient déjà ») et de `zero_any`
 (« découverte », « départ », `may_become_uniform`) servaient à alimenter les listes de candidats
 : elles **disparaissent**, la passe de fin de phase n'a pas besoin de candidats. Il reste à
@@ -211,9 +223,9 @@ cas, avec `v` calculée à partir de `d.constant` ou `buf[pos]`.
 4. **Publication par CAS** de `nullptr` → `buf` sur `d.buf`, portée device, `release` après
    le pré-remplissage (une `__threadfence()` avant le CAS, ou `atomic_ref::compare_exchange`
    avec `memory_order_release`). Le perdant **ne réessaie pas** : il lit le `buf` gagnant
-   (`acquire`) et rend son tampon à la pile libre (ou l'abandonne jusqu'à la fin de phase :
-   **à trancher**, la pile libre coûte un atomique de plus, l'abandon coûte de la mémoire
-   jusqu'au `compress()`).
+   (`acquire`) et garde son tampon pour plus tard (6.3). Avec la réservation décrite plus
+   bas, la publication est un store release, puisque le CAS de la réservation a déjà élu
+   l'écrivain.
 5. Tous les lanes écrivent leur valeur dans `buf`.
 
 Pourquoi le pré-remplissage avant le CAS est sûr : tant que le CAS n'a pas eu lieu, le
@@ -222,17 +234,52 @@ et voit le pré-remplissage complet. Deux warps qui matérialisent le même chun
 chacun leur tampon ; un seul est publié. Un lecteur n'existe pas pendant cette phase.
 
 Ce sont exactement les mécanismes des tables de hachage GPU (allocation par bump, insertion
-par CAS, agrégation par warp) : ils sont connus, portables sur CUDA et HIP, et sans attente.
+par CAS, agrégation par warp) : ils sont connus et portables sur CUDA et HIP.
+
+**Ce que le prototype a trouvé : un chunk s'étend sur S/32 warps** (S/64 wavefronts).
+L'agrégation par warp donne une matérialisation par warp, pas par chunk. Sur une première
+écriture en grid-stride, 5,5 (S = 256) et 22,8 (S = 1024) warps par chunk perdent le CAS, chacun
+après avoir pré-rempli un tampon entier pour rien : la première écriture coûte 5,5× et 25× une
+écriture plate. Leurs tampons épuisaient en plus une arène dimensionnée à un tampon par chunk.
+D'où une coordination par chunk, entre warps **(tranché par le prototype)** :
+
+- **Réservation** (le mode par défaut du proxy) : le lane élu installe une **marque
+  « occupé »** dans `d.buf` (une adresse mal alignée, jamais un tampon) par CAS depuis
+  `nullptr`. Le gagnant prend un tampon, son groupe le pré-remplit, puis il le publie (store
+  release). Un lane qui trouve la marque attend la publication, avec des pauses. On obtient un
+  pré-remplissage par chunk, aucun tampon perdu, et une arène d'un tampon par chunk
+  matérialisé. Première écriture : 2,2× (S = 256) et 3,4× (S = 1024). Le cas 1 de 6.1 reste
+  valable sous la marque : la constante ne change pas avant la publication, et le
+  pré-remplissage l'écrit.
+- **Publier avant d'attendre.** Un warp à cheval sur deux chunks (une plage non alignée) a deux
+  groupes. Dans la première version, un groupe tenait une réservation pendant que l'autre
+  attendait. Avec la reconvergence SIMT, le détenteur pouvait rester bloqué derrière son voisin
+  en attente, et deux warps dans cet état s'attendaient l'un l'autre. Mesuré : des attentes que
+  seule la borne terminait, et une réécriture de plages 80× plus lente. Le warp passe
+  maintenant par trois phases. Chaque groupe fait d'abord une tentative sans attendre. Les
+  groupes qui ont réservé pré-remplissent et publient. Ce n'est qu'ensuite que les autres
+  attendent, sans jamais réserver : une réservation relâchée parce que l'arène est épuisée
+  envoie l'écriture dans l'append-buffer.
+- **Une attente bornée.** Au-delà d'un nombre de pauses, l'écriture part dans l'append-buffer
+  (6.4). La borne couvre un cas : deux appels à `assign()` sur des branches divergentes d'un
+  même wavefront AMD, qui n'a pas d'ordonnancement indépendant des threads. Ce cas coûte un
+  rejeu, pas un interblocage. À vérifier sur le MI300A.
+- **La course** (le schéma des étapes 1 à 4) reste dans le prototype comme référence. Ses
+  perdants gardent leur tampon dans un **emplacement de réserve** par warp (un échange
+  atomique), pour leur matérialisation suivante ; `compress()` reprend les réserves.
+- **Les écritures alignées sur les chunks** (7.3, atténuation 2) évitent la question pour les
+  boucles de la bibliothèque : un bloc par chunk.
 
 ### 6.3 Pile des tampons libres
 
 Une pile LIFO de pointeurs, tête atomique, **sans ABA** parce qu'aucun pop ne se fait pendant
-qu'un push est possible : les push n'ont lieu qu'en `compress()` (7.2) et dans le cas 4 de
-6.2 (le perdant d'un CAS, pendant un kernel d'écriture où les pop sont possibles). **(À
-trancher)** : soit le perdant abandonne son tampon jusqu'à la fin de phase (pas de push
-pendant les pop, la pile est triviale), soit la pile prend un compteur de génération. La
-première forme est préférée pour sa simplicité ; le coût est une mémoire transitoire bornée
-par le nombre de CAS perdus, rare avec l'agrégation par warp.
+qu'un push est possible : les push n'ont lieu qu'en `compress()` (7.2). **(Tranché par le
+prototype)** : aucun push pendant un kernel d'écriture. Avec la réservation (6.2), aucun
+tampon n'est perdu : le bump ou le pop que fait une réservation sert toujours. Un tampon pris
+pour rien arrive encore avec la course de référence, et quand deux blocs alignés partagent un
+chunk (7.3). Il attend dans l'emplacement de réserve de son warp, que la matérialisation
+suivante de ce warp réutilise. Un emplacement déjà occupé envoie son tampon dans une liste de
+tampons perdus. Les emplacements et la liste sont rendus par `compress()`.
 
 ### 6.4 Épuisement de l'arène : l'append-buffer
 
@@ -257,7 +304,9 @@ ordonne pas, y compris entre une écriture directe et une entrée de l'append-bu
 ### 7.1 La passe
 
 `compress()` est lancé par l'hôte après la phase d'écriture (après le `fence`). Un **bloc par
-chunk matérialisé** (ou un warp par chunk pour S ≤ 1024, **à trancher par la mesure**) :
+chunk matérialisé** (ou un warp par chunk pour S ≤ 1024, **à trancher par la mesure** ; le bloc
+par chunk du prototype atteint 73 % (S = 256) et 99 % (S = 1024) de la bande passante de
+lecture en flux quand tous les chunks se replient) :
 
 1. chaque lane lit ses S/32 éléments et compare à `buf[0]` ;
 2. vote `__all_sync` (réduction `&&` dans le bloc) ;
@@ -298,6 +347,17 @@ de préférence :
    compression en vol, sans concurrence, parce que le bloc est le seul écrivain du chunk.
    Cette optimisation ne vaut que pour les kernels dont le découpage est fait par la
    bibliothèque ; un kernel utilisateur à indices arbitraires ne l'a pas.
+
+   Le prototype (`block_write`, `parallel_for_chunks`) fait plus que le vote. Le bloc calcule
+   ses valeurs une seule fois, vote avec `__syncthreads_or` si l'une d'elles diffère de la
+   constante, et prend un seul tampon. Il écrit ensuite les valeurs, et la constante autour,
+   en une passe : les éléments écrits ne sont jamais pré-remplis. Le CAS reste, pour deux plages
+   qui partagent un chunk. Une première écriture coûte 1,9× (S = 256) et 1,2× (S = 1024) une
+   écriture plate, et une réécriture de plages aléatoires suivie de `finalize()` coûte 1,9× à
+   S = 1024. À S = 256, un bloc de 256 threads par chunk de 2 Kio paie ses barrières, et la
+   réservation fait aussi bien. **Pour la façade** : le `parallel_for` Kokkos ou Arcane sur un
+   tableau prend ce chemin, et les kernels quelconques passent par le proxy avec la
+   réservation.
 3. **La pression mémoire force la phase.** Quand l'arène est épuisée, l'append-buffer (6.4)
    termine la phase de fait : l'hôte compresse, agrandit, rejoue. L'arène est donc aussi un
    **budget** : la fixer petite force des compressions fréquentes, au prix de rejeux.
@@ -487,6 +547,144 @@ l'est côté CPU (`docs/getting_started_fr.md` §5).
 | 5. Géométrie dynamique | 9.3 | `rechunk_validation` device |
 | 6. Hybride | mémoire cohérente (GH200, MI300A), mode phase de la version CPU | un tableau lu et écrit alternativement par CPU et GPU sans copie |
 
+**Étape 0, faite sur le GPU du portable (RTX A1000, sm_86, novembre 2026)**, 1 Gio de
+doubles, rapports au tableau plat (détails et bench dans [gpu/proto](../gpu/proto/README.md)) :
+
+| | S = 256 | S = 1024 | critère |
+|---|---|---|---|
+| lecture, tous les chunks matérialisés | 1,04× | 1,23× | ≤ 1,5× : tenu |
+| écriture dans des chunks matérialisés | 0,82× | 1,08× | ≤ 2× : tenu |
+| `compress()` de 10 Go, transposé à 3,35 To/s | 4,1 ms | 3,0 ms | ≤ 10 ms : tenu |
+| première écriture, réservation / alignée (course) | 2,2× / 1,9× (5,5×) | 3,4× / 1,2× (25×) | -- |
+| réécriture de plages + `finalize()`, réservation / alignée (course) | 3,7× / 4,2× (4,4×) | 2,1× / 1,9× (4,1×) | -- |
+
+Les critères tiennent sur le portable et sur le GH200 (ci-dessous) ; le MI300A est le suivant
+(le prototype se compile en HIP avec `-DPROTO_HIP=ON`, pas encore essayé). Le prototype n'utilise ni
+CUB ni hipCUB : `compress()` lance un bloc par chunk avec un vote `__syncthreads_and`, et les
+tampons retournent à la pile libre sans passe de compaction.
+
+**GH200 (H100, 132 SMs, HBM3 à 3,7 To/s mesurés), 8 Gio de doubles**, premier passage (le
+prototype de 91d7af328) :
+
+| | S = 256 | S = 1024 | critère |
+|---|---|---|---|
+| lecture, tous les chunks matérialisés | 1,04× | 1,04× | ≤ 1,5× : tenu |
+| écriture dans des chunks matérialisés (lecture acquire) | 1,46× | 1,75× | ≤ 2× : tenu, mais de peu |
+| `compress()`, tous les chunks se replient : 10 Go extrapolés depuis 8 Gio | 7,7 ms | 4,6 ms | ≤ 10 ms : tenu |
+| première écriture, course / réservation / alignée | 15,6× / 17,7× / 5,1× | 21,8× / 14,4× / 1,8× | -- |
+| réécriture de plages + `finalize()`, course / réservation / alignée | 7,5× / 6,9× / 6,1× | 5,4× / 3,4× / 2,7× | -- |
+
+Ce que la grosse carte montre, et que le portable cachait derrière ses 170 Go/s :
+
+- **Le chemin d'écriture est limité par une seule lecture de descripteur en vol par warp.**
+  Un store dans un tampon peut toucher les descripteurs (aliasing) : le compilateur ne peut
+  donc pas lancer la lecture du descripteur de l'écriture suivante avant le store courant, et
+  chaque warp attend environ 1 µs par écriture. Un second passage a mesuré les lectures
+  acquire, relaxed et simple (`WriteLoad`) à égalité (1,48× à 1,52×) : la barrière n'était pas
+  en cause. Le chemin aligné, qui lit le descripteur une fois par bloc, coûte 1,12× à
+  S = 1024 ; le bench mesure aussi quatre descripteurs lus d'avance par thread (ce que peut
+  faire une boucle de façade).
+- **Une matérialisation est une chaîne d'allers-retours, sur deux compteurs globaux** (le
+  sommet de la pile libre et le bump), payée à chaque pas du grid-stride : la réservation ne
+  fait pas mieux que la course à S = 256. Deux raccourcis essayés entre-temps ont aggravé les
+  choses et ont été annulés. Le premier jetait un coup d'œil à la pile libre avant son
+  atomique ; or, dans le bench, la première écriture suit un repli, donc la pile est pleine et
+  le coup d'œil ajoute un aller-retour. Le second faisait une seule barrière device par le
+  leader après la barrière de warp, au lieu d'une par lane, si bien que les barrières
+  s'exécutaient l'une après l'autre. Première écriture : 5,1× → 9,0× (S = 256), 1,8× → 2,5×
+  (S = 1024). Les compteurs sont maintenant **partitionnés** : chaque arène est découpée en
+  128 shards, chacun avec son bump et son segment de pile libre. Un chunk alloue dans son shard
+  d'origine (son indice modulo 128), puis dans les suivants, et un tampon revient au shard de
+  son adresse.
+- **`compress()`** : un warp par chunk est maintenant le défaut (GH200 : 83 % de la bande
+  passante en flux à S = 1024, contre 66 % avec un bloc par chunk). À S = 256, les deux
+  n'atteignent que 36 à 39 % quand tous les chunks se replient : le coût est l'empilement sur
+  la pile libre de chaque repli, sur un seul compteur (un scan sans repli prend 0,96 ms contre
+  6,4 ms), que les shards répartissent.
+- **S = 1024 est la géométrie GPU** : égale ou meilleure sur toutes les lignes sauf deux (la
+  première écriture en course, et `assign()` dans des chunks matérialisés).
+- **Un bug du chemin de course, trouvé en route** : chaque lane quittait la boucle de
+  regroupement dès que son groupe était traité, si bien que les shuffles des tours suivants
+  s'exécutaient avec des masques changeants pendant que d'autres lanes étaient encore dans le
+  travail de leur groupe. Avec clang-CUDA et l'allocation partitionnée, plus lente, certaines
+  lanes pré-remplissaient alors le mauvais tampon, et des tampons publiés gardaient des
+  éléments jamais écrits (un passage de test sur deux). Le regroupement est maintenant
+  uniforme sur le warp, comme l'était déjà celui de la réservation (`group_by_chunk`), et
+  16 passages sur 16 réussissent.
+
+**Troisième passage GH200** (eb29b07df : 128 shards, shard d'origine = indice du chunk modulo
+128), 8 Gio :
+
+| | S = 256 | S = 1024 |
+|---|---|---|
+| écriture dans des chunks matérialisés, acquire / 4 lectures d'avance | 1,85× / 1,24× | 1,79× / 1,21× |
+| écriture dans des chunks matérialisés, alignée | 1,71× | 1,43× |
+| première écriture, course / réservation / alignée | 15,1× / 14,8× / 5,0× | 22,1× / 14,3× / 2,3× |
+| réécriture de plages + `finalize()`, course / réservation / alignée | 5,9× / 4,5× / 4,5× | 5,1× / 2,7× / 2,4× |
+| `compress()` par warp, tous les chunks se replient | 62 % | 67 % |
+
+- Quatre lectures de descripteur d'avance ramènent l'écriture à 1,2× : l'explication par une
+  seule lecture en vol tient, et la boucle de la façade lira ses descripteurs par lots.
+- Les shards ont aidé là où les compteurs étaient disputés (replis à S = 256 : 36 % → 62 % ;
+  réécritures de plages en réservation). En revanche, l'écriture dans des chunks matérialisés
+  (1,48× → 1,85×), les chemins alignés et les replis à S = 1024 (83 % → 67 %) ont ralenti. Ce
+  n'est pas la place des tampons : un shard d'origine par série de 1, 64 ou 1024 chunks a donné
+  les mêmes mesures. Les séries de 64 concentraient de plus les allocations sur un shard de
+  16 tampons : 9 fois plus de CAS perdus, et une arène pourtant large épuisée. Option
+  abandonnée. Ce n'est pas non plus le nombre de registres. Le chemin lent, compilé en ligne,
+  faisait bien passer le kernel d'écriture de 32 à 38 registres (48 warps résidents par SM au
+  lieu de 64). Mais imposer 32 registres avec `__launch_bounds__(256, 8)` a donné 1,92×, et le
+  kernel à quatre lectures d'avance, qui débordait alors ses pointeurs en mémoire, est passé
+  de 1,24× à 2,46× ; annulé. Le 1,5× à 1,9× d'`assign()` dans un chunk matérialisé bouge avec
+  des changements de code sans rapport (1,75× à S = 1024 au premier passage). Plutôt que
+  d'autres suppositions, l'étape suivante est un profil Nsight Compute du kernel d'écriture
+  (occupation, raisons d'attente). Ce qui est solide : quatre lectures de descripteur d'avance
+  par thread donnent 1,2×, et les boucles de la façade seront écrites ainsi.
+- La première écriture via `assign()` reste entre 15× et 22× : son coût est la chaîne de
+  latence d'une matérialisation plus que les compteurs ; le chemin aligné reste la réponse de
+  la façade.
+
+**Profil Nsight Compute sur le GH200** (S = 256, 1 Gio, nvcc 12.4) :
+
+| kernel | registres, occupation (théorique / atteinte) | débit HBM | attente principale |
+|---|---|---|---|
+| `write_ramp<Flat>` | 32, 100 % / 82 % | 90 % | file mémoire pleine (limité par la bande passante) |
+| `write_ramp<View>`, chunks matérialisés | 38, 75 % / 66 % | 46 % | long scoreboard 69 % (attente de la lecture du descripteur) |
+| `write_ramp<View>`, première écriture (matérialise) | 38, 75 % / 74 % | 7 % | barrière mémoire 46 %, puis long scoreboard 31 % ; 26 threads actifs par warp |
+
+- L'écriture dans un chunk matérialisé est limitée par la latence de la lecture de son
+  descripteur (une seule en vol par warp), l'occupation limitée par les registres venant en
+  second. Les quatre lectures d'avance (1,2×) traitent la première cause. Les boucles de la
+  façade liront leurs descripteurs par lots, et `assign()` lui-même ne sera pas réglé
+  davantage.
+- La première écriture attend les barrières du pré-remplissage (un `__threadfence` par lane).
+  La publication passe maintenant par un seul CAS (échange) release du lane qui publie, après
+  la barrière de warp ou de bloc (`PROTO_PUBLISH=1`, le défaut ; `0` garde une barrière par
+  lane, pour comparer). L'essai précédent, avec une barrière par le leader, avait été mesuré
+  avec le coup d'œil à la pile libre et annulé avec lui : c'est sa première mesure seule.
+
+**Publication, même session** (8 Gio) : un seul CAS release au lieu d'une barrière par lane
+fait passer la première écriture alignée de 4,95× à 4,59× (S = 256) et de 2,32× à 2,17×
+(S = 1024), et ses réécritures de plages de 4,51× à 4,28× et de 2,40× à 2,35×. C'est neutre sur
+`assign()` (course et réservation à 2 % près). Gardé par défaut.
+
+**Étape 0 côté NVIDIA : terminée.** Les trois critères tiennent sur le GH200 (lecture à
+1,04×, écriture dans un chunk matérialisé sous 2×, `compress()` de 10 Go en 4,4 à 4,8 ms). Les
+conclusions qui passent à l'étape 1 :
+
+- S = 1024 est la géométrie GPU.
+- Les boucles de la façade prennent le chemin aligné (première écriture à 2,2×, réécritures de
+  plages avec `finalize()` à 2,4× à S = 1024) et lisent leurs descripteurs par lots (1,2× pour
+  l'écriture dans des chunks matérialisés).
+- `assign()` dans les kernels quelconques utilise la réservation, avec un regroupement
+  uniforme sur le warp. C'est un repli correct (première écriture à 14×, réécritures de plages
+  à 2,7× à S = 1024), pas un chemin rapide.
+- Compteurs d'arène partitionnés par arène (replis à S = 256 : 36 % → 62 %) ; `compress()`
+  avec un warp par chunk.
+
+Reste pour l'étape 0 : le MI300A (compilation HIP, wavefronts de 64, attente bornée sur des
+branches divergentes).
+
 ## 14. Risques et questions ouvertes
 
 - **La lecture à plus de 1,5×** : si la latence de l'indirection n'est pas masquée sur un
@@ -496,10 +694,9 @@ l'est côté CPU (`docs/getting_started_fr.md` §5).
   plusieurs chunks, l'agrégation par warp se dégrade en plusieurs allocations, et les
   accès ne sont plus coalescés -- mais ils ne le seraient pas non plus sur un tableau plat.
   À mesurer séparément.
-- **Les CAS perdus** : rares avec l'agrégation par warp sur des boucles régulières, mais un
-  kernel irrégulier qui matérialise le même chunk depuis des milliers de warps gaspille
-  autant de tampons jusqu'à la fin de phase (6.3). Un compteur `cas_lost` dans `stats()`
-  dira si la pile libre avec génération s'impose.
+- **Les CAS perdus** : pas rares, finalement : S/32 warps par chunk sur une boucle régulière
+  (6.2). La réservation les supprime. Il reste son attente, et la borne de cette attente sur
+  AMD, à mesurer sur le MI300A (`claim_wait` et `claim_spin` dans les stats du prototype).
 - **nvcc** sur le code template de la bibliothèque : temps de compilation et bugs de
   front-end sur les concepts ; clang-CUDA est la sortie de secours.
 - **Le registre de motifs** de `pattern` entretenu par l'hôte : détection coûteuse si le
@@ -507,5 +704,5 @@ l'est côté CPU (`docs/getting_started_fr.md` §5).
 - **Quels utilisateurs** : codes Kokkos, Arcane, CUDA/HIP natifs ? La réponse
   décide si la façade Kokkos est l'étape 3 ou l'étape 1, et si la couche accélérateur
   d'Arcane doit être une seconde façade.
-- **Les machines de mesure** : le cluster Grace n'a pas de GPU ; l'étape 0 demande un accès
-  H100/GH200 ou MI250X/MI300A, même modeste (le prototype est petit).
+- **Les machines de mesure** : un GH200 et un MI300A sont disponibles sur le calculateur pour
+  les chiffres absolus ; la RTX A1000 du portable a donné les rapports de l'étape 0.
