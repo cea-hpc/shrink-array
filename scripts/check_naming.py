@@ -24,6 +24,9 @@ Over chunk/, fast_allocators/ and examples/:
   ..._t, ..._tag, rebind).
 - No identifier of the implementation's reserved `__` form, but the
   compiler's and the runtime's (__builtin_..., __cxa_..., __kmp_..., __gcov_...).
+- The CUDA and HIP runtimes keep their spelling (chunk/device/): __device__,
+  __global__, __shared__, __syncthreads, __hip_atomic_..., cudaMalloc,
+  hipError_t, atomicAdd, threadIdx, blockDim...
 
 What a line cannot show -- the `_` that ends a private or protected data
 member, a parameter's case -- clang-tidy's readability-identifier-naming
@@ -62,7 +65,11 @@ TYPE_DEF = re.compile(r"\b(?:class|struct|union)\s+([A-Za-z_]\w*)\s*(?:final\b\s
 TEMPLATE_PARAM = re.compile(r"\b(?:typename|class)\s+([A-Z][A-Z_]*[A-Z_][A-Z0-9_]*)\b")  # T, T2, A0 pass
 RESERVED = re.compile(r"(?<![\w])(__[a-z]\w*)")
 RESERVED_OK = re.compile(r"__(cpp_|has_|attribute__|builtin_|int128|asm__|volatile__|cxa_|sanitizer_|alloc_token_|"
-                         r"kmp_|lsan_|asan_|tsan_|msan_|ubsan_|gcov_|forceinline|declspec|restrict|typeof|extension__)")
+                         r"kmp_|lsan_|asan_|tsan_|msan_|ubsan_|gcov_|forceinline|declspec|restrict|typeof|extension__|"
+                         r"device__|global__|host__|shared__|launch_bounds__|hip_|syncthreads|threadfence|shfl|"
+                         r"ballot|activemask|nanosleep|popc|ffs)")
+# The CUDA / HIP runtime's names (chunk/device/), camelCase by their vendors.
+GPU_RUNTIME = re.compile(r"(cuda|hip)[A-Z]\w*|atomic[A-Z]\w*|(thread|block)Idx|(block|grid)Dim")
 ENUM_HEAD = re.compile(r"\benum\b(?:\s+(?:class|struct))?(?:\s+\w+)?\s*(?::\s*[\w:]+\s*)?(\{|$)")
 ENUMERATOR = re.compile(r"(?:^|[{,])\s*([A-Za-z_]\w*)\s*(?==|,|\}|$)")
 
@@ -162,9 +169,11 @@ def check(path: pathlib.Path, root: pathlib.Path):
                 in_enum = False
 
         for m in CAMEL.finditer(code):
+            if GPU_RUNTIME.fullmatch(m.group(1)):
+                continue
             bad.append(f"{where}: `{m.group(1)}` is camelCase, not snake_case")
         for m in SNAKE_WITH_CAPITAL.finditer(code):
-            if not CAMEL.fullmatch(m.group(1)):
+            if not CAMEL.fullmatch(m.group(1)) and not GPU_RUNTIME.fullmatch(m.group(1)):
                 bad.append(f"{where}: `{m.group(1)}` has a capital inside a snake_case name")
 
         for m in ALIAS.finditer(code):

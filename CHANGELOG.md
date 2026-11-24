@@ -103,6 +103,12 @@ the tag's checksum to the recipe.
   its read path and the uniformity test of the compression pass, all `CHUNK_HD`.
   `device_core_validation` reads views on the device and on the host and compares them
   (`double`, `float`, `int`, `std::complex<double>`; S = 256 and 1024).
+- `chunk/device/arena.h` (experimental): `device::DeviceArena`, the buffers of a device array
+  -- arenas split into 128 shards (a bump and a free-stack segment each), taken by write
+  kernels, given back by the compression pass, grown between phases -- on `backend.h` (CUDA
+  or HIP, chosen by the compiler) and `atomics.h` (relaxed device atomics).
+  `device_arena_validation` checks it under concurrent takes; `-DCHUNK_DEVICE_LANGUAGE=HIP`
+  builds it for AMD. `check_naming` accepts the CUDA / HIP runtime's spellings.
 
 ### Fixed
 

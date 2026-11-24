@@ -727,8 +727,18 @@ the library, compiled for both:
   `-Werror=all-warnings` under nvcc, which only warns when such a function calls a host one.
   It passes with nvcc 13.1 (T1000, sm_75), on the GH200 (sm_90) and with clang 23.
 
-Next: `chunk/public/chunk/device/`, starting from the prototype (`gpu/proto/zero_any_device.h`)
--- the chunk descriptor and the read path first, then the arena, the claim, `compress()` and the
+In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.h`):
+
+- `chunk_desc.h`, `view.h`: the chunk descriptor and the read path (`device_core_validation`).
+- `backend.h`, `atomics.h`: CUDA or HIP, chosen by the compiler; the host calls (allocate,
+  copy, synchronize, throwing on failure) and the device atomics, all relaxed (13, MI300A).
+- `arena.h`: `DeviceArena`, the arenas of buffers with 128 shards each (a bump and a
+  free-stack segment per shard), taken by the write kernels, given back by the compression
+  pass, grown between phases. `device_arena_validation` checks concurrent takes (each buffer
+  once, exhaustion, no overlap), give-backs, growth and home shards; it builds for CUDA or HIP
+  (`-DCHUNK_DEVICE_LANGUAGE=HIP`).
+
+Next: the chunk-aligned write with the relaxed publication (13), then `compress()` and the
 host <-> device conversion.
 
 ## 14. Risks and open questions

@@ -760,9 +760,22 @@ sont dans la bibliothèque, compilées pour les deux :
   `-Werror=all-warnings` sous nvcc, qui ne fait qu'avertir quand une telle fonction en appelle
   une de l'hôte. Il passe avec nvcc 13.1 (T1000, sm_75), sur le GH200 (sm_90) et avec clang 23.
 
-Suite : `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_device.h`) --
-le descripteur de chunk et le chemin de lecture d'abord, puis l'arène, la réservation
-(claim), `compress()` et la conversion hôte <-> device.
+Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_device.h`) :
+
+- `chunk_desc.h`, `view.h` : le descripteur de chunk et le chemin de lecture
+  (`device_core_validation`).
+- `backend.h`, `atomics.h` : CUDA ou HIP, choisi par le compilateur ; les appels hôte (allouer,
+  copier, synchroniser, avec une exception en cas d'échec) et les atomiques device, toutes
+  relaxed (13, MI300A).
+- `arena.h` : `DeviceArena`, les arènes de buffers à 128 shards chacune (un bump et un segment
+  de pile libre par shard), où puisent les noyaux d'écriture, que la passe de compression
+  réalimente, et qui grandissent entre les phases. `device_arena_validation` vérifie les prises
+  concurrentes (chaque buffer une fois, épuisement, aucun recouvrement), les restitutions, la
+  croissance et les shards d'origine ; il se compile en CUDA ou en HIP
+  (`-DCHUNK_DEVICE_LANGUAGE=HIP`).
+
+Suite : l'écriture alignée sur les chunks avec la publication relaxed (13), puis `compress()` et
+la conversion hôte <-> device.
 
 ## 14. Risques et questions ouvertes
 

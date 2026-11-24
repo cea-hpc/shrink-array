@@ -368,6 +368,9 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/pow2.h
         public/chunk/internal/global_check.h
         public/chunk/internal/host_device.h
+        public/chunk/device/arena.h
+        public/chunk/device/atomics.h
+        public/chunk/device/backend.h
         public/chunk/device/chunk_desc.h
         public/chunk/device/view.h
         public/chunk/internal/immortal.h

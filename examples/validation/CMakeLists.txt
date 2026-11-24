@@ -926,25 +926,38 @@ if (CHUNK_OPENMP AND NOT CHUNK_STD_ALLOC)
 endif()
 
 
-# --- device_core_validation: the core layer (chunk/internal/host_device.h) compiled
-# for a CUDA device and compared with the host. Opt-in: the CPU builds need no CUDA.
-# Only the include path and the definitions of a library target, not its compile
-# options (host flags such as -march would reach the CUDA compiler).
+# --- The device validations, opt-in (the CPU builds need no GPU compiler), in
+# CHUNK_DEVICE_LANGUAGE: CUDA (nvcc or clang) or HIP (hipcc or clang). Only the
+# include path and the definitions of a library target, not its compile options
+# (host flags such as -march would reach the device compiler).
 if (CHUNK_DEVICE_CORE_CHECK)
-  enable_language(CUDA)
-  add_executable(device_core_validation device_core_validation.cu)
-  set_target_properties(device_core_validation PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON)
-  # nvcc only warns (#20013) when a CHUNK_HD function calls a constexpr host function
-  # (std::complex::real(), std::array::size()...): an error here, or the check proves nothing.
-  target_compile_options(device_core_validation PRIVATE
-          $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:-Werror=all-warnings>)
-  target_include_directories(device_core_validation PRIVATE
-          $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_INCLUDE_DIRECTORIES>
-          ${PROJECT_SOURCE_DIR}/fast_allocators/public)
-  target_compile_definitions(device_core_validation PRIVATE
-          $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_COMPILE_DEFINITIONS>)
-  add_test(NAME device_core_validation COMMAND device_core_validation)
-  set_property(TEST device_core_validation PROPERTY LABELS validation)
+  set(_dev_lang ${CHUNK_DEVICE_LANGUAGE})
+  if (NOT _dev_lang MATCHES "^(CUDA|HIP)$")
+    message(FATAL_ERROR "CHUNK_DEVICE_LANGUAGE: CUDA or HIP, not '${_dev_lang}'")
+  endif()
+  enable_language(${_dev_lang})
+  set(_dev_targets device_arena_validation)
+  if (_dev_lang STREQUAL "CUDA")
+    # device_core_validation: the core layer (chunk/internal/host_device.h) on the
+    # device against the host; CUDA runtime calls, not ported to HIP yet.
+    list(APPEND _dev_targets device_core_validation)
+  endif()
+  # device_arena_validation: chunk/device/arena.h under concurrent takes.
+  foreach (_t IN LISTS _dev_targets)
+    add_executable(${_t} ${_t}.cu)
+    set_source_files_properties(${_t}.cu PROPERTIES LANGUAGE ${_dev_lang})
+    set_target_properties(${_t} PROPERTIES ${_dev_lang}_STANDARD 20 ${_dev_lang}_STANDARD_REQUIRED ON)
+    # nvcc only warns (#20013) when a CHUNK_HD function calls a constexpr host function
+    # (std::complex::real(), std::array::size()...): an error here, or the check proves nothing.
+    target_compile_options(${_t} PRIVATE $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:-Werror=all-warnings>)
+    target_include_directories(${_t} PRIVATE
+            $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_INCLUDE_DIRECTORIES>
+            ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+    target_compile_definitions(${_t} PRIVATE
+            $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_COMPILE_DEFINITIONS>)
+    add_test(NAME ${_t} COMMAND ${_t})
+    set_property(TEST ${_t} PROPERTY LABELS validation)
+  endforeach()
 endif()
 
 # shrink-build-stamp: every executable of this directory prints the build stamp
