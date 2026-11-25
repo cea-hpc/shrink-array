@@ -604,14 +604,14 @@ template <typename T, typename Derived>
 [[nodiscard]] CHUNK_FORCE_INLINE const T*
 ChunkBase<T, Derived>::values_load_for_read([[maybe_unused]] std::uintptr_t dep) const noexcept
 {
-    if constexpr (build_config::threaded && CHUNK_READ_SECTION_MODE == 4)
+    if constexpr (build_config::threaded && (CHUNK_READ_SECTION_MODE == 4 || read_reclaim::dep_entry_on))
     {
         // EXPERIMENT mode 4: relaxed, at an address made to depend on the epoch the
         // ReadSection loaded (dep is 0 at run time): ordered after that load by the
         // Arm address-dependency rule, the element load after this one likewise.
         const auto* slot = reinterpret_cast<const std::atomic<T*>*>(reinterpret_cast<std::uintptr_t>(&values_) + dep);
         const T*    vals = slot->load(std::memory_order_relaxed);
-        __asm__ volatile("" : "+r"(vals));
+        __asm__("" : "+r"(vals));
         return vals;
     }
     else if constexpr (build_config::threaded && chunk_config::read_dep_order)
@@ -621,7 +621,7 @@ ChunkBase<T, Derived>::values_load_for_read([[maybe_unused]] std::uintptr_t dep)
         // opaque, so the compiler cannot substitute a value it compared equal to
         // (region bounds, the constant marker) and lose the dependency.
         const T* vals = values_.load(std::memory_order_relaxed);
-        __asm__ volatile("" : "+r"(vals));
+        __asm__("" : "+r"(vals));
         return vals;
     }
     else
@@ -1245,7 +1245,7 @@ template <bool Relaxed>
     }
     else
     {
-        const read_reclaim::ReadSection section;
+        const read_reclaim::ReadSection section{read_reclaim::dep_entry};
         if constexpr (read_reclaim::optimistic_retry) // EXPERIMENT mode 7
         {
             for (;;)

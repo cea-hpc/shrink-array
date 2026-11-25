@@ -50,6 +50,9 @@
  *                          (the seqlock writer's fence): what IMM and C11 need, ARMv8 does not.
  *   -DRECYCLER_THREAD      the block is reused by ANOTHER thread, handed over through a flag
  *                          (release / acquire), as a materialisation on another rank would.
+ *   -DENTRY_DEP            element_at's entry with CHUNK_READ_DEP_ORDER (ReadSection(DepEntry)):
+ *                          the epoch loaded RELAXED and `values` loaded relaxed at an address
+ *                          that depends on it (dep()), instead of two acquires.
  *
  * MUTATIONS -- each must be refused:
  *   -DMUT_NO_RECHECK           mode 3 without its retry: accept whatever was read.
@@ -59,6 +62,8 @@
  *                              epoch and still load the old pointer (no synchronisation with the
  *                              pass), then the poison, and accept it.
  *   -DMUT_BUMP_AFTER_RELEASE   the pass recycles the block before it bumps the epoch.
+ *   -DMUT_ENTRY_NO_DEP         ENTRY_DEP with the values load relaxed but NOT depending on the
+ *                              epoch: the old pointer may be read before the bumped epoch.
  *   -DMUT_FOLD_FIRST_ONLY      NELEMS=2: the block's dependency on element 0 only, as if fold()
  *                              were skipped for the others.
  *
@@ -113,7 +118,7 @@ static _Atomic(atomic_int*) handed; /* the reuse list, reduced to one slot */
 
 /* ───────────────────────── the reader's side ───────────────────────── */
 
-#if defined(SHAPE_DEP) && !defined(MUT_RECHECK_UNORDERED)
+#if (defined(SHAPE_DEP) && !defined(MUT_RECHECK_UNORDERED)) || defined(ENTRY_DEP)
 /* The value's bits through a call the optimiser cannot see into: zero at run time, but an
  * address computed from it depends on the value (the asm trick of retry_after()). */
     #if defined(__clang__)
@@ -129,7 +134,7 @@ static uintptr_t opaque(uintptr_t x)
 
 static uint_fast64_t read_enter(void) /* ReadSection::ReadSection(), mode 7 */
 {
-#ifdef MUT_ENTER_RELAXED
+#if defined(MUT_ENTER_RELAXED) || defined(ENTRY_DEP)
     return atomic_load_explicit(&epoch[0], memory_order_relaxed);
 #else
     return atomic_load_explicit(&epoch[0], memory_order_acquire);
@@ -152,6 +157,13 @@ static bool moved(uint_fast64_t seen, uintptr_t acc)
 #endif
 }
 
+#if defined(ENTRY_DEP)
+static uintptr_t dep_of(uint_fast64_t seen) /* ReadSection::dep(): 0, depending on the epoch */
+{
+    return (uintptr_t)opaque((uintptr_t)seen) ^ (uintptr_t)seen;
+}
+#endif
+
 static void* reader(void* arg) /* element_at() / read_block(), NREADS times */
 {
     (void)arg;
@@ -162,7 +174,17 @@ static void* reader(void* arg) /* element_at() / read_block(), NREADS times */
         int           got[NELEMS];
         for (int t = 0; t < MAX_TRIES && !accepted; ++t)
         {
+#if defined(ENTRY_DEP)
+            /* values_load_for_read(dep): relaxed, at an address depending on the epoch */
+    #ifdef MUT_ENTRY_NO_DEP
+            _Atomic(atomic_int*)* const slot = &values; /* relaxed, NOT depending on the epoch */
+    #else
+            _Atomic(atomic_int*)* const slot = (_Atomic(atomic_int*)*)((uintptr_t)&values + dep_of(seen));
+    #endif
+            atomic_int* const vals = atomic_load_explicit(slot, memory_order_relaxed);
+#else
             atomic_int* const vals = atomic_load_explicit(&values, memory_order_acquire); /* values_load() */
+#endif
             uintptr_t         acc  = 0;
             for (int j = 0; j < NELEMS; ++j)
             {

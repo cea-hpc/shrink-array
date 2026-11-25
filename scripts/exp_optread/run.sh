@@ -10,7 +10,7 @@
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC=${SRC:-$(cd "$HERE/../.." && pwd)}
-WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread8}
+WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread9}
 THREADS=${THREADS:-1,72}
 N=${N:-33554432}
 JOBS=${JOBS:-32}
@@ -42,7 +42,7 @@ load_env() {
 }
 
 # CONFIGS: <compiler>:<mode>[d], d = also -DCHUNK_READ_DEP_ORDER=1 (relaxed `values` load, AArch64)
-CONFIGS=${CONFIGS:-"gcc:0 gcc:1 gcc:3 gcc:7"}
+CONFIGS=${CONFIGS:-"gcc:0 gcc:7 gcc:7d llvm:0 llvm:7 llvm:7d"}
 ROUNDS=${ROUNDS:-2}
 LOOP_SYM=_ZN12_GLOBAL__N_18arr_readERN12shrink_array13zero_or_value5ArrayIdiEEi._omp_fn.0
 for cfg in $CONFIGS; do
@@ -65,7 +65,7 @@ for cfg in $CONFIGS; do
     # What the read loop is made of: calls (an inlining miss), and the ordering instructions.
     bin="$B/examples/access_cost/access_cost_zero_or_value_256"
     # The mangled name differs between compilers (gcc 16: ..._1L8arr_read...): found by nm.
-    sym=$(nm "$bin" | grep -E 'arr_read.*omp_fn' | grep -vE 'random|bulk' | awk '{print $3}' | head -1)
+    sym=$(nm "$bin" | grep -E '8arr_read.*(omp_fn\.0|omp_outlined)$' | awk '{print $3}' | head -1)
     objdump -d --no-show-raw-insn --disassemble="${sym:-$LOOP_SYM}" "$bin" > "$B.loop.s" 2>/dev/null
     echo "[optread] $cfg loop: $(grep -cE '\sbl\s' "$B.loop.s") bl, $(grep -c dmb "$B.loop.s") dmb," \
          "$(grep -c stlr "$B.loop.s") stlr, $(grep -cE 'ldar\s' "$B.loop.s") ldar, $(grep -c ldapr "$B.loop.s") ldapr" \

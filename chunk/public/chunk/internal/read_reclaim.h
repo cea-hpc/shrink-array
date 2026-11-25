@@ -143,6 +143,13 @@ inline constexpr bool scan_announce =
 
 /// @brief EXPERIMENT mode 7: optimistic reads that retry.
 inline constexpr bool optimistic_retry = enabled && CHUNK_READ_SECTION_MODE == 7;
+/// @brief EXPERIMENT mode 7: a block read orders its re-check by the fold of its values
+///        (AArch64: an acquire fence is a dmb ishld there); elsewhere by an acquire fence.
+#if defined(__aarch64__)
+inline constexpr bool fold_block = true;
+#else
+inline constexpr bool fold_block = false;
+#endif
 static_assert(!optimistic_retry || build_config::use_fast_alloc,
               "CHUNK_READ_SECTION_MODE=7 needs the fast allocator: a free()d buffer may be unmapped");
 
@@ -224,11 +231,27 @@ inline void light_fence() noexcept
  * @brief Brackets one pure read: from before the `values` load to after the
  *        element load.
  */
+/// @brief EXPERIMENT mode 7: the tag of a ReadSection whose caller orders its `values`
+///        load after the entry by an address dependency on dep() (element_at only).
+struct DepEntry
+{
+};
+inline constexpr DepEntry dep_entry{};
+
+/// @brief EXPERIMENT mode 7 with CHUNK_READ_DEP_ORDER: a DepEntry section loads the epoch
+///        relaxed (no acquire per read: clang keeps the caller's escaped locals, an OpenMP
+///        reduction variable, in registers then) and its caller's `values` load depends
+///        on it; the other sections keep the acquire.
+inline constexpr bool dep_entry_on = enabled && CHUNK_READ_SECTION_MODE == 7 && chunk_config::read_dep_order;
+
 class ReadSection
 {
   public:
     /// @brief Enter: the slot's sequence goes odd, then the light fence.
     ReadSection() noexcept;
+    /// @brief EXPERIMENT mode 7: as ReadSection(), the entry ordered by dep() instead of
+    ///        an acquire when dep_entry_on. The caller MUST load `values` through dep().
+    explicit ReadSection(DepEntry) noexcept;
     /// @brief Leave: the sequence goes even, released after the element load.
     ~ReadSection();
     // A scope: neither copied nor moved.
@@ -262,16 +285,19 @@ class ReadSection
     ///        entry load of the epoch for the CPU. Other modes: 0.
     [[nodiscard]] std::uintptr_t dep() const noexcept
     {
-        if constexpr (CHUNK_READ_SECTION_MODE == 4)
+        if constexpr (CHUNK_READ_SECTION_MODE == 4 || dep_entry_on)
         {
             std::uintptr_t opaque = seq_;
-            __asm__ volatile("" : "+r"(opaque));
+            __asm__("" : "+r"(opaque));
             return opaque ^ seq_;
         }
         return 0;
     }
 
   private:
+    /// @brief The default entry (every mode), shared by both constructors.
+    void enter() noexcept;
+
     ReaderSlot*           slot_   = nullptr;
     mutable std::uint64_t seq_    = 0; ///< mode 7: refreshed by a retry
     mutable bool          passed_ = false;

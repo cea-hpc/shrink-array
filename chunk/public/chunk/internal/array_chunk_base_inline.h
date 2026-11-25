@@ -872,21 +872,32 @@ ArrayChunkBase<Derived>::sync_chunk(const ChunkType& chunk_t, int chunk_index, i
         // deferred op was ever queued for this chunk: skip the gate. This
         // keeps the hot read path cheap. The bit is sticky until
         // clear_dirty_bitset(); the authoritative gate is the chunk's own
-        // pending counter, below.
-        if (derived().is_chunk_dirty(chunk_index)) [[unlikely]]
+        // pending counter, below. EXPERIMENT: the test is relaxed and the
+        // dirty branch out of line (sync_chunk_dirty), which takes the
+        // acquire fence the load used to carry.
+        if (derived().is_chunk_dirty_hint(chunk_index)) [[unlikely]]
         {
-            // precise per-chunk gate (DeferredReadGate, chunk_base.h).
-            const bool should_wait = chunk_t.read_gate_should_wait(offset);
-            // CHUNK_STATS: dirty_open / dirty_gate is the share the sticky bit costs for nothing.
-            if constexpr (chunk_config::stats)
-            {
-                inc_chunk_dirty_gate<ChunkType>(!should_wait);
-            }
-            if (should_wait) [[unlikely]]
-            {
-                chunk_t.wait_for_availability(offset);
-            }
+            sync_chunk_dirty(chunk_t, chunk_index, offset);
         }
+    }
+}
+
+template <typename Derived>
+void ArrayChunkBase<Derived>::sync_chunk_dirty(const ChunkType& chunk_t, int chunk_index, int offset) const noexcept
+{
+    // Pairs with the acq_rel fetch_or of mark_chunk_dirty(), as the acquire load did.
+    std::atomic_thread_fence(std::memory_order_acquire);
+    (void)chunk_index;
+    // precise per-chunk gate (DeferredReadGate, chunk_base.h).
+    const bool should_wait = chunk_t.read_gate_should_wait(offset);
+    // CHUNK_STATS: dirty_open / dirty_gate is the share the sticky bit costs for nothing.
+    if constexpr (chunk_config::stats)
+    {
+        inc_chunk_dirty_gate<ChunkType>(!should_wait);
+    }
+    if (should_wait) [[unlikely]]
+    {
+        chunk_t.wait_for_availability(offset);
     }
 }
 

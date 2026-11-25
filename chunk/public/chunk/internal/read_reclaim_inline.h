@@ -26,7 +26,24 @@ namespace shrink_array
 // shrink_array::ReadSection
 // ---------------------------------------------------------------------------
 
+inline read_reclaim::ReadSection::ReadSection(DepEntry) noexcept
+{
+    if constexpr (dep_entry_on)
+    {
+        seq_ = g_reclaim_epoch.load(std::memory_order_relaxed); // ordered by dep(): the values load
+    }
+    else
+    {
+        enter();
+    }
+}
+
 inline read_reclaim::ReadSection::ReadSection() noexcept
+{
+    enter();
+}
+
+CHUNK_FORCE_INLINE void read_reclaim::ReadSection::enter() noexcept
 {
     if constexpr (enabled && (CHUNK_READ_SECTION_MODE == 2 || CHUNK_READ_SECTION_MODE == 3 || CHUNK_READ_SECTION_MODE == 7))
     {
@@ -117,7 +134,7 @@ template <typename V>
         // zero = raw ^ raw, hidden from the compiler: 0 at run time, a data
         // dependency on the element for the CPU (eor on AArch64).
         std::uintptr_t opaque = raw;
-        __asm__ volatile("" : "+r"(opaque));
+        __asm__("" : "+r"(opaque));
         const std::uintptr_t zero  = opaque ^ raw;
         const auto*          epoch = reinterpret_cast<const std::atomic<std::uint64_t>*>(
             reinterpret_cast<std::uintptr_t>(&g_reclaim_epoch) + zero);
@@ -150,7 +167,7 @@ template <typename V>
         // As pass(): zero = raw ^ raw, hidden from the compiler; the epoch's address
         // depends on the element for the CPU, so its load is ordered after it.
         std::uintptr_t opaque = raw;
-        __asm__ volatile("" : "+r"(opaque));
+        __asm__("" : "+r"(opaque));
         const std::uintptr_t zero  = opaque ^ raw;
         const auto*          epoch = reinterpret_cast<const std::atomic<std::uint64_t>*>(
             reinterpret_cast<std::uintptr_t>(&g_reclaim_epoch) + zero);
@@ -165,12 +182,23 @@ template <typename V>
 
 [[nodiscard]] CHUNK_FORCE_INLINE bool read_reclaim::ReadSection::retry() const noexcept
 {
-    if constexpr (optimistic_retry)
+    if constexpr (optimistic_retry && !fold_block)
+    {
+        // Not AArch64: an acquire fence, free in the hardware (x86: loads are not
+        // reordered with loads), where the per-value fold cost read-bulk +40 % (gcc x86).
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (g_reclaim_epoch.load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        {
+            seq_ = note_retry();
+            return true;
+        }
+    }
+    else if constexpr (optimistic_retry)
     {
         // The block's loads before the re-check: the epoch's address depends on
         // the OR of every value loaded (fold()), as retry_after() on one value.
         std::uintptr_t opaque = acc_;
-        __asm__ volatile("" : "+r"(opaque));
+        __asm__("" : "+r"(opaque));
         const std::uintptr_t zero  = opaque ^ acc_;
         const auto*          epoch = reinterpret_cast<const std::atomic<std::uint64_t>*>(
             reinterpret_cast<std::uintptr_t>(&g_reclaim_epoch) + zero);
@@ -187,7 +215,7 @@ template <typename V>
 template <typename V>
 CHUNK_FORCE_INLINE void read_reclaim::ReadSection::fold(const V& value) const noexcept
 {
-    if constexpr (optimistic_retry)
+    if constexpr (optimistic_retry && fold_block)
     {
         static_assert(std::is_trivially_copyable_v<V>, "fold: the dependency is taken on the value's bytes");
         constexpr std::size_t words = (sizeof(V) + sizeof(std::uintptr_t) - 1) / sizeof(std::uintptr_t);

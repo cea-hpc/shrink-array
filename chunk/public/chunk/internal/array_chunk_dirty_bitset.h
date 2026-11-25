@@ -115,13 +115,33 @@ class DirtyBitsetSupport<Derived, true>
      * @return true if a deferred operation was queued for this chunk during the
      *         current phase (the bit is sticky until clear_dirty_bitset()).
      */
+    /// @brief EXPERIMENT: the bit alone, relaxed, NO ordering: a hint for the hot read
+    ///        path, whose dirty branch takes the acquire fence itself (out of line).
+    [[nodiscard]] bool is_chunk_dirty_hint(int chunk_idx) const noexcept
+    {
+        const int      word_idx = chunk_idx >> word_shift;
+        const uint64_t bit_mask = 1ULL << (chunk_idx & bit_in_word_mask);
+        return (bitset_[word_idx].word.load(std::memory_order_relaxed) & bit_mask) != 0;
+    }
+
     [[nodiscard]] bool is_chunk_dirty(int chunk_idx) const noexcept
     {
         const int      word_idx = chunk_idx >> word_shift;
         const uint64_t bit_mask = 1ULL << (chunk_idx & bit_in_word_mask);
 
-        // Acquire: pairs with the acq_rel fetch_or of mark_chunk_dirty()
-        return (bitset_[word_idx].word.load(std::memory_order_acquire) & bit_mask) != 0;
+        // EXPERIMENT exp/optimistic-read: relaxed, and the acquire FENCE only when the
+        // bit is set -- it pairs with the acq_rel fetch_or of mark_chunk_dirty() exactly
+        // as the acquire load did (a fence after a relaxed load that read the RMW's value).
+        // A clear bit saw no writer: nothing to order. Why: an acquire load per element
+        // makes clang reload every escaped local around it -- a `reduction(+:sum)` loop
+        // kept `sum` on the stack (store-forwarding chain, 2.2 ns/elem on x86) -- and is
+        // one LDAPR per element on AArch64.
+        if ((bitset_[word_idx].word.load(std::memory_order_relaxed) & bit_mask) != 0) [[unlikely]]
+        {
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -229,6 +249,12 @@ class DirtyBitsetSupport<Derived, false>
     }
     /// @brief Never dirty: no deferred write can exist in this mode.
     [[nodiscard]] static bool is_chunk_dirty(int /*chunk_idx*/) noexcept
+    {
+        return false;
+    }
+
+    /// @brief EXPERIMENT: as is_chunk_dirty().
+    [[nodiscard]] static bool is_chunk_dirty_hint(int /*chunk_idx*/) noexcept
     {
         return false;
     }

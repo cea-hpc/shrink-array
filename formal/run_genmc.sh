@@ -168,6 +168,14 @@ run ok    "source $model, block of 2, 2 readers"                 --check-livenes
 run ok    "source $model, reused by another thread"              --check-liveness $model -- -DNELEMS=2 -DRECYCLER_THREAD $M7
 run ok    "source $model, other thread, 2 readers x 2 reads"     --check-liveness $model -- -DRECYCLER_THREAD -DNREADERS=2 -DNREADS=2 $M7
 done
+echo "-- element_at's entry by dependency (ReadSection(DepEntry), CHUNK_READ_DEP_ORDER) --"
+for model in --arm8 --tso; do
+run ok    "ENTRY_DEP $model"                                     --check-liveness $model -- -DENTRY_DEP $M7
+run ok    "ENTRY_DEP $model, 2 readers x 2 reads"                --check-liveness $model -- -DENTRY_DEP -DNREADERS=2 -DNREADS=2 $M7
+run ok    "ENTRY_DEP $model, other thread, 2 reads"              --check-liveness $model -- -DENTRY_DEP -DRECYCLER_THREAD -DNREADS=2 $M7
+done
+run error "MUT_ENTRY_NO_DEP --arm8 (values relaxed, no dependency)" --arm8 -- -DENTRY_DEP -DMUT_ENTRY_NO_DEP $M7
+run ok    "MUT_ENTRY_NO_DEP --tso (load order kept on x86)"      --tso -- -DENTRY_DEP -DMUT_ENTRY_NO_DEP $M7
 echo "-- mutations: each must be refused --"
 for model in --arm8 --tso; do
 run error "MUT_NO_RECHECK $model (mode 3 without its retry)"     $model -- -DMUT_NO_RECHECK $M7

@@ -386,7 +386,8 @@ inline constexpr bool tsan_build = false;
  *          architectures (x86: the acquire is a plain load already).
  *          Measurement first: access_cost with and without it, on Grace.
  */
-#if defined(CHUNK_READ_DEP_ORDER) && CHUNK_READ_DEP_ORDER && defined(__aarch64__) && !defined(CHUNK_TSAN_BUILD)
+// EXPERIMENT: CHUNK_READ_DEP_ORDER_ANY_ARCH lifts the AArch64 restriction (clang x86: the spilled reduction)
+#if defined(CHUNK_READ_DEP_ORDER) && CHUNK_READ_DEP_ORDER && (defined(__aarch64__) || defined(CHUNK_READ_DEP_ORDER_ANY_ARCH)) && !defined(CHUNK_TSAN_BUILD)
 inline constexpr bool read_dep_order = true;
 #else
 inline constexpr bool read_dep_order = false;
