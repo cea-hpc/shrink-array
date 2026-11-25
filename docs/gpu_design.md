@@ -830,7 +830,8 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   `device_core_validation` (the view, the descriptor's size), `device_write_validation` and
   `device_assign_validation` (folds to +0.0 only, -0.0 is another value), and
   `device_convert_validation` (a host `zero_any` array into a device `zero` one: its ten
-  second-value chunks get a buffer and come back materialised). They pass on the T1000.
+  second-value chunks get a buffer and come back materialised). They pass on the T1000 and the
+  MI300A (no claim wait given up there either).
 
 Next: the MI300A measurement of the claim's last change (publish before waiting), the GH200 and
 MI300A runs of the `zero` variant; then a kernel-level facade (Kokkos, section 13 stage 3).

@@ -869,7 +869,8 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   du descripteur), `device_write_validation` et `device_assign_validation` (repli vers +0,0
   seulement, -0,0 est une autre valeur), et `device_convert_validation` (un tableau hôte
   `zero_any` vers un tableau device `zero` : ses dix chunks de seconde valeur reçoivent un
-  buffer et reviennent matérialisés). Elles passent sur la T1000.
+  buffer et reviennent matérialisés). Elles passent sur la T1000 et le MI300A (là non plus,
+  aucune attente de réservation abandonnée).
 
 Suite : la mesure sur le MI300A du dernier changement de la réservation (publier avant
 d'attendre), les mesures de la variante `zero` sur le GH200 et le MI300A ; puis une façade au
