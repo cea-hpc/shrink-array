@@ -55,6 +55,7 @@ jobs:
             targets: >-
               device_core_validation device_arena_validation device_write_validation
               device_assign_validation device_convert_validation device_bench
+              device_memory_validation_zero_any device_memory_validation_zero
           # ROCm 7.2.4 without its libraries (rocm-dev: the compiler and the HIP
           # runtime, 1.1 GB against 6.9 for -complete); gfx942 (MI300A).
           # device_core_validation is CUDA only (CUDA runtime calls).
@@ -69,6 +70,7 @@ jobs:
             targets: >-
               device_arena_validation device_write_validation
               device_assign_validation device_convert_validation device_bench
+              device_memory_validation_zero_any device_memory_validation_zero
     env:
       CC: gcc-14
       CXX: g++-14

@@ -891,6 +891,23 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   À S = 256 l'écriture dans des chunks matérialisés reste au-delà du critère de 2x dans les deux
   variantes.
 
+- Le critère « même mémoire finale que la variante CPU à géométrie égale » :
+  `device_memory_validation_zero_any` et `_zero` appliquent les mêmes six manches d'écritures à
+  un tableau hôte et à un tableau device de la même variante (par `Writer::write` par plage et
+  par `Writer::assign` par élément : 0,0 et -0,0, une constante par chunk, NaN avec payload, le
+  dernier chunk partiel, des zéros partout) et comparent les dispositions chunk par chunk après
+  chaque `shrink_to_fit()` / `compress()` : genres, constantes bit à bit, éléments. Elles sont
+  égales, à une différence connue près : en `zero_any`, un dernier chunk partiel uniforme sur
+  ses éléments valides se replie sur le device et garde son buffer sur l'hôte. L'hôte teste un
+  chunk sur ses `chunk_size()` éléments, queue au-delà de `size()` comprise (elle contient la
+  constante de la matérialisation du chunk) ; le device compare les éléments sous n. Un buffer
+  de plus sur l'hôte, au plus un par tableau. **Défaut CPU, à corriger sur develop si on le
+  veut** : faire passer le nombre d'éléments valides du dernier chunk par `ChunkElems` (les
+  trois mises en file du proxy d'écriture, les balayages des tableaux, le repli au rechunk),
+  avec un compte qu'un `resize()` entre la mise en file et la passe ne peut pas rendre périmé,
+  et le rejeu des écritures différées. Pas en `zero` (sa queue vaut 0, sa seule valeur de
+  repli).
+
 - CI (`.github/workflows/device.yml`, sur la branche `gpu`) : compilation seule, les runners
   hébergés n'ont pas de GPU. nvcc 13.1 pour sm_75 et sm_90, et ROCm 7.2.4 pour gfx942,
   construisent toutes les validations device et `device_bench` (premier run vert, 25/11/2026).

@@ -132,6 +132,10 @@ the tag's checksum to the recipe.
   `ChunkDesc`, `View`, `Writer` and `Array` (`zero_any` by default). Its descriptor is the
   pointer alone and a compressed chunk reads `T{}`; `compress()` folds only to `T{}`. The device
   validations run both variants.
+- `device_memory_validation_zero_any` / `_zero` (experimental): the same writes on a host array
+  and a device array of the same variant, the layouts compared chunk by chunk after each
+  compression (stage 1's "same final memory" criterion). One known difference: a partial last
+  chunk uniform over its valid elements folds on the device, not on the host (zero_any).
 
 ### Fixed
 

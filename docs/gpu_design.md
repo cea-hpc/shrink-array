@@ -850,6 +850,22 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   (their buffers dominate). At S = 256 the write into materialised chunks stays past the 2x
   criterion in both variants.
 
+- The criterion "same final memory as the CPU variant at equal geometry":
+  `device_memory_validation_zero_any` and `_zero` run the same six rounds of writes on a host
+  array and on a device array of the same variant (by `Writer::write` per span and by
+  `Writer::assign` per element: 0.0 and -0.0, a constant per chunk, NaN with a payload, the
+  partial last chunk, zeros everywhere), and compare the layouts chunk by chunk after every
+  `shrink_to_fit()` / `compress()`: kinds, constants bit for bit, elements. They are equal, but
+  for one known difference: in `zero_any`, a partial last chunk uniform over its valid elements
+  folds on the device and keeps its buffer on the host. The host tests a chunk over its
+  `chunk_size()` elements, the tail past `size()` included (it holds the constant of the
+  chunk's materialisation); the device compares the elements below n. One buffer more on the
+  host, at most one per array. **CPU defect, to fix on develop if wanted**: pass the valid
+  count of the last chunk through `ChunkElems` (the write proxy's three enqueues, the arrays'
+  sweeps, the rechunk fold), with a count that a `resize()` between the enqueue and the pass
+  cannot leave stale, and the deferred writes' replay. Not in `zero` (its tail is 0, its only
+  fold value).
+
 - CI (`.github/workflows/device.yml`, on the `gpu` branch): compilation only, the hosted runners
   have no GPU. nvcc 13.1 for sm_75 and sm_90, and ROCm 7.2.4 for gfx942, build every device
   validation and `device_bench` (first run green, 2026-11-25).

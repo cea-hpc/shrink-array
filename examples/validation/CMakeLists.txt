@@ -1012,6 +1012,36 @@ if (CHUNK_DEVICE_CORE_CHECK)
     add_test(NAME device_convert_validation COMMAND device_convert_validation)
     set_property(TEST device_convert_validation PROPERTY LABELS validation)
   endif()
+  # device_memory_validation_<variant>: stage 1's criterion, the same final memory as the
+  # CPU variant at equal geometry -- the same writes on a host array and a device::Array of
+  # the same variant, the layouts compared chunk by chunk after every compression. Two
+  # executables (no library holds zero and zero_any together), one device half for both.
+  if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE} AND TARGET chunk_zero_${CHUNK_DEFAULT_SIZE} AND _convert_ok)
+    add_library(device_memory_device OBJECT device_memory_device.cu)
+    set_source_files_properties(device_memory_device.cu PROPERTIES LANGUAGE ${_dev_lang})
+    set_target_properties(device_memory_device PROPERTIES ${_dev_lang}_STANDARD 20 ${_dev_lang}_STANDARD_REQUIRED ON
+                          POSITION_INDEPENDENT_CODE ON)
+    target_compile_options(device_memory_device PRIVATE $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:-Werror=all-warnings>)
+    target_include_directories(device_memory_device PRIVATE
+            $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_INCLUDE_DIRECTORIES>
+            ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+    foreach (_v IN ITEMS zero_any zero)
+      set(_t device_memory_validation_${_v})
+      string(TOUPPER "CHUNK_VARIANT_${_v}" _vmacro)
+      add_executable(${_t} device_memory_validation.cpp $<TARGET_OBJECTS:device_memory_device>)
+      target_link_libraries(${_t} PRIVATE chunk_${_v}_${CHUNK_DEFAULT_SIZE})
+      validation_variant_defs(${_t} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
+      validation_setup_target(${_t})
+      set_target_properties(${_t} PROPERTIES LINKER_LANGUAGE CXX)
+      if (_dev_lang STREQUAL "CUDA")
+        target_link_libraries(${_t} PRIVATE CUDA::cudart)
+      else()
+        target_link_libraries(${_t} PRIVATE hip::host)
+      endif()
+      add_test(NAME ${_t} COMMAND ${_t})
+      set_property(TEST ${_t} PROPERTY LABELS validation)
+    endforeach()
+  endif()
 endif()
 
 # shrink-build-stamp: every executable of this directory prints the build stamp
