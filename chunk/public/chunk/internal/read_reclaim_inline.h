@@ -167,14 +167,37 @@ template <typename V>
 {
     if constexpr (optimistic_retry)
     {
-        std::atomic_thread_fence(std::memory_order_acquire); // the block's loads before the re-check
-        if (g_reclaim_epoch.load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        // The block's loads before the re-check: the epoch's address depends on
+        // the OR of every value loaded (fold()), as retry_after() on one value.
+        std::uintptr_t opaque = acc_;
+        __asm__ volatile("" : "+r"(opaque));
+        const std::uintptr_t zero  = opaque ^ acc_;
+        const auto*          epoch = reinterpret_cast<const std::atomic<std::uint64_t>*>(
+            reinterpret_cast<std::uintptr_t>(&g_reclaim_epoch) + zero);
+        acc_ = 0;
+        if (epoch->load(std::memory_order_relaxed) != seq_) [[unlikely]]
         {
             seq_ = note_retry();
             return true;
         }
     }
     return false;
+}
+
+template <typename V>
+CHUNK_FORCE_INLINE void read_reclaim::ReadSection::fold(const V& value) const noexcept
+{
+    if constexpr (optimistic_retry)
+    {
+        static_assert(std::is_trivially_copyable_v<V>, "fold: the dependency is taken on the value's bytes");
+        constexpr std::size_t words = (sizeof(V) + sizeof(std::uintptr_t) - 1) / sizeof(std::uintptr_t);
+        std::uintptr_t        raw[words]{};
+        std::memcpy(raw, &value, sizeof(V));
+        for (std::size_t w = 0; w < words; ++w)
+        {
+            acc_ |= raw[w];
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

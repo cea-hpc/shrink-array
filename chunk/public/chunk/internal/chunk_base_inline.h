@@ -851,6 +851,7 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexc
         {
             // raw-read: read_block -- under its own ReadSection
             out[j] = load_at<false>(vals, first + j);
+            section.fold(out[j]); // EXPERIMENT mode 7
         }
     };
     do // EXPERIMENT mode 7: read again if a grace period began meanwhile
@@ -888,6 +889,7 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out, const T* of
                 for (int j = 0; j < count; ++j)
                 {
                     out[j] = Derived::motif_value(vals, first + j, off);
+                    section.fold(out[j]); // EXPERIMENT mode 7
                 }
                 return;
             }
@@ -895,6 +897,7 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out, const T* of
             {
                 // raw-read: read_block -- under its own ReadSection
                 out[j] = load_at<false>(vals, first + j);
+            section.fold(out[j]); // EXPERIMENT mode 7
             }
             return;
         }
@@ -920,6 +923,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
             {
                 // raw-read: read_block_or_constant -- the shared first-constant buffer
                 constant = load_at<false>(vals, 0);
+            section.fold(constant); // EXPERIMENT mode 7
                 return true;
             }
             if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
@@ -937,6 +941,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
                 for (int j = 0; j < count; ++j)
                 {
                     out[j] = Derived::motif_value(vals, first + j, off);
+                    section.fold(out[j]); // EXPERIMENT mode 7
                 }
                 return false;
             }
@@ -944,6 +949,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
             {
                 // raw-read: read_block_or_constant -- under its own ReadSection
                 out[j] = load_at<false>(vals, first + j);
+            section.fold(out[j]); // EXPERIMENT mode 7
             }
             return false;
         }
@@ -975,6 +981,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
         {
             // raw-read: read_block_or_constant -- the shared first-constant buffer
             constant = load_at<false>(vals, 0);
+            section.fold(constant); // EXPERIMENT mode 7
             return true;
         }
         if constexpr (is_zero_any_family_v<Derived>)
@@ -989,6 +996,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
         {
             // raw-read: read_block_or_constant -- under its own ReadSection
             out[j] = load_at<false>(vals, first + j);
+            section.fold(out[j]); // EXPERIMENT mode 7
         }
         return false;
     };

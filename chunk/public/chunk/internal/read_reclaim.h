@@ -249,8 +249,14 @@ class ReadSection
     [[nodiscard]] bool retry_after(const V& value) const noexcept;
 
     /// @brief EXPERIMENT mode 7: retry_after() for a read of several values (a block):
-    ///        the re-check is ordered by an acquire fence. Other modes: false.
+    ///        the re-check is ordered by an address dependency on the OR of every
+    ///        value fold()ed since the last check (no fence). Other modes: false.
     [[nodiscard]] bool retry() const noexcept;
+
+    /// @brief EXPERIMENT mode 7: add @p value's bytes to the block's dependency.
+    ///        Other modes: nothing.
+    template <typename V>
+    void fold(const V& value) const noexcept;
 
     /// @brief EXPERIMENT mode 4: 0 at run time, an address dependency on the
     ///        entry load of the epoch for the CPU. Other modes: 0.
@@ -268,7 +274,8 @@ class ReadSection
   private:
     ReaderSlot*           slot_   = nullptr;
     mutable std::uint64_t seq_    = 0; ///< mode 7: refreshed by a retry
-    mutable bool          passed_ = false; ///< EXPERIMENT mode 3: pass() did the re-check
+    mutable bool          passed_ = false;
+    mutable std::uintptr_t acc_   = 0; ///< EXPERIMENT mode 7: fold()ed bits of a block ///< EXPERIMENT mode 3: pass() did the re-check
 };
 
 /**

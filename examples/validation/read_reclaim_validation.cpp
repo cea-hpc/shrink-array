@@ -95,6 +95,12 @@
 //
 //   zero has no second value: the mode is skipped there (77).
 //
+// MODE `bulk` (argument, EXPERIMENT exp/optimistic-read): the readers read a
+//   whole victim chunk (offsets 1 .. S-1) through for_each_value, i.e. through
+//   ChunkBase::read_block -- the block read's own section. Same check: every
+//   value 0. Only a build with bulk_fast (no stats, no CHUNK_CHECK) takes that
+//   path; build it with -DCHUNK_TEST_READ_DELAY_EVERY=16 for the delay.
+//
 // MODE `remark` (argument): a pass must not erase another pass's claim
 //
 //   A compression pass marks its candidates (ChunkBase::steal_mark) so that
@@ -485,8 +491,9 @@ int run(int argc, char** argv)
         return run_remark(team, seconds);
     }
 
-    long fails = 0;
-    int  rc    = 0;
+    const bool bulk  = argc > 1 && std::string_view(argv[1]) == "bulk"; // EXPERIMENT
+    long       fails = 0;
+    int        rc    = 0;
     {
         Arr        arr;
         const auto chunk_sz = static_cast<long>(arr.chunk_size());
@@ -570,6 +577,30 @@ int run(int argc, char** argv)
                 {
                     const auto writer = static_cast<long>(rng.next() % static_cast<std::uint64_t>(writers));
                     const auto victim = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_victims));
+                    if (bulk) // EXPERIMENT: the block read
+                    {
+                        const auto first = static_cast<Index>((writer * per_writer + victim) * chunk_sz + 1);
+                        const auto last  = static_cast<Index>((writer * per_writer + victim + 1) * chunk_sz);
+                        long       k     = 1;
+                        ca.for_each_value(first, last,
+                                          [&](double value)
+                                          {
+                                              if (value != 0.0) [[unlikely]]
+                                              {
+                                                  const long slot = bad.fetch_add(1, std::memory_order_relaxed);
+                                                  if (slot < 8)
+                                                  {
+                                                      println("[{}/read-reclaim bulk] FAIL stale block read: chunk {}, "
+                                                              "offset {} = {:g}, expected 0{}",
+                                                              variant_name(), writer * per_writer + victim, k, value,
+                                                              value == pollute_value ? " (reused and overwritten)" : "");
+                                                  }
+                                              }
+                                              ++k;
+                                          });
+                        local_reads += chunk_sz - 1;
+                        continue;
+                    }
                     const long offset = 1 + static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunk_sz - 1));
                     const auto idx    = static_cast<Index>((writer * per_writer + victim) * chunk_sz + offset);
                     // Both read entries: the const operator[] and the write
@@ -620,7 +651,8 @@ int run(int argc, char** argv)
     release_chunk_pools();
     Runtime::shutdown();
 
-    println("\n[{}] {}", variant_name(), rc ? "=== READ RECLAIM FAILED ===" : "=== READ RECLAIM OK ===");
+    println("\n[{}] {}{}", variant_name(), bulk ? "(bulk) " : "",
+            rc ? "=== READ RECLAIM FAILED ===" : "=== READ RECLAIM OK ===");
     return rc;
 }
 
