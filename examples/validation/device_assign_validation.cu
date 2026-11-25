@@ -105,6 +105,20 @@ __global__ void twice(sd::Writer<double, S, V> w, const std::int64_t* index, con
     }
 }
 
+/// @brief a(i) = 3.25 + i % 7, then a(i) = c, the chunk's constant, by the same thread: in a
+///        compressed chunk of an exhausted arena the first write is appended, and the second
+///        must win (kokkos_shrink_bench on the MI300A: `a2 = .5; a2 = 1.0` on chunks of 1.0).
+template <unsigned int S, sd::Variant V>
+__global__ void then_constant(sd::Writer<double, S, V> w, std::int64_t n, double c)
+{
+    const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
+    for (std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; i < n; i += stride)
+    {
+        w.assign(i, 3.25 + static_cast<double>(i % 7));
+        w.assign(i, c);
+    }
+}
+
 /// @brief a(i) += 1.5 for every i, then += 0.25: the owner thread reads its own writes.
 template <unsigned int S, sd::Variant V>
 __global__ void add_twice(sd::Writer<double, S, V> w, std::int64_t n)
@@ -225,8 +239,9 @@ void run(unsigned seed, std::int64_t n, unsigned long long arena_buffers, double
 {
     std::printf("[%s%s] S=%u n=%lld arena=%llu constant=%g\n", V == sd::Variant::zero ? "zero, " : "", label, S,
                 static_cast<long long>(n), arena_buffers, constant);
-    // An append-buffer of n entries: the small arenas send most writes there.
-    sd::Array<double, S, V> a(n, arena_buffers, constant, static_cast<unsigned long long>(n));
+    // An append-buffer of 2n entries: the small arenas send most writes there, step 0 two per
+    // element (a value, then the constant after it).
+    sd::Array<double, S, V> a(n, arena_buffers, constant, 2 * static_cast<unsigned long long>(n));
     Model<S, V>             model(n, constant);
     std::mt19937_64      rng(seed);
     const double         palette[] = {0.0, -0.0, 1.5, 2.5};
@@ -240,6 +255,23 @@ void run(unsigned seed, std::int64_t n, unsigned long long arena_buffers, double
     double*             d_v1    = sd::allocate<double>(nn);
     double*             d_v2    = sd::allocate<double>(nn);
     unsigned long long* d_bad   = sd::allocate<unsigned long long>(1);
+
+    // 0. On the array as made (every chunk compressed to the constant): a value, then the
+    //    constant again, by each thread, every element. The small arenas append the first
+    //    writes; the constant must be what every element reads after finish().
+    {
+        then_constant<S, V><<<512, 256>>>(a.writer(), n, constant);
+        a.finish();
+        for (std::int64_t i = 0; i < n; ++i)
+        {
+            model.write(i, 3.25 + static_cast<double>(i % 7));
+            model.write(i, constant);
+        }
+        // Every element reads the constant: the chunks that got a buffer fold back.
+        (void)a.compress();
+        std::fill(model.mat.begin(), model.mat.end(), 0);
+        check(a, model, "a value then the constant, by one thread, then compress()");
+    }
 
     // 1. Scattered writes: a third of the elements, shuffled, values with repeats of the
     //    constant; in two kernels before one finish().

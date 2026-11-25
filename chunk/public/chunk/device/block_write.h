@@ -708,7 +708,16 @@ __device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexce
     {
         if (same_value(v, constant_of(d)))
         {
-            return; // 1. the constant onto its chunk: nothing (a claimed chunk still reads it)
+            // 1. The constant onto its chunk: nothing (a claimed chunk still reads it) -- unless
+            //    the phase appended: an earlier append of this element by this thread (its own
+            //    count, so seen here) would win at the replay. The constant is appended after
+            //    it, the last append wins (kokkos_shrink_bench, MI300A: `a2 = .5; a2 = 1.0` on
+            //    chunks of 1.0, the arena exhausted, wrong checksums from run to run).
+            if (device::load(&counters->n_append) != 0)
+            {
+                append(i, v);
+            }
+            return;
         }
         buf = materialise_grouped(c, d, buf); // 2.
         if (buf == nullptr)
