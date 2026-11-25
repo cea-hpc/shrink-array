@@ -64,8 +64,8 @@ __host__ __device__ bool same_bits(double a, double b)
 }
 
 /// @brief Entry k: a(index[k]) = value[k], grid-stride.
-template <unsigned int S>
-__global__ void scatter(sd::Writer<double, S> w, const std::int64_t* index, const double* value, std::int64_t m)
+template <unsigned int S, sd::Variant V>
+__global__ void scatter(sd::Writer<double, S, V> w, const std::int64_t* index, const double* value, std::int64_t m)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     for (std::int64_t k = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; k < m; k += stride)
@@ -76,8 +76,8 @@ __global__ void scatter(sd::Writer<double, S> w, const std::int64_t* index, cons
 
 /// @brief Entry k: a(i) = v1, read back, a(i) = v2 (the same thread twice), the even lanes and
 ///        the odd ones on two divergent paths.
-template <unsigned int S>
-__global__ void twice(sd::Writer<double, S> w, const std::int64_t* index, const double* v1, const double* v2,
+template <unsigned int S, sd::Variant V>
+__global__ void twice(sd::Writer<double, S, V> w, const std::int64_t* index, const double* v1, const double* v2,
                       std::int64_t m, unsigned long long* bad)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
@@ -106,8 +106,8 @@ __global__ void twice(sd::Writer<double, S> w, const std::int64_t* index, const 
 }
 
 /// @brief a(i) += 1.5 for every i, then += 0.25: the owner thread reads its own writes.
-template <unsigned int S>
-__global__ void add_twice(sd::Writer<double, S> w, std::int64_t n)
+template <unsigned int S, sd::Variant V>
+__global__ void add_twice(sd::Writer<double, S, V> w, std::int64_t n)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     for (std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; i < n; i += stride)
@@ -136,7 +136,7 @@ struct Ramp
 };
 
 /// @brief The host side of one array: the mirror and the model of its chunks.
-template <unsigned int S>
+template <unsigned int S, sd::Variant V>
 struct Model
 {
     std::vector<double> mirror;
@@ -160,7 +160,7 @@ struct Model
         }
     }
 
-    /// @brief compress(): the folds it must do.
+    /// @brief compress(): the folds it must do (zero: to +0.0 only).
     unsigned long long fold()
     {
         unsigned long long folds = 0;
@@ -168,11 +168,12 @@ struct Model
         {
             const std::size_t lo = c * S;
             const std::size_t hi = std::min<std::size_t>(lo + S, mirror.size());
+            const double head = V == sd::Variant::zero ? 0.0 : mirror[lo];
             if (mat[c] != 0 && std::all_of(mirror.begin() + static_cast<long>(lo), mirror.begin() + static_cast<long>(hi),
-                                           [&](double x) { return same_bits(x, mirror[lo]); }))
+                                           [&](double x) { return same_bits(x, head); }))
             {
                 mat[c] = 0;
-                cst[c] = mirror[lo];
+                cst[c] = head;
                 ++folds;
             }
         }
@@ -180,8 +181,8 @@ struct Model
     }
 };
 
-template <unsigned int S>
-void check(sd::Array<double, S>& a, const Model<S>& model, const char* what)
+template <unsigned int S, sd::Variant V>
+void check(sd::Array<double, S, V>& a, const Model<S, V>& model, const char* what)
 {
     const std::vector<double> got   = a.to_host();
     long                      wrong = 0;
@@ -198,14 +199,14 @@ void check(sd::Array<double, S>& a, const Model<S>& model, const char* what)
     expect(wrong == 0 && mat == expected && in_use == mat, line);
 }
 
-template <unsigned int S>
+template <unsigned int S, sd::Variant V = sd::Variant::zero_any>
 void run(unsigned seed, std::int64_t n, unsigned long long arena_buffers, double constant, const char* label)
 {
-    std::printf("[%s] S=%u n=%lld arena=%llu constant=%g\n", label, S, static_cast<long long>(n), arena_buffers,
-                constant);
+    std::printf("[%s%s] S=%u n=%lld arena=%llu constant=%g\n", V == sd::Variant::zero ? "zero, " : "", label, S,
+                static_cast<long long>(n), arena_buffers, constant);
     // An append-buffer of n entries: the small arenas send most writes there.
-    sd::Array<double, S> a(n, arena_buffers, constant, static_cast<unsigned long long>(n));
-    Model<S>             model(n, constant);
+    sd::Array<double, S, V> a(n, arena_buffers, constant, static_cast<unsigned long long>(n));
+    Model<S, V>             model(n, constant);
     std::mt19937_64      rng(seed);
     const double         palette[] = {0.0, -0.0, 1.5, 2.5};
     const auto           nn        = static_cast<std::size_t>(n);
@@ -235,8 +236,8 @@ void run(unsigned seed, std::int64_t n, unsigned long long arena_buffers, double
         sd::copy(d_index, index.data(), index.size());
         sd::copy(d_v1, value.data(), value.size());
         const auto half = static_cast<std::int64_t>(index.size() / 2);
-        scatter<S><<<512, 256>>>(a.writer(), d_index, d_v1, half);
-        scatter<S><<<512, 256>>>(a.writer(), d_index + half, d_v1 + half, static_cast<std::int64_t>(index.size()) - half);
+        scatter<S, V><<<512, 256>>>(a.writer(), d_index, d_v1, half);
+        scatter<S, V><<<512, 256>>>(a.writer(), d_index + half, d_v1 + half, static_cast<std::int64_t>(index.size()) - half);
         a.finish();
         check(a, model, "scattered writes, two kernels, one finish()");
     }
@@ -260,7 +261,7 @@ void run(unsigned seed, std::int64_t n, unsigned long long arena_buffers, double
         sd::copy(d_v1, v1.data(), v1.size());
         sd::copy(d_v2, v2.data(), v2.size());
         sd::zero(d_bad, 1);
-        twice<S><<<512, 256>>>(a.writer(), d_index, d_v1, d_v2, static_cast<std::int64_t>(index.size()), d_bad);
+        twice<S, V><<<512, 256>>>(a.writer(), d_index, d_v1, d_v2, static_cast<std::int64_t>(index.size()), d_bad);
         a.finish();
         unsigned long long bad = 0;
         sd::copy(&bad, d_bad, 1);
@@ -293,7 +294,7 @@ void run(unsigned seed, std::int64_t n, unsigned long long arena_buffers, double
         }
         sd::copy(d_index, index.data(), nn);
         sd::copy(d_v1, value.data(), nn);
-        scatter<S><<<512, 256>>>(a.writer(), d_index, d_v1, n);
+        scatter<S, V><<<512, 256>>>(a.writer(), d_index, d_v1, n);
         a.finish();
         check(a, model, "grid-stride first write over compressed chunks");
     }
@@ -307,7 +308,7 @@ void run(unsigned seed, std::int64_t n, unsigned long long arena_buffers, double
         }
         (void)model.fold();
         (void)a.compress();
-        add_twice<S><<<512, 256>>>(a.writer(), n);
+        add_twice<S, V><<<512, 256>>>(a.writer(), n);
         a.finish();
         for (std::int64_t i = 0; i < n; ++i)
         {
@@ -343,6 +344,12 @@ int main()
         // Small: once the arena has run out, load() searches the append-buffer.
         run<256>(23, 1L << 16, 8, 0.0, "small arena: appends and their replay");
         run<1024>(24, (1L << 16) + 77, 2, 2.5, "small arena, tail chunk, constant 2.5");
+        // The zero variant: -0.0 among the values written materialises, folds to +0.0 only.
+        constexpr auto zero = sd::Variant::zero;
+        run<256, zero>(31, 1L << 20, 1L << 12, 0.0, "roomy arena");
+        run<1024, zero>(32, (1L << 20) + 300, (1L << 10) + 1, 0.0, "roomy arena, tail chunk");
+        run<256, zero>(33, 1L << 16, 8, 0.0, "small arena: appends and their replay");
+        run<1024, zero>(34, (1L << 16) + 77, 2, 0.0, "small arena, tail chunk");
     }
     catch (const std::exception& e)
     {

@@ -105,7 +105,10 @@ long count_kind(const sa::ArrayState<double>& st, sa::ChunkKind kind, std::size_
     return n;
 }
 
-void run()
+/// @brief The round trip into a device array of the zero_any variant, or of the zero one
+///        (@p zero_variant): there the ten chunks of 1.5 are materialised by assign(), and the
+///        ten of 2.5 do not fold.
+void run(bool zero_variant)
 {
     HostArray          src(0);
     const std::int64_t s    = src.chunk_size();
@@ -113,8 +116,8 @@ void run()
     const auto         nn   = static_cast<std::size_t>(n);
     const auto         used = static_cast<std::size_t>((n + s - 1) / s);
     src.resize(static_cast<int>(n));
-    std::printf("[zero_any::Array<double> <-> device::Array] S=%lld n=%lld\n", static_cast<long long>(s),
-                static_cast<long long>(n));
+    std::printf("[zero_any::Array<double> <-> device::Array, %s variant] S=%lld n=%lld\n",
+                zero_variant ? "zero" : "zero_any", static_cast<long long>(s), static_cast<long long>(n));
     sa::parallel_phase(
         [&]
         {
@@ -143,10 +146,13 @@ void run()
 
     // The device half: assign, two writes, compress, image, assign again.
     const std::int64_t lo1 = 10 * s, hi1 = 20 * s, lo2 = (30 * s) + 5, hi2 = (33 * s) + 9;
-    const auto         r = device_convert::device_round_trip(state, lo1, hi1, lo2, hi2);
+    const auto         r = device_convert::device_round_trip(state, zero_variant, lo1, hi1, lo2, hi2);
+    // zero: the second-value chunks get a buffer.
+    const long mat_assign = mat0 + (zero_variant ? count_kind(state, sa::ChunkKind::second_value, used) : 0);
     std::snprintf(line, sizeof line, "assign(): %ld wrong, %llu/%ld chunks materialised", wrong(r.after_assign, want),
-                  r.materialised_after_assign, mat0);
-    expect(wrong(r.after_assign, want) == 0 && r.materialised_after_assign == static_cast<unsigned long long>(mat0),
+                  r.materialised_after_assign, mat_assign);
+    expect(wrong(r.after_assign, want) == 0 &&
+               r.materialised_after_assign == static_cast<unsigned long long>(mat_assign),
            line);
 
     std::vector<double> mirror = want;
@@ -177,10 +183,14 @@ void run()
     for (std::int64_t c = 10; c < 20; ++c)
     {
         const auto& cs = back.chunks[static_cast<std::size_t>(c)];
-        folded_to_2_5  = folded_to_2_5 && cs.kind == sa::ChunkKind::second_value && same_bits(cs.value, 2.5);
+        folded_to_2_5 =
+            folded_to_2_5 && (zero_variant ? cs.kind == sa::ChunkKind::materialised
+                                           : cs.kind == sa::ChunkKind::second_value && same_bits(cs.value, 2.5));
     }
     std::snprintf(line, sizeof line,
-                  "the ten chunks of 2.5 folded on the device, second value on the host (%llu folds)", r.folded);
+                  zero_variant ? "the ten chunks of 2.5 kept their buffers on the device (%llu folds)"
+                               : "the ten chunks of 2.5 folded on the device, second value on the host (%llu folds)",
+                  r.folded);
     expect(folded_to_2_5, line);
     std::snprintf(line, sizeof line, "assign() over held buffers: %ld wrong", wrong(r.after_reassign, want));
     expect(wrong(r.after_reassign, want) == 0, line);
@@ -195,7 +205,8 @@ int main()
     std::printf("device_convert_validation: host <-> device through export_array / import_array\n");
     try
     {
-        run();
+        run(false);
+        run(true);
     }
     catch (const std::exception& e)
     {

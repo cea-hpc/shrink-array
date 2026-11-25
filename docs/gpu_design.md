@@ -354,6 +354,11 @@ order of preference:
 
 `constant` is always `T{}`; the pass only folds to `T{}`. Nothing else.
 
+Implemented (stage 1) as `device::Array<T, S, Variant::zero>`: the descriptor is the pointer
+alone (8 bytes, the size of the host zero variant's chunk; 16 for a `zero_any` double), so a
+compressed chunk reads `T{}` without loading a constant. A host state converted into it
+(`assign()`) gives a buffer to a chunk compressed to another value.
+
 ### 8.2 `zero_or_value`
 
 `constant` is `T{}` or the array's second value (a field of the array, copied into the descriptor
@@ -803,11 +808,22 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
 
 - `Writer::assign` / `load`, `Array::finish()`: the writes at arbitrary indices without
   device-scope acquire or release, designed and measured in [gpu_assign.md](gpu_assign.md);
-  `device_assign_validation` passes on the T1000.
+  `device_assign_validation` passes on the T1000. The warp aggregation of the claims followed
+  (gpu_assign.md, section 5).
 
-Next: warp aggregation of the claims (the grid-stride first write by `assign()`, 6x to 7x on the
-T1000), the GH200 and MI300A measurements; then a kernel-level facade (Kokkos, section 13
-stage 3).
+- The `zero` variant (8.1): `Variant` (`chunk_desc.h`), a template parameter of `ChunkDesc`,
+  `View`, `Writer` and `Array`, `zero_any` by default. `ChunkDesc<T, Variant::zero>` holds the
+  pointer alone and `constant_of(d)` reads `T{}` for it (`zero_value<T>()`: from zero bytes for
+  `std::complex` and `std::array` in device code, whose constructors are host functions to
+  nvcc); the pass folds only to `T{}`; the constructor refuses another constant; `assign(state)`
+  materialises a chunk compressed to another value than `T{}`. The validations run both variants:
+  `device_core_validation` (the view, the descriptor's size), `device_write_validation` and
+  `device_assign_validation` (folds to +0.0 only, -0.0 is another value), and
+  `device_convert_validation` (a host `zero_any` array into a device `zero` one: its ten
+  second-value chunks get a buffer and come back materialised). They pass on the T1000.
+
+Next: the MI300A measurement of the claim's last change (publish before waiting), the GH200 and
+MI300A runs of the `zero` variant; then a kernel-level facade (Kokkos, section 13 stage 3).
 
 ## 14. Risks and open questions
 

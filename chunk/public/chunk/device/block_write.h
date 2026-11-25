@@ -62,7 +62,7 @@
 
 #include "chunk/device/arena.h"        // ArenaRef
 #include "chunk/device/atomics.h"      // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
-#include "chunk/device/chunk_desc.h"   // ChunkDesc, busy_mark, is_fresh, tag_fresh, untag
+#include "chunk/device/chunk_desc.h"   // ChunkDesc, Variant, constant_of, busy_mark, is_fresh, tag_fresh, untag
 #include "chunk/device/warp.h"         // ballot, group_by_key, lane_id, active_lanes, shuffle_ptr, sync_lanes
 #include "chunk/internal/same_value.h" // same_value
 
@@ -99,8 +99,9 @@ inline constexpr unsigned int claim_spin_max = 1U << 16;
  * @brief What a write kernel gets of an array: trivially copyable, passed by value.
  * @tparam T element type, trivially copyable
  * @tparam S chunk size, a power of two, a multiple of 32
+ * @tparam V the variant (chunk_desc.h)
  */
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V = Variant::zero_any>
 struct Writer
 {
     static_assert(S >= 32 && (S & (S - 1)) == 0, "Writer: S is a power of two, 32 at least");
@@ -108,7 +109,7 @@ struct Writer
     /// Words of the `written` bitmap per chunk.
     static constexpr unsigned int words = S / 32;
 
-    ChunkDesc<T>*      desc = nullptr;
+    ChunkDesc<T, V>*   desc = nullptr;
     std::int64_t       n    = 0;
     ArenaRef<T, S>     arena{};
     unsigned*          written         = nullptr; ///< words per chunk, one bit per element
@@ -160,9 +161,9 @@ struct Writer
     __device__ T*              take_buffer(std::int64_t c) const noexcept;
     __device__ void            park(T* buf) const noexcept;
     __device__ void            fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept;
-    __device__ T*              publish(std::int64_t c, ChunkDesc<T>& d) const noexcept;
-    __device__ T*              wait_claim(ChunkDesc<T>& d, T* found) const noexcept;
-    __device__ T*              materialise_grouped(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept;
+    __device__ T*              publish(std::int64_t c, ChunkDesc<T, V>& d) const noexcept;
+    __device__ T*              wait_claim(ChunkDesc<T, V>& d, T* found) const noexcept;
+    __device__ T*              materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen) const noexcept;
     __device__ void            append(std::int64_t i, T v) const noexcept;
     [[nodiscard]] __device__ T appended_or(std::int64_t i, T otherwise) const noexcept;
 };
@@ -171,8 +172,8 @@ namespace kernels
 {
 
 /// @brief a(i) = f(i) for i in [lo, hi): one block per chunk, grid-stride over the chunks.
-template <int BLOCK, typename T, unsigned int S, typename F>
-__global__ void __launch_bounds__(BLOCK) for_each_chunk(Writer<T, S> w, std::int64_t lo, std::int64_t hi, F f)
+template <int BLOCK, typename T, unsigned int S, Variant V, typename F>
+__global__ void __launch_bounds__(BLOCK) for_each_chunk(Writer<T, S, V> w, std::int64_t lo, std::int64_t hi, F f)
 {
     const std::int64_t first = lo / S;
     const std::int64_t last  = (hi + S - 1) / S;
@@ -185,8 +186,8 @@ __global__ void __launch_bounds__(BLOCK) for_each_chunk(Writer<T, S> w, std::int
 }
 
 /// @brief The spans of @p spans written again (after the arena grew): one block per span.
-template <int BLOCK, typename T, unsigned int S, typename F>
-__global__ void __launch_bounds__(BLOCK) rewrite_spans(Writer<T, S> w, const Span* spans, unsigned long long n, F f)
+template <int BLOCK, typename T, unsigned int S, Variant V, typename F>
+__global__ void __launch_bounds__(BLOCK) rewrite_spans(Writer<T, S, V> w, const Span* spans, unsigned long long n, F f)
 {
     for (unsigned long long k = blockIdx.x; k < n; k += gridDim.x)
     {
@@ -196,23 +197,23 @@ __global__ void __launch_bounds__(BLOCK) rewrite_spans(Writer<T, S> w, const Spa
 
 /// @brief Each fresh buffer: the constant where no bit is set, the bitmap cleared, the tag
 ///        removed. One warp per chunk, grid-stride.
-template <typename T, unsigned int S>
-__global__ void settle_fresh(Writer<T, S> w, std::int64_t n_chunks)
+template <typename T, unsigned int S, Variant V>
+__global__ void settle_fresh(Writer<T, S, V> w, std::int64_t n_chunks)
 {
     const int          lane  = lane_id();
     const std::int64_t warps = static_cast<std::int64_t>(gridDim.x) * (blockDim.x / warp_size);
     const std::int64_t first = (blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x) / warp_size;
     for (std::int64_t c = first; c < n_chunks; c += warps)
     {
-        ChunkDesc<T>& d   = w.desc[c];
-        T* const      buf = d.buf;
+        ChunkDesc<T, V>& d   = w.desc[c];
+        T* const         buf = d.buf;
         if (!is_fresh(buf))
         {
             continue; // uniform per warp
         }
         T* const        p        = untag(buf);
-        const T         constant = d.constant;
-        unsigned* const bits     = w.written + c * Writer<T, S>::words;
+        const T         constant = constant_of(d);
+        unsigned* const bits     = w.written + c * Writer<T, S, V>::words;
         for (unsigned int e = static_cast<unsigned int>(lane); e < S; e += warp_size)
         {
             if (((bits[e >> 5] >> (e & 31)) & 1U) == 0)
@@ -221,7 +222,7 @@ __global__ void settle_fresh(Writer<T, S> w, std::int64_t n_chunks)
             }
         }
         sync_lanes(full_warp); // every lane has read the bitmap
-        for (unsigned int k = static_cast<unsigned int>(lane); k < Writer<T, S>::words; k += warp_size)
+        for (unsigned int k = static_cast<unsigned int>(lane); k < Writer<T, S, V>::words; k += warp_size)
         {
             bits[k] = 0;
         }
@@ -233,8 +234,8 @@ __global__ void settle_fresh(Writer<T, S> w, std::int64_t n_chunks)
 }
 
 /// @brief The lost list and the spare slots back to the arena (after DeviceArena::normalise()).
-template <typename T, unsigned int S>
-__global__ void reclaim_lost(Writer<T, S> w, unsigned long long n)
+template <typename T, unsigned int S, Variant V>
+__global__ void reclaim_lost(Writer<T, S, V> w, unsigned long long n)
 {
     const unsigned long long stride = static_cast<unsigned long long>(gridDim.x) * blockDim.x;
     const unsigned long long first  = blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x;
@@ -268,8 +269,8 @@ __global__ void reset_append(Index* index, unsigned long long n)
 /// @brief The replay of an append-buffer (docs/gpu_assign.md 3.4), deduplicated by the host
 ///        (the last append of each element): an entry whose element is marked in a fresh
 ///        buffer is skipped, a direct write came after it. Before settle_fresh.
-template <typename T, unsigned int S>
-__global__ void replay_appends(Writer<T, S> w, const std::int64_t* index, const T* value, unsigned long long n)
+template <typename T, unsigned int S, Variant V>
+__global__ void replay_appends(Writer<T, S, V> w, const std::int64_t* index, const T* value, unsigned long long n)
 {
     const unsigned long long stride = static_cast<unsigned long long>(gridDim.x) * blockDim.x;
     for (unsigned long long k = blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x; k < n;
@@ -279,7 +280,7 @@ __global__ void replay_appends(Writer<T, S> w, const std::int64_t* index, const 
         const std::int64_t c   = i / S;
         const auto         e   = static_cast<unsigned int>(i % S);
         T* const           buf = load_ptr(&w.desc[c].buf);
-        if (is_fresh(buf) && ((load(&w.written[c * Writer<T, S>::words + (e >> 5)]) >> (e & 31)) & 1U) != 0)
+        if (is_fresh(buf) && ((load(&w.written[c * Writer<T, S, V>::words + (e >> 5)]) >> (e & 31)) & 1U) != 0)
         {
             continue;
         }
@@ -292,14 +293,14 @@ __global__ void replay_appends(Writer<T, S> w, const std::int64_t* index, const 
 // ---------------------------------------------------------------------------
 // Writer
 
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V>
 template <int BLOCK, typename F>
-__device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_t hi, const F& f) const noexcept
+__device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int64_t hi, const F& f) const noexcept
 {
     static_assert(S % BLOCK == 0 && BLOCK % warp_size == 0, "Writer::write: BLOCK divides S, a multiple of the warp");
     constexpr int      per_thread = static_cast<int>(S) / BLOCK; // elements per thread
     __shared__ T*      s_buf;
-    ChunkDesc<T>&      d    = desc[c];
+    ChunkDesc<T, V>&   d    = desc[c];
     const std::int64_t base = c * S;
     const int          t    = static_cast<int>(threadIdx.x);
 
@@ -329,7 +330,7 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
     for (int j = 0; j < per_thread; ++j)
     {
         const std::int64_t i = base + t + j * BLOCK;
-        new_vals[j]          = i >= lo && i < hi ? f(i) : d.constant;
+        new_vals[j]          = i >= lo && i < hi ? f(i) : constant_of(d);
     }
     if (buf != nullptr)
     {
@@ -347,7 +348,7 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
     bool differs = false;
     for (int j = 0; j < per_thread; ++j)
     {
-        differs = differs || !same_value(new_vals[j], d.constant);
+        differs = differs || !same_value(new_vals[j], constant_of(d));
     }
     if (__syncthreads_or(differs ? 1 : 0) == 0)
     {
@@ -414,10 +415,13 @@ __device__ void Writer<T, S>::write(std::int64_t c, std::int64_t lo, std::int64_
 
 /// @details The 32 lanes of a warp, or half a wavefront, write 32 consecutive elements
 ///          (BLOCK is a multiple of the warp size): one atomic or per 32 elements.
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V>
 template <int BLOCK>
-__device__ void
-Writer<T, S>::write_marked(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept
+__device__ void Writer<T, S, V>::write_marked(T*           buf,
+                                              std::int64_t c,
+                                              std::int64_t lo,
+                                              std::int64_t hi,
+                                              const T*     new_vals) const noexcept
 {
     constexpr int      per_thread = static_cast<int>(S) / BLOCK;
     const std::int64_t base       = c * S;
@@ -445,10 +449,10 @@ Writer<T, S>::write_marked(T* buf, std::int64_t c, std::int64_t lo, std::int64_t
     }
 }
 
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V>
 template <int BLOCK>
 __device__ void
-Writer<T, S>::write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept
+Writer<T, S, V>::write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept
 {
     constexpr int      per_thread = static_cast<int>(S) / BLOCK;
     const std::int64_t base       = c * S;
@@ -464,8 +468,8 @@ Writer<T, S>::write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t 
 
 /// @details The warp's slot: the buffer of a lost publication waits there for the warp's next
 ///          materialisation. Two warps sharing a slot only exchange atomically.
-template <typename T, unsigned int S>
-__device__ T** Writer<T, S>::spare_slot() const noexcept
+template <typename T, unsigned int S, Variant V>
+__device__ T** Writer<T, S, V>::spare_slot() const noexcept
 {
     const unsigned long long thread = blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x;
     return spare + ((thread / warp_size) & (spare_slots - 1));
@@ -473,8 +477,8 @@ __device__ T** Writer<T, S>::spare_slot() const noexcept
 
 /// @brief A buffer for chunk @p c: the warp's spare one, else one from the arena; nullptr when
 ///        the arena is exhausted.
-template <typename T, unsigned int S>
-__device__ T* Writer<T, S>::take_buffer(std::int64_t c) const noexcept
+template <typename T, unsigned int S, Variant V>
+__device__ T* Writer<T, S, V>::take_buffer(std::int64_t c) const noexcept
 {
     T* const mine = spare_slots != 0 ? exchange_ptr(spare_slot(), static_cast<T*>(nullptr)) : nullptr;
     return mine != nullptr ? mine : arena.take(c);
@@ -482,8 +486,8 @@ __device__ T* Writer<T, S>::take_buffer(std::int64_t c) const noexcept
 
 /// @brief The buffer of a lost publication into the warp's spare slot; the one it evicts, if
 ///        any, to the lost list. Both go back to the arena at Array::finish().
-template <typename T, unsigned int S>
-__device__ void Writer<T, S>::park(T* buf) const noexcept
+template <typename T, unsigned int S, Variant V>
+__device__ void Writer<T, S, V>::park(T* buf) const noexcept
 {
     T* const evicted = spare_slots != 0 ? exchange_ptr(spare_slot(), buf) : buf;
     if (evicted == nullptr)
@@ -501,8 +505,8 @@ __device__ void Writer<T, S>::park(T* buf) const noexcept
 ///          less before the publication, which every other writer of the chunk waits for) and
 ///          publishes it empty, tagged fresh, by a relaxed exchange -- or releases the claim
 ///          when the arena is exhausted. Returns what it published (nullptr: the caller appends).
-template <typename T, unsigned int S>
-__device__ T* Writer<T, S>::publish(std::int64_t c, ChunkDesc<T>& d) const noexcept
+template <typename T, unsigned int S, Variant V>
+__device__ T* Writer<T, S, V>::publish(std::int64_t c, ChunkDesc<T, V>& d) const noexcept
 {
     T* const mine = arena.take(c);
     T* const publ = mine != nullptr ? tag_fresh(mine) : nullptr;
@@ -514,8 +518,8 @@ __device__ T* Writer<T, S>::publish(std::int64_t c, ChunkDesc<T>& d) const noexc
 ///          holds it, up to claim_spin_max. Returns the chunk's buffer (fresh-tagged, or
 ///          untagged from a whole-chunk Writer::write), or nullptr: the claim was released
 ///          (arena exhausted) or the wait given up; the caller appends.
-template <typename T, unsigned int S>
-__device__ T* Writer<T, S>::wait_claim(ChunkDesc<T>& d, T* found) const noexcept
+template <typename T, unsigned int S, Variant V>
+__device__ T* Writer<T, S, V>::wait_claim(ChunkDesc<T, V>& d, T* found) const noexcept
 {
     if (found != busy_mark<T>())
     {
@@ -546,8 +550,8 @@ __device__ T* Writer<T, S>::wait_claim(ChunkDesc<T>& d, T* found) const noexcept
  *          writer of its chunk behind it (the MI300A gave up waits that way). @p seen: what
  *          this lane loaded (nullptr or busy_mark()).
  */
-template <typename T, unsigned int S>
-__device__ T* Writer<T, S>::materialise_grouped(std::int64_t c, ChunkDesc<T>& d, T* seen) const noexcept
+template <typename T, unsigned int S, Variant V>
+__device__ T* Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen) const noexcept
 {
     const LaneMask active = active_lanes();
     LaneMask       group  = 0;
@@ -574,8 +578,8 @@ __device__ T* Writer<T, S>::materialise_grouped(std::int64_t c, ChunkDesc<T>& d,
     return shuffle_ptr(active, got, leader);
 }
 
-template <typename T, unsigned int S>
-__device__ void Writer<T, S>::append(std::int64_t i, T v) const noexcept
+template <typename T, unsigned int S, Variant V>
+__device__ void Writer<T, S, V>::append(std::int64_t i, T v) const noexcept
 {
     const unsigned long long k = fetch_add(&counters->n_append, 1ULL);
     if (k < append_capacity)
@@ -585,16 +589,16 @@ __device__ void Writer<T, S>::append(std::int64_t i, T v) const noexcept
     }
 }
 
-template <typename T, unsigned int S>
-__device__ void Writer<T, S>::assign(std::int64_t i, T v) const noexcept
+template <typename T, unsigned int S, Variant V>
+__device__ void Writer<T, S, V>::assign(std::int64_t i, T v) const noexcept
 {
     const std::int64_t c   = i / S;
     const auto         e   = static_cast<unsigned int>(i % S);
-    ChunkDesc<T>&      d   = desc[c];
+    ChunkDesc<T, V>&   d   = desc[c];
     T*                 buf = load_ptr(&d.buf);
     if (buf == nullptr || buf == busy_mark<T>())
     {
-        if (same_value(v, d.constant))
+        if (same_value(v, constant_of(d)))
         {
             return; // 1. the constant onto its chunk: nothing (a claimed chunk still reads it)
         }
@@ -614,22 +618,22 @@ __device__ void Writer<T, S>::assign(std::int64_t i, T v) const noexcept
     buf[e] = v; // 4. a buffer of an earlier kernel
 }
 
-template <typename T, unsigned int S>
-[[nodiscard]] __device__ T Writer<T, S>::load(std::int64_t i) const noexcept
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] __device__ T Writer<T, S, V>::load(std::int64_t i) const noexcept
 {
-    const std::int64_t  c   = i / S;
-    const auto          e   = static_cast<unsigned int>(i % S);
-    const ChunkDesc<T>& d   = desc[c];
-    T* const            buf = load_ptr(&d.buf);
+    const std::int64_t     c   = i / S;
+    const auto             e   = static_cast<unsigned int>(i % S);
+    const ChunkDesc<T, V>& d   = desc[c];
+    T* const               buf = load_ptr(&d.buf);
     if (buf == nullptr || buf == busy_mark<T>())
     {
-        return appended_or(i, d.constant); // claimed: no element written yet but appends
+        return appended_or(i, constant_of(d)); // claimed: no element written yet but appends
     }
     if (is_fresh(buf))
     {
         // device::load: the member load(i) hides the atomic load inside the class.
         const bool set = ((device::load(&written[c * words + (e >> 5)]) >> (e & 31)) & 1U) != 0;
-        return set ? untag(buf)[e] : appended_or(i, d.constant);
+        return set ? untag(buf)[e] : appended_or(i, constant_of(d));
     }
     return buf[e]; // a buffer of an earlier kernel: no append to its chunk in this one
 }
@@ -637,8 +641,8 @@ template <typename T, unsigned int S>
 /// @details The append-buffer's unused entries hold index -1 (Array resets them after each
 ///          replay), so an entry being written by another thread reads as no entry or as its
 ///          new index, never as an earlier phase's.
-template <typename T, unsigned int S>
-[[nodiscard]] __device__ T Writer<T, S>::appended_or(std::int64_t i, T otherwise) const noexcept
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] __device__ T Writer<T, S, V>::appended_or(std::int64_t i, T otherwise) const noexcept
 {
     const unsigned long long n = device::load(&counters->n_append);
     for (unsigned long long k = n < append_capacity ? n : append_capacity; k > 0; --k)
@@ -651,8 +655,8 @@ template <typename T, unsigned int S>
     return otherwise;
 }
 
-template <typename T, unsigned int S>
-__device__ void Writer<T, S>::fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept
+template <typename T, unsigned int S, Variant V>
+__device__ void Writer<T, S, V>::fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept
 {
     const unsigned long long k = fetch_add(&counters->n_failed, 1ULL);
     if (k < failed_capacity)

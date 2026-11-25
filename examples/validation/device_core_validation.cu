@@ -261,8 +261,8 @@ double nan_with_payload(std::uint64_t payload)
 }
 
 /// @brief Every element of @p v read by a kernel, and each chunk's uniform() answer.
-template <typename T, unsigned S>
-__global__ void view_kernel(sa::device::View<T, S> v, T* out, int* uniform, T* uniform_value)
+template <typename T, unsigned S, sa::device::Variant V>
+__global__ void view_kernel(sa::device::View<T, S, V> v, T* out, int* uniform, T* uniform_value)
 {
     const long stride = static_cast<long>(gridDim.x) * blockDim.x;
     for (long i = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x; i < v.size(); i += stride)
@@ -281,12 +281,13 @@ __global__ void view_kernel(sa::device::View<T, S> v, T* out, int* uniform, T* u
  * @brief device::View read on the device against the same View read on the host, over
  *        descriptors built twice (host buffers, device buffers) from one layout: compressed
  *        chunks at @p a and @p b, a ramp, a materialised chunk uniform at @p b, one uniform
- *        but for its last element, and a partial last chunk.
+ *        but for its last element, and a partial last chunk. The zero variant (@p V): the
+ *        compressed chunks read T{}, whatever @p a and @p b.
  */
-template <typename T, unsigned S>
+template <typename T, unsigned S, sa::device::Variant V = sa::device::Variant::zero_any>
 void check_view(const char* type_name, T a, T b, T (*ramp)(long))
 {
-    using Desc                         = sa::device::ChunkDesc<T>;
+    using Desc                         = sa::device::ChunkDesc<T, V>;
     const int                   chunks = 6;
     const long                  n      = static_cast<long>(chunks) * S - 37;
     std::vector<std::vector<T>> host_bufs(chunks);
@@ -295,8 +296,16 @@ void check_view(const char* type_name, T a, T b, T (*ramp)(long))
     const T                     constants[chunks] = {a, b, a, b, a, b};
     for (int c = 0; c < chunks; ++c)
     {
-        host_desc[c] = Desc{nullptr, constants[c]};
-        dev_desc[c]  = Desc{nullptr, constants[c]};
+        if constexpr (V == sa::device::Variant::zero)
+        {
+            host_desc[c] = Desc{nullptr};
+            dev_desc[c]  = Desc{nullptr};
+        }
+        else
+        {
+            host_desc[c] = Desc{nullptr, constants[c]};
+            dev_desc[c]  = Desc{nullptr, constants[c]};
+        }
         if (c < 2)
         {
             continue; // compressed
@@ -325,16 +334,20 @@ void check_view(const char* type_name, T a, T b, T (*ramp)(long))
     DEVICE_CHECK(cudaMalloc(&d_out, sizeof(T) * n));
     DEVICE_CHECK(cudaMalloc(&d_uni, sizeof(int) * chunks));
     DEVICE_CHECK(cudaMalloc(&d_uval, sizeof(T) * chunks));
-    view_kernel<T, S><<<64, 128>>>(sa::device::View<T, S>{d_desc, n}, d_out, d_uni, d_uval);
+    view_kernel<T, S, V><<<64, 128>>>(sa::device::View<T, S, V>{d_desc, n}, d_out, d_uni, d_uval);
     DEVICE_CHECK(cudaGetLastError());
     const std::vector<T>         got  = to_host(d_out, static_cast<std::size_t>(n));
     const std::vector<int>       uni  = to_host(d_uni, static_cast<std::size_t>(chunks));
     const std::vector<T>         uval = to_host(d_uval, static_cast<std::size_t>(chunks));
-    const sa::device::View<T, S> host_view{host_desc.data(), n};
-    int                          bad = host_view.n_chunks() == chunks ? 0 : 1;
+    const sa::device::View<T, S, V> host_view{host_desc.data(), n};
+    int                             bad = host_view.n_chunks() == chunks ? 0 : 1;
     for (long i = 0; i < n; ++i)
     {
         bad += sa::same_value(got[i], host_view(i)) ? 0 : 1;
+        if constexpr (V == sa::device::Variant::zero)
+        {
+            bad += i >= 2L * S || sa::same_value(got[i], T{}) ? 0 : 1; // compressed: T{}
+        }
     }
     for (int c = 0; c < chunks; ++c)
     {
@@ -349,8 +362,8 @@ void check_view(const char* type_name, T a, T b, T (*ramp)(long))
         bad += uni[c] == expected[c] ? 0 : 1;
     }
     char what[96];
-    std::snprintf(what, sizeof what, "device::View<%s, %u>: %ld elements, %d chunks, %d differ", type_name, S, n,
-                  chunks, bad);
+    std::snprintf(what, sizeof what, "device::View<%s, %u%s>: %ld elements, %d chunks, %d differ", type_name, S,
+                  V == sa::device::Variant::zero ? ", zero" : "", n, chunks, bad);
     expect(bad == 0, what);
     for (T* p : dev_bufs)
     {
@@ -411,6 +424,14 @@ int main()
     check_view<float, 1024>("float", 0.0F, 1.0F, ramp_of<float>);
     check_view<int, 256>("int", 0, 7, ramp_of<int>);
     check_view<std::complex<double>, 1024>("complex<double>", {0.0, 0.0}, {0.0, -0.0}, complex_ramp);
+    // The zero variant: the descriptor is its pointer (the host zero variant's chunk size).
+    constexpr auto zero = sa::device::Variant::zero;
+    static_assert(sizeof(sa::device::ChunkDesc<double, zero>) == sizeof(double*));
+    static_assert(sizeof(sa::device::ChunkDesc<std::complex<double>, zero>) == sizeof(void*));
+    check_view<double, 256, zero>("double", 0.0, -0.0, ramp_of<double>);
+    check_view<double, 1024, zero>("double", nan_with_payload(3), 2.5, ramp_of<double>);
+    check_view<int, 256, zero>("int", 0, 7, ramp_of<int>);
+    check_view<std::complex<double>, 1024, zero>("complex<double>", {0.0, 0.0}, {0.0, -0.0}, complex_ramp);
     std::printf("%s: %d failure(s)\n", g_failures == 0 ? "PASSED" : "FAILED", g_failures);
     return g_failures == 0 ? 0 : 1;
 }

@@ -17,7 +17,8 @@
 /**
  * @file device_convert_device.cu
  * @brief The device half of device_convert_validation (see device_convert_validation.h):
- *        device::Array::assign() and image() around a write phase and a compress().
+ *        device::Array::assign() and image() around a write phase and a compress(), in the
+ *        zero_any or the zero variant.
  */
 
 #include <cstdint>   // std::int64_t
@@ -54,15 +55,15 @@ struct Index
     }
 };
 
-template <unsigned int S>
-DeviceRoundTrip round_trip(const shrink_array::ArrayState<double>& state,
-                           std::int64_t                            lo1,
-                           std::int64_t                            hi1,
-                           std::int64_t                            lo2,
-                           std::int64_t                            hi2)
+template <unsigned int S, sd::Variant V>
+DeviceRoundTrip round_trip_in(const shrink_array::ArrayState<double>& state,
+                              std::int64_t                            lo1,
+                              std::int64_t                            hi1,
+                              std::int64_t                            lo2,
+                              std::int64_t                            hi2)
 {
-    DeviceRoundTrip       r{};
-    sd::Array<double, S> a(static_cast<std::int64_t>(state.size), 4);
+    DeviceRoundTrip         r{};
+    sd::Array<double, S, V> a(static_cast<std::int64_t>(state.size), 4);
     a.assign(state);
     r.after_assign              = a.to_host();
     r.materialised_after_assign = a.materialised();
@@ -77,9 +78,22 @@ DeviceRoundTrip round_trip(const shrink_array::ArrayState<double>& state,
     return r;
 }
 
+template <unsigned int S>
+DeviceRoundTrip round_trip(const shrink_array::ArrayState<double>& state,
+                           bool                                    zero_variant,
+                           std::int64_t                            lo1,
+                           std::int64_t                            hi1,
+                           std::int64_t                            lo2,
+                           std::int64_t                            hi2)
+{
+    return zero_variant ? round_trip_in<S, sd::Variant::zero>(state, lo1, hi1, lo2, hi2)
+                        : round_trip_in<S, sd::Variant::zero_any>(state, lo1, hi1, lo2, hi2);
+}
+
 } // namespace
 
 DeviceRoundTrip device_round_trip(const shrink_array::ArrayState<double>& state,
+                                  bool                                    zero_variant,
                                   std::int64_t                            lo1,
                                   std::int64_t                            hi1,
                                   std::int64_t                            lo2,
@@ -88,17 +102,17 @@ DeviceRoundTrip device_round_trip(const shrink_array::ArrayState<double>& state,
     switch (state.chunk_size)
     {
         case 64:
-            return round_trip<64>(state, lo1, hi1, lo2, hi2);
+            return round_trip<64>(state, zero_variant, lo1, hi1, lo2, hi2);
         case 128:
-            return round_trip<128>(state, lo1, hi1, lo2, hi2);
+            return round_trip<128>(state, zero_variant, lo1, hi1, lo2, hi2);
         case 256:
-            return round_trip<256>(state, lo1, hi1, lo2, hi2);
+            return round_trip<256>(state, zero_variant, lo1, hi1, lo2, hi2);
         case 512:
-            return round_trip<512>(state, lo1, hi1, lo2, hi2);
+            return round_trip<512>(state, zero_variant, lo1, hi1, lo2, hi2);
         case 1024:
-            return round_trip<1024>(state, lo1, hi1, lo2, hi2);
+            return round_trip<1024>(state, zero_variant, lo1, hi1, lo2, hi2);
         case 2048:
-            return round_trip<2048>(state, lo1, hi1, lo2, hi2);
+            return round_trip<2048>(state, zero_variant, lo1, hi1, lo2, hi2);
         default:
             throw std::runtime_error("device_round_trip: chunk size " + std::to_string(state.chunk_size) +
                                      " not built");

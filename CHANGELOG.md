@@ -128,6 +128,10 @@ the tag's checksum to the recipe.
   and tagged fresh, the elements marked in the chunk's bitmap and the rest filled after the
   kernel; a bounded wait, then the append-buffer, replayed by `finish()` (the last append of
   each element, unless a direct write came after). `device_assign_validation` checks it.
+- The `zero` variant on the device (experimental): `device::Variant`, a template parameter of
+  `ChunkDesc`, `View`, `Writer` and `Array` (`zero_any` by default). Its descriptor is the
+  pointer alone and a compressed chunk reads `T{}`; `compress()` folds only to `T{}`. The device
+  validations run both variants.
 
 ### Fixed
 

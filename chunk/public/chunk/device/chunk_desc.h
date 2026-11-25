@@ -31,18 +31,33 @@
  *          (docs/gpu_design.md, section 3), so nothing writes `buf` while a kernel reads.
  */
 
-#include <cstdint> // std::uintptr_t
+#include <array>       // std::array
+#include <cstddef>     // std::size_t
+#include <cstdint>     // std::uintptr_t
+#include <type_traits> // std::is_arithmetic_v
 
 #include "chunk/internal/host_device.h" // CHUNK_HD
+#include "chunk/internal/same_value.h"  // internal::is_std_complex
 
 namespace shrink_array::device
 {
 
 /**
+ * @brief The variant of a device array (docs/gpu_design.md, section 8): what a compressed
+ *        chunk may read.
+ */
+enum class Variant : unsigned char
+{
+    zero,     ///< T{} only (8.1): the descriptor is its pointer, the pass folds only to T{}.
+    zero_any, ///< Any value (8.3): the descriptor carries it.
+};
+
+/**
  * @brief One chunk on the device.
  * @tparam T element type, trivially copyable
+ * @tparam V the variant: zero_any carries the constant, zero has none (it is T{})
  */
-template <typename T>
+template <typename T, Variant V = Variant::zero_any>
 struct ChunkDesc
 {
     /// nullptr: the chunk is compressed and reads `constant`; busy_mark<T>(): a write kernel
@@ -53,6 +68,63 @@ struct ChunkDesc
     /// The value of every element while `buf` is nullptr (the pre-fill of a materialisation).
     T constant;
 };
+
+/// @brief The zero variant's descriptor: the pointer alone, a compressed chunk reads T{}
+///        (the size of the host zero variant's chunk, half a zero_any one for a double).
+template <typename T>
+struct ChunkDesc<T, Variant::zero>
+{
+    T* buf; ///< as ChunkDesc::buf
+};
+
+/// Whether T{} is zero bytes and a host constructor to nvcc: std::complex, a std::array of an
+/// arithmetic type (zero_value()).
+template <typename T>
+inline constexpr bool zero_bytes_v = internal::is_std_complex<T>::value;
+template <typename E, std::size_t N>
+inline constexpr bool zero_bytes_v<std::array<E, N>> = std::is_arithmetic_v<E>;
+
+/**
+ * @brief T{}, in host and device code.
+ * @details The constructors of std::complex and std::array are constexpr host functions to
+ *          nvcc (without --expt-relaxed-constexpr): device code builds those from zero bytes,
+ *          which is their value-initialisation when their parts are arithmetic.
+ */
+template <typename T>
+[[nodiscard]] CHUNK_HD inline T zero_value() noexcept
+{
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    if constexpr (zero_bytes_v<T>)
+    {
+        struct Bytes
+        {
+            unsigned char b[sizeof(T)];
+        };
+        return __builtin_bit_cast(T, Bytes{});
+    }
+    else
+    {
+        return T{};
+    }
+#else
+    return T{};
+#endif
+}
+
+/// @brief What every element of chunk @p d reads while it holds no buffer.
+template <typename T, Variant V>
+[[nodiscard]] CHUNK_HD inline T constant_of(const ChunkDesc<T, V>& d) noexcept
+{
+    if constexpr (V == Variant::zero)
+    {
+        (void)d;
+        return zero_value<T>();
+    }
+    else
+    {
+        return d.constant;
+    }
+}
 
 /**
  * @brief The value of ChunkDesc::buf while a write kernel holds the claim of the chunk:

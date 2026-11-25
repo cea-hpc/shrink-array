@@ -369,6 +369,11 @@ de préférence :
 
 `constant` vaut toujours `T{}` ; la passe ne replie qu'à `T{}`. Rien d'autre.
 
+Implémenté (étape 1) comme `device::Array<T, S, Variant::zero>` : le descripteur est le seul
+pointeur (8 octets, la taille du chunk de la variante zero sur l'hôte ; 16 pour un double
+`zero_any`), si bien qu'un chunk compressé lit `T{}` sans charger de constante. Un état hôte
+converti vers elle (`assign()`) donne un buffer à un chunk compressé vers une autre valeur.
+
 ### 8.2 `zero_or_value`
 
 `constant` vaut `T{}` ou la seconde valeur du tableau (un champ du tableau, copié dans le
@@ -841,10 +846,23 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
 
 - `Writer::assign` / `load`, `Array::finish()` : les écritures à indices quelconques sans acquire
   ni release à l'échelle du device, conçues et mesurées dans [gpu_assign_fr.md](gpu_assign_fr.md) ;
-  `device_assign_validation` passe sur la T1000.
+  `device_assign_validation` passe sur la T1000. L'agrégation par warp des réservations a suivi
+  (gpu_assign_fr.md, section 5).
 
-Suite : l'agrégation par warp des réservations (la première écriture en grid-stride par
-`assign()`, 6x à 7x sur la T1000), les mesures sur le GH200 et le MI300A ; puis une façade au
+- La variante `zero` (8.1) : `Variant` (`chunk_desc.h`), un paramètre template de `ChunkDesc`,
+  `View`, `Writer` et `Array`, `zero_any` par défaut. `ChunkDesc<T, Variant::zero>` ne contient
+  que le pointeur et `constant_of(d)` y lit `T{}` (`zero_value<T>()` : à partir d'octets nuls
+  pour `std::complex` et `std::array` dans le code device, dont les constructeurs sont des
+  fonctions hôte pour nvcc) ; la passe ne replie qu'à `T{}` ; le constructeur refuse une autre
+  constante ; `assign(state)` matérialise un chunk compressé vers une autre valeur que `T{}`.
+  Les validations font tourner les deux variantes : `device_core_validation` (la vue, la taille
+  du descripteur), `device_write_validation` et `device_assign_validation` (repli vers +0,0
+  seulement, -0,0 est une autre valeur), et `device_convert_validation` (un tableau hôte
+  `zero_any` vers un tableau device `zero` : ses dix chunks de seconde valeur reçoivent un
+  buffer et reviennent matérialisés). Elles passent sur la T1000.
+
+Suite : la mesure sur le MI300A du dernier changement de la réservation (publier avant
+d'attendre), les mesures de la variante `zero` sur le GH200 et le MI300A ; puis une façade au
 niveau des noyaux (Kokkos, section 13 étape 3).
 
 ## 14. Risques et questions ouvertes

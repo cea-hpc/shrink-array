@@ -27,7 +27,7 @@
  *          reads a View over host descriptors exactly as a kernel reads one over device
  *          descriptors, which is how device_core_validation compares them.
  *
- *          A read is `d.buf ? d.buf[i & mask] : d.constant`: one descriptor load, no
+ *          A read is `d.buf ? d.buf[i & mask] : d.constant` (T{} for the zero variant): one descriptor load, no
  *          barrier, no atomic. It is only valid in a read kernel (or on the host between
  *          phases): a write kernel may publish `buf` while it runs.
  */
@@ -35,7 +35,7 @@
 #include <cstdint>     // std::int64_t
 #include <type_traits> // std::is_trivially_copyable_v
 
-#include "chunk/device/chunk_desc.h"      // ChunkDesc
+#include "chunk/device/chunk_desc.h"      // ChunkDesc, Variant, constant_of
 #include "chunk/internal/constant_walk.h" // internal::walk_constant
 #include "chunk/internal/host_device.h"   // CHUNK_HD
 #include "chunk/internal/pow2.h"          // log2int
@@ -47,8 +47,9 @@ namespace shrink_array::device
  * @brief The descriptors of an array and its element count, at chunk size @p S.
  * @tparam T element type, trivially copyable
  * @tparam S chunk size, a power of two (the GPU geometry is S = 1024, docs/gpu_design.md 13)
+ * @tparam V the variant (chunk_desc.h)
  */
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V = Variant::zero_any>
 struct View
 {
     static_assert(S >= 1 && (S & (S - 1)) == 0, "View: S is a power of two");
@@ -58,8 +59,8 @@ struct View
     static constexpr unsigned int shift      = static_cast<unsigned int>(log2int(S));
     static constexpr std::int64_t mask       = static_cast<std::int64_t>(S) - 1;
 
-    const ChunkDesc<T>* desc = nullptr; ///< n_chunks() descriptors
-    std::int64_t        n    = 0;       ///< elements
+    const ChunkDesc<T, V>* desc = nullptr; ///< n_chunks() descriptors
+    std::int64_t           n    = 0;       ///< elements
 
     /// @brief Elements.
     [[nodiscard]] CHUNK_HD std::int64_t size() const noexcept
@@ -76,8 +77,8 @@ struct View
     /// @brief Element @p i (0 <= i < size()), in a read kernel.
     [[nodiscard]] CHUNK_HD T operator()(std::int64_t i) const noexcept
     {
-        const ChunkDesc<T>& d = desc[i >> shift];
-        return d.buf != nullptr ? d.buf[i & mask] : d.constant;
+        const ChunkDesc<T, V>& d = desc[i >> shift];
+        return d.buf != nullptr ? d.buf[i & mask] : constant_of(d);
     }
 
     /// @brief Whether chunk @p c holds a buffer.
@@ -92,13 +93,13 @@ struct View
     [[nodiscard]] CHUNK_HD bool uniform(std::int64_t c, T& value) const noexcept;
 };
 
-template <typename T, unsigned int S>
-[[nodiscard]] CHUNK_HD bool View<T, S>::uniform(std::int64_t c, T& value) const noexcept
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] CHUNK_HD bool View<T, S, V>::uniform(std::int64_t c, T& value) const noexcept
 {
-    const ChunkDesc<T>& d = desc[c];
+    const ChunkDesc<T, V>& d = desc[c];
     if (d.buf == nullptr)
     {
-        value = d.constant;
+        value = constant_of(d);
         return true;
     }
     value = d.buf[0];

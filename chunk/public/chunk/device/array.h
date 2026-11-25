@@ -18,7 +18,7 @@
 
 /**
  * @file array.h
- * @brief device::Array, the host side of a device zero_any array so far: its descriptors,
+ * @brief device::Array, the host side of a device zero_any or zero array: its descriptors,
  *        its arena, and the write phases of the chunk-aligned path (block_write.h).
  *
  * @details Stage 1, experimental (see chunk_desc.h). What it does now:
@@ -46,7 +46,7 @@
 #include <algorithm>   // std::stable_sort
 #include <memory>      // std::unique_ptr, std::make_unique_for_overwrite
 #include <numeric>     // std::iota
-#include <stdexcept>   // std::runtime_error
+#include <stdexcept>   // std::runtime_error, std::invalid_argument
 #include <string>      // std::to_string
 #include <type_traits> // std::is_trivially_copyable_v, std::is_same_v
 #include <vector>      // std::vector
@@ -66,21 +66,24 @@ namespace shrink_array::device
 namespace kernels
 {
 
-/// @brief Every descriptor {nullptr, @p constant}.
-template <typename T>
-__global__ void init_desc(ChunkDesc<T>* desc, std::int64_t n_chunks, T constant)
+/// @brief Every descriptor {nullptr, @p constant} (zero: {nullptr}).
+template <typename T, Variant V>
+__global__ void init_desc(ChunkDesc<T, V>* desc, std::int64_t n_chunks, T constant)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     for (std::int64_t c = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; c < n_chunks; c += stride)
     {
-        desc[c].buf      = nullptr;
-        desc[c].constant = constant;
+        desc[c].buf = nullptr;
+        if constexpr (V == Variant::zero_any)
+        {
+            desc[c].constant = constant;
+        }
     }
 }
 
 /// @brief Every element into a flat buffer.
-template <typename T, unsigned int S>
-__global__ void expand(View<T, S> v, T* out)
+template <typename T, unsigned int S, Variant V>
+__global__ void expand(View<T, S, V> v, T* out)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     for (std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; i < v.size(); i += stride)
@@ -90,8 +93,8 @@ __global__ void expand(View<T, S> v, T* out)
 }
 
 /// @brief Chunks holding a buffer.
-template <typename T>
-__global__ void count_materialised(const ChunkDesc<T>* desc, std::int64_t n_chunks, unsigned long long* out)
+template <typename T, Variant V>
+__global__ void count_materialised(const ChunkDesc<T, V>* desc, std::int64_t n_chunks, unsigned long long* out)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     unsigned long long mine   = 0;
@@ -103,9 +106,9 @@ __global__ void count_materialised(const ChunkDesc<T>* desc, std::int64_t n_chun
 }
 
 /// @brief Chunks of @p chunks with no buffer, added to @p out.
-template <typename T>
+template <typename T, Variant V>
 __global__ void
-count_compressed(const ChunkDesc<T>* desc, const std::int64_t* chunks, unsigned long long m, unsigned long long* out)
+count_compressed(const ChunkDesc<T, V>* desc, const std::int64_t* chunks, unsigned long long m, unsigned long long* out)
 {
     const unsigned long long stride = static_cast<unsigned long long>(gridDim.x) * blockDim.x;
     unsigned long long       mine   = 0;
@@ -118,8 +121,8 @@ count_compressed(const ChunkDesc<T>* desc, const std::int64_t* chunks, unsigned 
 }
 
 /// @brief Every buffer back to the arena (after normalise()), every descriptor compressed.
-template <typename T, unsigned int S>
-__global__ void release_all(ChunkDesc<T>* desc, std::int64_t n_chunks, ArenaRef<T, S> arena)
+template <typename T, unsigned int S, Variant V>
+__global__ void release_all(ChunkDesc<T, V>* desc, std::int64_t n_chunks, ArenaRef<T, S> arena)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     for (std::int64_t c = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; c < n_chunks; c += stride)
@@ -134,8 +137,8 @@ __global__ void release_all(ChunkDesc<T>* desc, std::int64_t n_chunks, ArenaRef<
 
 /// @brief Entry k: a buffer for chunk chunks[k], filled with staging[k * S, (k + 1) * S),
 ///        published. One block per entry, grid-stride; @p fail set if the arena runs out.
-template <typename T, unsigned int S>
-__global__ void upload_chunks(ChunkDesc<T>*       desc,
+template <typename T, unsigned int S, Variant V>
+__global__ void upload_chunks(ChunkDesc<T, V>*    desc,
                               ArenaRef<T, S>      arena,
                               const std::int64_t* chunks,
                               const T*            staging,
@@ -171,9 +174,9 @@ __global__ void upload_chunks(ChunkDesc<T>*       desc,
 }
 
 /// @brief Entry k: the buffer of chunk chunks[k] into staging[k * S, (k + 1) * S).
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V>
 __global__ void
-gather_chunks(const ChunkDesc<T>* desc, const std::int64_t* chunks, T* staging, unsigned long long count)
+gather_chunks(const ChunkDesc<T, V>* desc, const std::int64_t* chunks, T* staging, unsigned long long count)
 {
     for (unsigned long long k = blockIdx.x; k < count; k += gridDim.x)
     {
@@ -191,8 +194,10 @@ gather_chunks(const ChunkDesc<T>* desc, const std::int64_t* chunks, T* staging, 
  * @brief A device array of @p T in chunks of @p S, every element @p constant at first.
  * @tparam T element type, trivially copyable
  * @tparam S chunk size, a power of two, 32 at least (S = 1024 on GPU, docs/gpu_design.md 13)
+ * @tparam V the variant (chunk_desc.h): zero_any, or zero (the constant is T{}, a chunk
+ *           folds back only to it, and the descriptor is its pointer alone)
  */
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V = Variant::zero_any>
 class Array
 {
     static_assert(std::is_trivially_copyable_v<T>, "device::Array: trivially copyable elements");
@@ -207,6 +212,7 @@ class Array
     /// @brief @p n elements reading @p constant; an arena of @p arena_buffers buffers to start;
     ///        an append-buffer of @p append_capacity entries (0: 1% of the arena's elements,
     ///        4096 at least), for Writer::assign when the arena runs out.
+    /// @throws std::invalid_argument in the zero variant if @p constant is not T{}.
     Array(std::int64_t n, unsigned long long arena_buffers, T constant = T{}, unsigned long long append_capacity = 0);
     ~Array();
     Array(const Array&)            = delete;
@@ -215,14 +221,14 @@ class Array
     Array& operator=(Array&&)      = delete;
 
     /// @brief For a read kernel, between write phases.
-    [[nodiscard]] View<T, S> view() const noexcept
+    [[nodiscard]] View<T, S, V> view() const noexcept
     {
-        return View<T, S>{desc_, n_};
+        return View<T, S, V>{desc_, n_};
     }
 
     /// @brief For a write kernel of the caller's that calls Writer::write (then finish(f)) or
     ///        Writer::assign (then finish()).
-    [[nodiscard]] Writer<T, S> writer() const noexcept;
+    [[nodiscard]] Writer<T, S, V> writer() const noexcept;
 
     /// @brief a(i) = f(i) for i in [@p lo, @p hi) by the chunk-aligned loop, then finish(f).
     ///        f: `T operator()(std::int64_t) const`, a function of i.
@@ -249,7 +255,8 @@ class Array
 
     /// @brief Makes this array the one @p state describes (export_array() of a host array
     ///        of size() elements at chunk size S): what it held goes back to the arena, the
-    ///        arena grows if the materialised chunks need it. Between phases. Waits.
+    ///        arena grows if the materialised chunks need it. Between phases. Waits. In the
+    ///        zero variant a chunk compressed to another value than T{} gets a buffer.
     /// @throws std::runtime_error if @p state has another size or chunk size.
     void assign(const ArrayState<T>& state);
 
@@ -306,13 +313,13 @@ class Array
         return batch_bytes / (S * sizeof(T)) > 0 ? batch_bytes / (S * sizeof(T)) : 1;
     }
 
-    std::int64_t   n_;
-    std::int64_t   n_chunks_;
-    ChunkDesc<T>*  desc_     = nullptr;
-    unsigned*      written_  = nullptr;
-    Span*          failed_   = nullptr;
-    T**            lost_     = nullptr;
-    WriteCounters* counters_ = nullptr;
+    std::int64_t     n_;
+    std::int64_t     n_chunks_;
+    ChunkDesc<T, V>* desc_     = nullptr;
+    unsigned*        written_  = nullptr;
+    Span*            failed_   = nullptr;
+    T**              lost_     = nullptr;
+    WriteCounters*   counters_ = nullptr;
     /// One counter for compress() and materialised(), allocated once instead of a device
     /// allocation and free per call.
     unsigned long long* scratch_ = nullptr;
@@ -331,8 +338,8 @@ class Array
 ///          per chunk at most; a caller's kernel may have more spans per chunk, past that the
 ///          phase throws). The lost list holds one buffer per buffer of the arena: a buffer is
 ///          lost at most once per take (fit_lost_list() follows the arena's growth).
-template <typename T, unsigned int S>
-Array<T, S>::Array(std::int64_t n, unsigned long long arena_buffers, T constant, unsigned long long append_capacity)
+template <typename T, unsigned int S, Variant V>
+Array<T, S, V>::Array(std::int64_t n, unsigned long long arena_buffers, T constant, unsigned long long append_capacity)
     : n_(n)
     , n_chunks_((n + S - 1) / S)
     , failed_capacity_(2 * static_cast<unsigned long long>(n_chunks_) + 1)
@@ -342,16 +349,20 @@ Array<T, S>::Array(std::int64_t n, unsigned long long arena_buffers, T constant,
                                                            : 4096ULL)
     , arena_(arena_buffers)
 {
+    if (V == Variant::zero && !same_value(constant, T{}))
+    {
+        throw std::invalid_argument("shrink_array::device::Array: the zero variant reads T{}, no other constant");
+    }
     const auto nc = static_cast<std::size_t>(n_chunks_);
-    desc_         = allocate<ChunkDesc<T>>(nc);
-    written_      = allocate<unsigned>(nc * Writer<T, S>::words);
+    desc_         = allocate<ChunkDesc<T, V>>(nc);
+    written_      = allocate<unsigned>(nc * Writer<T, S, V>::words);
     failed_       = allocate<Span>(static_cast<std::size_t>(failed_capacity_));
     counters_     = allocate<WriteCounters>(1);
     scratch_      = allocate<unsigned long long>(1);
     spare_        = allocate<T*>(spare_slots);
     append_index_ = allocate<std::int64_t>(static_cast<std::size_t>(append_capacity_));
     append_value_ = allocate<T>(static_cast<std::size_t>(append_capacity_));
-    zero(written_, nc * Writer<T, S>::words);
+    zero(written_, nc * Writer<T, S, V>::words);
     zero(counters_, 1);
     zero(spare_, spare_slots);
     kernels::reset_append<<<256, 256>>>(append_index_, append_capacity_);
@@ -363,8 +374,8 @@ Array<T, S>::Array(std::int64_t n, unsigned long long arena_buffers, T constant,
     synchronize();
 }
 
-template <typename T, unsigned int S>
-Array<T, S>::~Array()
+template <typename T, unsigned int S, Variant V>
+Array<T, S, V>::~Array()
 {
     release(desc_);
     release(written_);
@@ -377,10 +388,10 @@ Array<T, S>::~Array()
     release(append_value_);
 }
 
-template <typename T, unsigned int S>
-[[nodiscard]] Writer<T, S> Array<T, S>::writer() const noexcept
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] Writer<T, S, V> Array<T, S, V>::writer() const noexcept
 {
-    Writer<T, S> w;
+    Writer<T, S, V> w;
     w.desc            = desc_;
     w.n               = n_;
     w.arena           = arena_.ref();
@@ -398,9 +409,9 @@ template <typename T, unsigned int S>
     return w;
 }
 
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V>
 template <int BLOCK, typename F>
-void Array<T, S>::parallel_for_chunks(std::int64_t lo, std::int64_t hi, const F& f, unsigned int grid)
+void Array<T, S, V>::parallel_for_chunks(std::int64_t lo, std::int64_t hi, const F& f, unsigned int grid)
 {
     if (hi > lo)
     {
@@ -414,24 +425,24 @@ void Array<T, S>::parallel_for_chunks(std::int64_t lo, std::int64_t hi, const F&
 /// @details A failed span's chunk was compressed and needed a buffer: at most one buffer per
 ///          failed span, plus a quarter for the CAS the second pass may lose. The spans are
 ///          read from a copy: the second pass may fail again into the emptied list.
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V>
 template <int BLOCK, typename F>
-void Array<T, S>::finish(const F& f)
+void Array<T, S, V>::finish(const F& f)
 {
     finish_impl<BLOCK>(&f);
 }
 
-template <typename T, unsigned int S>
-void Array<T, S>::finish()
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::finish()
 {
     finish_impl<default_block>(static_cast<const NoFunction*>(nullptr));
 }
 
 /// @details The appends first: their replay skips the elements marked in a fresh buffer, and
 ///          settle_fresh clears the marks (docs/gpu_assign.md 3.4, 3.5).
-template <typename T, unsigned int S>
+template <typename T, unsigned int S, Variant V>
 template <int BLOCK, typename F>
-void Array<T, S>::finish_impl(const F* f)
+void Array<T, S, V>::finish_impl(const F* f)
 {
     synchronize();
     replay_appends();
@@ -475,8 +486,8 @@ void Array<T, S>::finish_impl(const F* f)
     reclaim_lost();
 }
 
-template <typename T, unsigned int S>
-void Array<T, S>::settle()
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::settle()
 {
     if (n_chunks_ > 0)
     {
@@ -487,8 +498,8 @@ void Array<T, S>::settle()
     synchronize();
 }
 
-template <typename T, unsigned int S>
-void Array<T, S>::reclaim_lost()
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::reclaim_lost()
 {
     WriteCounters c{};
     copy(&c, counters_, 1);
@@ -509,8 +520,8 @@ void Array<T, S>::reclaim_lost()
 
 /// @details The lost list holds as many buffers as the arena: called after every growth,
 ///          between phases.
-template <typename T, unsigned int S>
-void Array<T, S>::fit_lost_list()
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::fit_lost_list()
 {
     if (lost_capacity_ >= arena_.buffers() && lost_ != nullptr)
     {
@@ -522,8 +533,8 @@ void Array<T, S>::fit_lost_list()
 }
 
 /// @brief Chunks of @p chunks whose descriptor holds no buffer (between phases).
-template <typename T, unsigned int S>
-[[nodiscard]] unsigned long long Array<T, S>::count_compressed(const std::vector<std::int64_t>& chunks)
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] unsigned long long Array<T, S, V>::count_compressed(const std::vector<std::int64_t>& chunks)
 {
     if (chunks.empty())
     {
@@ -545,8 +556,8 @@ template <typename T, unsigned int S>
 ///          one thread's appends are in its program order); the arena grows only if the chunks
 ///          still compressed need more buffers than it has free (one claim, one buffer per
 ///          chunk). The replay may append again (to the emptied buffer): repeat.
-template <typename T, unsigned int S>
-void Array<T, S>::replay_appends()
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::replay_appends()
 {
     for (;;)
     {
@@ -606,7 +617,7 @@ void Array<T, S>::replay_appends()
         T* const            d_value = allocate<T>(u);
         copy(d_index, last_idx.data(), u);
         copy(d_value, last_val.get(), u);
-        kernels::replay_appends<T, S><<<256, 256>>>(writer(), d_index, d_value, u);
+        kernels::replay_appends<T, S, V><<<256, 256>>>(writer(), d_index, d_value, u);
         synchronize();
         release(d_index);
         release(d_value);
@@ -616,8 +627,8 @@ void Array<T, S>::replay_appends()
 /// @details One warp per chunk (the prototype: 85% to 102% of the stream read at S = 1024 on
 ///          the GH200 and the MI300A when every chunk folds back), at most 65536 blocks of 256
 ///          threads, grid-stride beyond.
-template <typename T, unsigned int S>
-unsigned long long Array<T, S>::compress()
+template <typename T, unsigned int S, Variant V>
+unsigned long long Array<T, S, V>::compress()
 {
     synchronize();
     settle(); // a fresh buffer left by a kernel without finish() would fold on unwritten elements
@@ -628,7 +639,7 @@ unsigned long long Array<T, S>::compress()
     {
         const std::int64_t warps_per_block = 256 / warp_size;
         const std::int64_t blocks          = (n_chunks_ + warps_per_block - 1) / warps_per_block;
-        kernels::compress_chunks<T, S>
+        kernels::compress_chunks<T, S, V>
             <<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(desc_, n_, arena_.ref(), d);
     }
     synchronize();
@@ -639,9 +650,11 @@ unsigned long long Array<T, S>::compress()
 
 /// @details The materialised and motif chunks are filled on the host into a staging buffer
 ///          (a motif expanded), copied in batches, and each batch's chunks take a buffer from
-///          the arena on the device; the tail of the last chunk holds T{}.
-template <typename T, unsigned int S>
-void Array<T, S>::assign(const ArrayState<T>& state)
+///          the arena on the device; the tail of the last chunk holds T{}. In the zero
+///          variant a chunk compressed to another value than T{} (a zero_any or zero_or_value
+///          host array) is materialised too, every element that value.
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::assign(const ArrayState<T>& state)
 {
     const auto nc = static_cast<std::size_t>(n_chunks_);
     if (state.chunk_size != S || state.size != static_cast<std::size_t>(n_) || state.chunks.size() < nc)
@@ -655,17 +668,22 @@ void Array<T, S>::assign(const ArrayState<T>& state)
     arena_.normalise();
     if (n_chunks_ > 0)
     {
-        kernels::release_all<T, S><<<256, 256>>>(desc_, n_chunks_, arena_.ref());
+        kernels::release_all<T, S, V><<<256, 256>>>(desc_, n_chunks_, arena_.ref());
     }
     synchronize();
-    std::vector<ChunkDesc<T>> h(nc);
-    std::vector<std::int64_t> mats;
+    std::vector<ChunkDesc<T, V>> h(nc);
+    std::vector<std::int64_t>    mats;
     for (std::size_t c = 0; c < nc; ++c)
     {
         const ChunkState<T>& cs       = state.chunks[c];
         const bool           constant = cs.kind == ChunkKind::first_value || cs.kind == ChunkKind::second_value;
-        h[c]                          = ChunkDesc<T>{nullptr, constant ? cs.value : T{}};
-        if (!constant)
+        h[c].buf                      = nullptr;
+        if constexpr (V == Variant::zero_any)
+        {
+            h[c].constant = constant ? cs.value : T{};
+        }
+        // zero: a chunk compressed to another value than T{} is materialised, filled with it.
+        if (!constant || (V == Variant::zero && !same_value(cs.value, T{})))
         {
             mats.push_back(static_cast<std::int64_t>(c));
         }
@@ -695,12 +713,13 @@ void Array<T, S>::assign(const ArrayState<T>& state)
             {
                 out[e] = e >= valid                           ? T{}
                          : cs.kind == ChunkKind::materialised ? cs.data[e]
-                                                              : detail::motif_element(cs.data[e], cs.value);
+                         : cs.kind == ChunkKind::motif        ? detail::motif_element(cs.data[e], cs.value)
+                                                              : cs.value; // zero: a constant other than T{}
             }
         }
         copy(d_stage, staging.get(), count * S);
         copy(d_idx, mats.data() + first, count);
-        kernels::upload_chunks<T, S><<<static_cast<unsigned int>(count < 65535 ? count : 65535), 256>>>(
+        kernels::upload_chunks<T, S, V><<<static_cast<unsigned int>(count < 65535 ? count : 65535), 256>>>(
             desc_, arena_.ref(), d_idx, d_stage, count, d_fail);
         synchronize();
     }
@@ -715,12 +734,12 @@ void Array<T, S>::assign(const ArrayState<T>& state)
     }
 }
 
-template <typename T, unsigned int S>
-[[nodiscard]] ArrayImage<T> Array<T, S>::image() const
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] ArrayImage<T> Array<T, S, V>::image() const
 {
     const auto nc = static_cast<std::size_t>(n_chunks_);
     synchronize();
-    std::vector<ChunkDesc<T>> h(nc);
+    std::vector<ChunkDesc<T, V>> h(nc);
     copy(h.data(), desc_, nc);
     ArrayImage<T> img;
     img.state.size       = static_cast<std::size_t>(n_);
@@ -735,9 +754,10 @@ template <typename T, unsigned int S>
         }
         if (h[c].buf == nullptr)
         {
-            const bool first = same_value(h[c].constant, T{});
+            const T    value = constant_of(h[c]);
+            const bool first = same_value(value, T{});
             img.state.chunks[c] =
-                ChunkState<T>{first ? ChunkKind::first_value : ChunkKind::second_value, h[c].constant, nullptr};
+                ChunkState<T>{first ? ChunkKind::first_value : ChunkKind::second_value, value, nullptr};
         }
         else
         {
@@ -752,7 +772,7 @@ template <typename T, unsigned int S>
     {
         const std::size_t count = mats.size() - first < batch ? mats.size() - first : batch;
         copy(d_idx, mats.data() + first, count);
-        kernels::gather_chunks<T, S>
+        kernels::gather_chunks<T, S, V>
             <<<static_cast<unsigned int>(count < 65535 ? count : 65535), 256>>>(desc_, d_idx, d_stage, count);
         synchronize();
         copy(img.elements.get() + first * S, d_stage, count * S);
@@ -767,8 +787,8 @@ template <typename T, unsigned int S>
     return img;
 }
 
-template <typename T, unsigned int S>
-[[nodiscard]] unsigned long long Array<T, S>::materialised() const
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] unsigned long long Array<T, S, V>::materialised() const
 {
     zero(scratch_, 1);
     kernels::count_materialised<<<256, 256>>>(desc_, n_chunks_, scratch_);
@@ -778,24 +798,24 @@ template <typename T, unsigned int S>
     return h;
 }
 
-template <typename T, unsigned int S>
-[[nodiscard]] WriteCounters Array<T, S>::write_counters() const
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] WriteCounters Array<T, S, V>::write_counters() const
 {
     WriteCounters c{};
     copy(&c, counters_, 1);
     return c;
 }
 
-template <typename T, unsigned int S>
-[[nodiscard]] unsigned long long Array<T, S>::cas_lost() const
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] unsigned long long Array<T, S, V>::cas_lost() const
 {
     WriteCounters c{};
     copy(&c, counters_, 1);
     return c.cas_lost;
 }
 
-template <typename T, unsigned int S>
-[[nodiscard]] std::vector<T> Array<T, S>::to_host() const
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] std::vector<T> Array<T, S, V>::to_host() const
 {
     std::vector<T> out(static_cast<std::size_t>(n_));
     T*             d = allocate<T>(out.size());

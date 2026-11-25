@@ -38,6 +38,7 @@
 #include <cstdio>    // std::printf, std::snprintf
 #include <cstring>   // std::memcmp
 #include <exception> // std::exception
+#include <stdexcept> // std::invalid_argument
 #include <random>    // std::mt19937_64
 #include <vector>    // std::vector
 
@@ -76,8 +77,8 @@ struct Range
 
 /// @brief Each block takes ranges and writes their chunks with Writer::write: two ranges
 ///        may share a chunk, written by two blocks of the kernel.
-template <int BLOCK, unsigned int S>
-__global__ void __launch_bounds__(BLOCK) write_ranges(sd::Writer<double, S> w, const Range* r, long n, FromArray f)
+template <int BLOCK, unsigned int S, sd::Variant V>
+__global__ void __launch_bounds__(BLOCK) write_ranges(sd::Writer<double, S, V> w, const Range* r, long n, FromArray f)
 {
     for (long k = blockIdx.x; k < n; k += gridDim.x)
     {
@@ -96,8 +97,8 @@ bool same_bits(double a, double b)
 }
 
 /// @brief Every element against the mirror, and the materialised chunks against the model.
-template <unsigned int S>
-void check(const sd::Array<double, S>& a, const std::vector<double>& mirror, const std::vector<char>& mat,
+template <unsigned int S, sd::Variant V>
+void check(const sd::Array<double, S, V>& a, const std::vector<double>& mirror, const std::vector<char>& mat,
            const char* what)
 {
     const std::vector<double> got   = a.to_host();
@@ -113,7 +114,7 @@ void check(const sd::Array<double, S>& a, const std::vector<double>& mirror, con
     expect(wrong == 0 && got_mat == expected, line);
 }
 
-template <unsigned int S>
+template <unsigned int S, sd::Variant V = sd::Variant::zero_any>
 void run(unsigned           seed,
          std::int64_t       n,
          unsigned long long arena_buffers,
@@ -122,9 +123,9 @@ void run(unsigned           seed,
          bool               with_compress = false)
 {
     constexpr int BLOCK = 256;
-    std::printf("[%s%s] S=%u n=%lld arena=%llu constant=%g\n", label, with_compress ? ", compress() each round" : "",
-                S, static_cast<long long>(n), arena_buffers, constant);
-    sd::Array<double, S> a(n, arena_buffers, constant);
+    std::printf("[%s%s%s] S=%u n=%lld arena=%llu constant=%g\n", V == sd::Variant::zero ? "zero, " : "", label,
+                with_compress ? ", compress() each round" : "", S, static_cast<long long>(n), arena_buffers, constant);
+    sd::Array<double, S, V> a(n, arena_buffers, constant);
     const auto           nn = static_cast<std::size_t>(n);
     std::vector<double>  mirror(nn, constant), target(nn);
     // The host model of the chunks: materialised or not, and the constant of each.
@@ -194,8 +195,8 @@ void run(unsigned           seed,
             // Two kernels, half the ranges each, then one finish(): the second kernel meets
             // the first one's fresh buffers, not settled yet.
             const auto half = static_cast<long>(ranges.size() / 2);
-            write_ranges<BLOCK, S><<<1024, BLOCK>>>(a.writer(), d_ranges, half, f);
-            write_ranges<BLOCK, S><<<1024, BLOCK>>>(a.writer(), d_ranges + half,
+            write_ranges<BLOCK, S, V><<<1024, BLOCK>>>(a.writer(), d_ranges, half, f);
+            write_ranges<BLOCK, S, V><<<1024, BLOCK>>>(a.writer(), d_ranges + half,
                                                     static_cast<long>(ranges.size()) - half, f);
             a.template finish<BLOCK>(f);
             sd::release(d_ranges);
@@ -206,17 +207,19 @@ void run(unsigned           seed,
         check(a, mirror, mat, line);
         if (with_compress)
         {
-            // The model: a materialised chunk whose elements below n are one value folds.
+            // The model: a materialised chunk whose elements below n are one value folds (zero:
+            // only when that value is +0.0; -0.0 is another value, round 3's 2.5 stays).
             unsigned long long expected_folds = 0;
             for (std::size_t c = 0; c < mat.size(); ++c)
             {
                 const std::size_t lo = c * S;
                 const std::size_t hi = std::min<std::size_t>(lo + S, nn);
+                const double head = V == sd::Variant::zero ? 0.0 : mirror[lo];
                 if (mat[c] != 0 && std::all_of(mirror.begin() + static_cast<long>(lo), mirror.begin() + static_cast<long>(hi),
-                                               [&](double x) { return same_bits(x, mirror[lo]); }))
+                                               [&](double x) { return same_bits(x, head); }))
                 {
                     mat[c] = 0;
-                    cst[c] = mirror[lo];
+                    cst[c] = head;
                     ++expected_folds;
                 }
             }
@@ -247,6 +250,22 @@ int main()
         run<256>(15, 1L << 20, 1L << 12, 0.0, "exact arena", true);
         run<1024>(16, (1L << 20) + 300, (1L << 10) + 1, 0.0, "exact arena, tail chunk", true);
         run<1024>(17, (1L << 18) + 77, 4, 2.5, "small arena, tail chunk, constant 2.5", true);
+        // The zero variant: the same rounds, folds to +0.0 only.
+        constexpr auto zero = sd::Variant::zero;
+        run<256, zero>(21, 1L << 20, 1L << 12, 0.0, "exact arena", true);
+        run<1024, zero>(22, (1L << 20) + 300, (1L << 10) + 1, 0.0, "exact arena, tail chunk", true);
+        run<256, zero>(23, 1L << 18, 16, 0.0, "small arena: failed spans written again", true);
+        run<1024, zero>(24, (1L << 18) + 77, 4, 0.0, "small arena, tail chunk", true);
+        bool refused = false;
+        try
+        {
+            sd::Array<double, 256, zero> bad(1024, 4, 2.5);
+        }
+        catch (const std::invalid_argument&)
+        {
+            refused = true;
+        }
+        expect(refused, "zero variant: a constant other than T{} refused");
     }
     catch (const std::exception& e)
     {

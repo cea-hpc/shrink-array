@@ -20,7 +20,8 @@
  * @file compress.h
  * @brief The compression pass of a device array (docs/gpu_design.md, section 7): a
  *        materialised chunk whose elements are all one value (same_value) takes that value
- *        as its constant and gives its buffer back to the arena.
+ *        as its constant and gives its buffer back to the arena (in the zero variant, only
+ *        when that value is T{}).
  *
  * @details Stage 1, experimental (see chunk_desc.h), from the prototype's compress_warp: one
  *          warp per chunk, grid-stride over the chunks, each lane reading S / warp_size
@@ -42,7 +43,7 @@
 
 #include "chunk/device/arena.h"        // ArenaRef
 #include "chunk/device/atomics.h"      // fetch_add
-#include "chunk/device/chunk_desc.h"   // ChunkDesc
+#include "chunk/device/chunk_desc.h"   // ChunkDesc, Variant, zero_value
 #include "chunk/device/warp.h"         // ballot, full_warp, lane_id
 #include "chunk/internal/same_value.h" // same_value
 
@@ -51,8 +52,8 @@ namespace shrink_array::device::kernels
 
 /// @brief The pass: @p folded receives the number of chunks folded back. Blocks of a
 ///        multiple of warp_size threads: every lane of a warp takes the same chunks.
-template <typename T, unsigned int S>
-__global__ void compress_chunks(ChunkDesc<T>* desc, std::int64_t n, ArenaRef<T, S> arena, unsigned long long* folded)
+template <typename T, unsigned int S, Variant V>
+__global__ void compress_chunks(ChunkDesc<T, V>* desc, std::int64_t n, ArenaRef<T, S> arena, unsigned long long* folded)
 {
     const std::int64_t n_chunks = (n + S - 1) / S;
     const int          lane     = lane_id();
@@ -61,23 +62,27 @@ __global__ void compress_chunks(ChunkDesc<T>* desc, std::int64_t n, ArenaRef<T, 
     unsigned long long mine     = 0;
     for (std::int64_t c = first; c < n_chunks; c += warps)
     {
-        ChunkDesc<T>& d   = desc[c];
-        T* const      buf = d.buf;
+        ChunkDesc<T, V>& d   = desc[c];
+        T* const         buf = d.buf;
         if (buf == nullptr)
         {
             continue; // uniform per warp
         }
-        const std::int64_t valid   = (c + 1) * S <= n ? S : n - c * S;
-        const T            head    = buf[0];
-        bool               uniform = true;
+        const std::int64_t valid = (c + 1) * S <= n ? S : n - c * S;
+        // zero: the chunk folds only to T{}, so every element is compared with it.
+        const T head    = V == Variant::zero ? zero_value<T>() : buf[0];
+        bool    uniform = true;
         for (std::int64_t k = lane; k < valid && uniform; k += warp_size)
         {
             uniform = same_value(buf[k], head);
         }
         if (ballot(full_warp, !uniform) == 0 && lane == 0)
         {
-            d.constant = head;
-            d.buf      = nullptr;
+            if constexpr (V == Variant::zero_any)
+            {
+                d.constant = head;
+            }
+            d.buf = nullptr;
             arena.give_back(buf);
             ++mine;
         }
