@@ -1,0 +1,107 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# The GPU backend (chunk/device/, docs/gpu_design.md) compiled for CUDA and
+# for HIP: the hosted runners have no GPU, so nothing runs here -- the
+# validations run by hand on a T1000, a GH200 and an MI300A (stage 1,
+# "CI on a GPU runner if available, otherwise compilation only"). What the
+# compilation catches: a CHUNK_HD function calling a host one (nvcc's #20013,
+# an error under -Werror=all-warnings), std::complex / std::array built in
+# device code, a shared header (same_value.h, host_device.h, chunk_state.h)
+# changed on the host side that nvcc or ROCm's clang rejects, and the two
+# translation units of device_convert_validation linked against one
+# libstdc++ (--gcc-install-dir under HIP).
+#
+# Every device target is named on the command line: a target the configure
+# left out (device_convert_validation when the GCC installations differ)
+# fails the build instead of passing unseen.
+
+name: Device
+
+on:
+  push:
+    branches: [gpu]
+  pull_request:
+    branches: [gpu]
+  workflow_dispatch:
+
+# A new push to a branch cancels the run still going on it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  device-build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # nvcc 13.1, the T1000's toolkit; sm_75 (T1000) and sm_90 (GH200).
+          # Pinned by digest: a tag can be pushed again.
+          - name: CUDA 13.1 (nvcc)
+            image: nvidia/cuda:13.1.1-devel-ubuntu24.04@sha256:9cf8694a27722418a1f175d90f85d5afb5a728fd4a9907d7f0565efecfa14d32
+            lang: CUDA
+            cmake_args: >-
+              -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc
+              -DCMAKE_CUDA_HOST_COMPILER=g++-14
+              '-DCMAKE_CUDA_ARCHITECTURES=75;90'
+            targets: >-
+              device_core_validation device_arena_validation device_write_validation
+              device_assign_validation device_convert_validation device_bench
+          # ROCm 7.2.4 without its libraries (rocm-dev: the compiler and the HIP
+          # runtime, 1.1 GB against 6.9 for -complete); gfx942 (MI300A).
+          # device_core_validation is CUDA only (CUDA runtime calls).
+          - name: HIP, ROCm 7.2.4
+            image: rocm/dev-ubuntu-24.04:7.2.4@sha256:bdc8e61026cbb844ede93d44d2c50055f51ebb2041906b60182bf3bee3139054
+            lang: HIP
+            cmake_args: >-
+              -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++
+              -DCMAKE_HIP_ARCHITECTURES=gfx942
+              -DCMAKE_PREFIX_PATH=/opt/rocm
+              -DCMAKE_HIP_FLAGS=--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/14
+            targets: >-
+              device_arena_validation device_write_validation
+              device_assign_validation device_convert_validation device_bench
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      DEBIAN_FRONTEND: noninteractive
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Toolchain
+        run: |
+          for attempt in 1 2 3; do
+            if apt-get update -q && apt-get install -y -q --no-install-recommends \
+                 g++-14 cmake ninja-build git libbz2-dev; then
+              break
+            fi
+            [ "$attempt" = 3 ] && exit 1
+            sleep 20
+          done
+          g++-14 --version
+          cmake --version
+          if [ "${{ matrix.lang }}" = CUDA ]; then /usr/local/cuda/bin/nvcc --version; else /opt/rocm/llvm/bin/clang++ --version; fi
+          # The container runs as root, the checkout belongs to the runner's
+          # user: without this, git refuses the tree and the build stamp
+          # (git describe) has no revision.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+          -DCHUNK_BUILD_VALIDATION=ON
+          -DCHUNK_DEVICE_CORE_CHECK=ON
+          -DCHUNK_DEVICE_LANGUAGE=${{ matrix.lang }}
+          ${{ matrix.cmake_args }}
+      - name: Build the device targets
+        run: cmake --build build --target ${{ matrix.targets }}
