@@ -40,9 +40,9 @@
  *          phase ends with end_write() before any read. parallel_for_chunks is the library's
  *          chunk-aligned loop (one block per chunk, the vote before materialising): it runs
  *          its own kernels, not a Kokkos TeamPolicy, whose CUDA teams sit on threadIdx.y where
- *          Writer::write expects threadIdx.x. Every facade call fences Kokkos first: the
- *          library's kernels and Kokkos's run in order on the device, whatever stream Kokkos
- *          uses.
+ *          Writer::write expects threadIdx.x. The calls that run the library's kernels or
+ *          read its counters fence Kokkos first (end_write, parallel_for_chunks, compress);
+ *          write() and read() launch nothing and do not.
  */
 
 #include <cstddef>     // std::size_t
@@ -146,8 +146,7 @@ class Array
     /// @brief The access of a write phase, for the caller's Kokkos kernels; end_write() after them.
     [[nodiscard]] WriteAccess<T, S, V> write() const
     {
-        Kokkos::fence("shrink_array::kokkos::Array::write");
-        return WriteAccess<T, S, V>{a_->writer()};
+        return WriteAccess<T, S, V>{a_->writer()}; // no fence: nothing runs on the device here
     }
 
     /// @brief The end of a write phase: fences Kokkos, replays the appends, settles the fresh
