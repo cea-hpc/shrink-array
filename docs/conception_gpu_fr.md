@@ -870,7 +870,12 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   seulement, -0,0 est une autre valeur), et `device_convert_validation` (un tableau hôte
   `zero_any` vers un tableau device `zero` : ses dix chunks de seconde valeur reçoivent un
   buffer et reviennent matérialisés). Elles passent sur la T1000 et le MI300A (là non plus,
-  aucune attente de réservation abandonnée).
+  aucune attente de réservation abandonnée). `device_bench` mesure les deux variantes (un
+  quatrième argument en choisit une). T1000, 0,5 Gio : la même chose au bruit près partout sauf
+  pour `assign()` dispersé dans des chunks matérialisés, 1,67x contre 1,97x à S = 1024 (2,14x
+  contre 2,22x à S = 256) : un accès aléatoire charge son descripteur, deux fois plus petit. La
+  lecture d'un tableau compressé ne change pas (0,45x) : à cette taille les descripteurs restent
+  dans le cache.
 
 Suite : la mesure sur le MI300A du dernier changement de la réservation (publier avant
 d'attendre), les mesures de la variante `zero` sur le GH200 et le MI300A ; puis une façade au

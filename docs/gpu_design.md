@@ -831,7 +831,11 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   `device_assign_validation` (folds to +0.0 only, -0.0 is another value), and
   `device_convert_validation` (a host `zero_any` array into a device `zero` one: its ten
   second-value chunks get a buffer and come back materialised). They pass on the T1000 and the
-  MI300A (no claim wait given up there either).
+  MI300A (no claim wait given up there either). `device_bench` measures both variants (a fourth
+  argument picks one). T1000, 0.5 GiB: the same within the noise everywhere but the scattered
+  `assign()` into materialised chunks, 1.67x against 1.97x at S = 1024 (2.14x against 2.22x at
+  S = 256): a random access loads its descriptor, half the size. The read of a compressed array
+  does not change there (0.45x): the descriptors stay in the cache at that size.
 
 Next: the MI300A measurement of the claim's last change (publish before waiting), the GH200 and
 MI300A runs of the `zero` variant; then a kernel-level facade (Kokkos, section 13 stage 3).

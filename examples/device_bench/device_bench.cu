@@ -34,16 +34,21 @@
  *          device's measured stream read, which carries over between GPUs). Times are
  *          wall-clock around calls that wait for the device, medians of the repetitions.
  *
+ *          Every measurement but the conversion in the zero_any and the zero variants (the
+ *          zero descriptor is the pointer alone: 8 bytes against 16 for a double).
+ *
  *          Usage: device_bench [log2(elements), default 27] [repetitions, default 10]
  *                              [log2(elements) of the conversion, default min(that, 27)]
+ *                              [variants: zero_any, zero or both, default both]
  *          The conversion holds two host copies of its array (the source and the image):
  *          a job with little host memory takes a smaller one (MI300A: killed at 1 GiB).
  */
 
 #include <algorithm> // std::sort, std::shuffle
 #include <cstdint>   // std::int64_t
-#include <cstdio>    // std::printf
+#include <cstdio>    // std::printf, std::setvbuf
 #include <cstdlib>   // std::atoi
+#include <cstring>   // std::strcmp
 #include <ctime>     // std::timespec_get (not <chrono>: see now_ms)
 #include <exception> // std::exception
 #include <random>    // std::mt19937_64
@@ -108,8 +113,8 @@ __global__ void flat_read(const double* a, std::int64_t n, double* out)
     out[tid] = s;
 }
 
-template <unsigned int S>
-__global__ void view_read(sd::View<double, S> v, double* out)
+template <unsigned int S, sd::Variant V>
+__global__ void view_read(sd::View<double, S, V> v, double* out)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     const std::int64_t tid    = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x;
@@ -160,8 +165,8 @@ __global__ void flat_add(double* a, std::int64_t n)
 }
 
 /// @brief a(i) = base + i by Writer::assign, grid-stride (one thread per element).
-template <unsigned int S>
-__global__ void assign_ramp(sd::Writer<double, S> w, std::int64_t n, double base)
+template <unsigned int S, sd::Variant V>
+__global__ void assign_ramp(sd::Writer<double, S, V> w, std::int64_t n, double base)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     for (std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; i < n; i += stride)
@@ -170,8 +175,8 @@ __global__ void assign_ramp(sd::Writer<double, S> w, std::int64_t n, double base
     }
 }
 
-template <unsigned int S>
-__global__ void assign_scatter(sd::Writer<double, S> w, std::int64_t n)
+template <unsigned int S, sd::Variant V>
+__global__ void assign_scatter(sd::Writer<double, S, V> w, std::int64_t n)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     for (std::int64_t k = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; k < n; k += stride)
@@ -181,8 +186,8 @@ __global__ void assign_scatter(sd::Writer<double, S> w, std::int64_t n)
     }
 }
 
-template <unsigned int S>
-__global__ void assign_add(sd::Writer<double, S> w, std::int64_t n)
+template <unsigned int S, sd::Variant V>
+__global__ void assign_add(sd::Writer<double, S, V> w, std::int64_t n)
 {
     const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
     for (std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; i < n; i += stride)
@@ -192,8 +197,8 @@ __global__ void assign_add(sd::Writer<double, S> w, std::int64_t n)
 }
 
 /// @brief Each block takes ranges and writes their chunks with Writer::write.
-template <unsigned int S>
-__global__ void __launch_bounds__(block) view_ranges(sd::Writer<double, S> w, const Range* r, std::int64_t n_ranges)
+template <unsigned int S, sd::Variant V>
+__global__ void __launch_bounds__(block) view_ranges(sd::Writer<double, S, V> w, const Range* r, std::int64_t n_ranges)
 {
     const Ramp f{3.0};
     for (std::int64_t k = blockIdx.x; k < n_ranges; k += gridDim.x)
@@ -252,12 +257,13 @@ void line(const char* what, double ms, double flat_ms, const char* note)
     std::printf("  %-50s %9.3f ms  %7.2fx flat  %s\n", what, ms, ms / flat_ms, note);
 }
 
-template <unsigned int S>
+template <unsigned int S, sd::Variant V>
 void bench(std::int64_t n, int reps)
 {
     const std::int64_t n_chunks = (n + S - 1) / S;
     const double       gib      = static_cast<double>(n) * sizeof(double) / (1 << 30);
-    std::printf("\n== S=%u, %lld doubles (%.2f GiB) ==\n", S, static_cast<long long>(n), gib);
+    std::printf("\n== S=%u, %lld doubles (%.2f GiB), %s variant ==\n", S, static_cast<long long>(n), gib,
+                V == sd::Variant::zero ? "zero" : "zero_any");
     const auto  nothing = [] {};
     double*     flat    = sd::allocate<double>(static_cast<std::size_t>(n));
     double*     sums    = sd::allocate<double>(static_cast<std::size_t>(read_grid) * block);
@@ -267,7 +273,7 @@ void bench(std::int64_t n, int reps)
     const double read_gbs = bytes / (flat_r * 1e6);
     std::printf("  flat: read %.1f GB/s, write %.1f GB/s\n", read_gbs, bytes / (flat_w * 1e6));
 
-    sd::Array<double, S> a(n, static_cast<unsigned long long>(n_chunks + n_chunks / 8));
+    sd::Array<double, S, V> a(n, static_cast<unsigned long long>(n_chunks + n_chunks / 8));
     const auto           fold_all = [&]
     {
         a.parallel_for_chunks(0, n, Constant{0.0});
@@ -283,10 +289,10 @@ void bench(std::int64_t n, int reps)
 
     // 2. Read, every chunk materialised (as left above), then every chunk compressed.
     line("read, every chunk materialised",
-         time_median(reps, nothing, [&] { view_read<S><<<read_grid, block>>>(a.view(), sums); }), flat_r,
+         time_median(reps, nothing, [&] { view_read<S, V><<<read_grid, block>>>(a.view(), sums); }), flat_r,
          "(criterion <= 1.5x)");
     fold_all();
-    line("read, every chunk compressed", time_median(reps, nothing, [&] { view_read<S><<<read_grid, block>>>(a.view(), sums); }),
+    line("read, every chunk compressed", time_median(reps, nothing, [&] { view_read<S, V><<<read_grid, block>>>(a.view(), sums); }),
          flat_r, "");
 
     // 3. Random range rewrites (lengths up to 4 chunks, non-overlapping, shuffled) over an
@@ -319,7 +325,7 @@ void bench(std::int64_t n, int reps)
         tw.push_back(time_once(
             [&]
             {
-                view_ranges<S><<<grid, block>>>(a.writer(), d_ranges, n_ranges);
+                view_ranges<S, V><<<grid, block>>>(a.writer(), d_ranges, n_ranges);
                 a.finish(Ramp{3.0});
             }));
         tc.push_back(time_once([&] { (void)a.compress(); }));
@@ -346,27 +352,29 @@ void bench(std::int64_t n, int reps)
             };
         };
         line("assign(), first write, grid-stride (+ finish)",
-             time_median(reps, fold_all, assign_phase([&] { assign_ramp<S><<<grid, block>>>(a.writer(), n, 1.0); })),
+             time_median(reps, fold_all, assign_phase([&] { assign_ramp<S, V><<<grid, block>>>(a.writer(), n, 1.0); })),
              flat_w, "");
         line("assign() into materialised chunks (+ finish)",
-             time_median(reps, nothing, assign_phase([&] { assign_ramp<S><<<grid, block>>>(a.writer(), n, 2.0); })),
+             time_median(reps, nothing, assign_phase([&] { assign_ramp<S, V><<<grid, block>>>(a.writer(), n, 2.0); })),
              flat_w, "");
         line("assign(), scattered, first write (+ finish)",
-             time_median(reps, fold_all, assign_phase([&] { assign_scatter<S><<<grid, block>>>(a.writer(), n); })),
+             time_median(reps, fold_all, assign_phase([&] { assign_scatter<S, V><<<grid, block>>>(a.writer(), n); })),
              flat_sc, "");
         line("assign(), scattered, into materialised chunks (+ finish)",
-             time_median(reps, nothing, assign_phase([&] { assign_scatter<S><<<grid, block>>>(a.writer(), n); })),
+             time_median(reps, nothing, assign_phase([&] { assign_scatter<S, V><<<grid, block>>>(a.writer(), n); })),
              flat_sc, "");
         line("a(i) = load(i) + 1, materialised chunks (+ finish)",
-             time_median(reps, nothing, assign_phase([&] { assign_add<S><<<grid, block>>>(a.writer(), n); })),
+             time_median(reps, nothing, assign_phase([&] { assign_add<S, V><<<grid, block>>>(a.writer(), n); })),
              flat_add_ms, "");
         const sd::WriteCounters wc = a.write_counters();
         std::printf("  assign(): %llu claim waits, %llu given up; arena %llu buffers in %d arena(s)\n", wc.claim_wait,
                     wc.claim_spin, a.arena().buffers(), a.arena().arenas());
     }
 
-    // 5. compress() alone: every chunk materialised and uniform (all fold), then every
-    //    chunk materialised and varied (a scan; it stops at the first difference).
+    // 5. compress() alone: every chunk materialised and uniform (all fold: to 4.0, to 0.0 in
+    //    the zero variant), then every chunk materialised and varied (a scan; it stops at the
+    //    first difference).
+    const double folding = V == sd::Variant::zero ? 0.0 : 4.0;
     const auto report = [&](const char* what, double ms)
     {
         const double gbs = bytes / (ms * 1e6);
@@ -380,7 +388,7 @@ void bench(std::int64_t n, int reps)
                [&]
                {
                    a.parallel_for_chunks(0, n, Ramp{1.0});
-                   a.parallel_for_chunks(0, n, Constant{4.0});
+                   a.parallel_for_chunks(0, n, Constant{folding});
                },
                [&] { (void)a.compress(); }));
     report("compress(), nothing folds (scan)",
@@ -433,14 +441,39 @@ void bench_conversion(std::int64_t n, int reps)
 
 int main(int argc, char** argv)
 {
-    const int          log2n = argc > 1 ? std::atoi(argv[1]) : 27;
-    const int          reps  = argc > 2 ? std::atoi(argv[2]) : 10;
-    const std::int64_t n     = std::int64_t{1} << log2n;
+    // A line at a time, also into a pipe (| tee): a run takes minutes on a big GPU.
+    (void)std::setvbuf(stdout, nullptr, _IOLBF, 0);
+    const int          log2n    = argc > 1 ? std::atoi(argv[1]) : 27;
+    const int          reps     = argc > 2 ? std::atoi(argv[2]) : 10;
+    const std::int64_t n        = std::int64_t{1} << log2n;
+    const char* const  variants = argc > 4 ? argv[4] : "both";
+    const bool         any      = std::strcmp(variants, "zero") != 0;
+    const bool         zero     = std::strcmp(variants, "zero_any") != 0;
+    if (!any && !zero)
+    {
+        std::printf("device_bench: variants zero_any, zero or both, not %s\n", variants);
+        return 2;
+    }
     std::printf("device_bench: device::Array against a flat array, %d repetitions, medians\n", reps);
     try
     {
-        bench<256>(n, reps);
-        bench<1024>(n, reps);
+        // Per chunk size, the two variants one after the other: their lines compare.
+        if (any)
+        {
+            bench<256, sd::Variant::zero_any>(n, reps);
+        }
+        if (zero)
+        {
+            bench<256, sd::Variant::zero>(n, reps);
+        }
+        if (any)
+        {
+            bench<1024, sd::Variant::zero_any>(n, reps);
+        }
+        if (zero)
+        {
+            bench<1024, sd::Variant::zero>(n, reps);
+        }
         const int          log2c  = argc > 3 ? std::atoi(argv[3]) : (log2n < 27 ? log2n : 27);
         const std::int64_t n_conv = std::int64_t{1} << log2c;
         bench_conversion<256>(n_conv, reps);
