@@ -58,7 +58,7 @@
 namespace shrink_array::device::kokkos
 {
 
-/// @brief One element in a write phase: `w(i) = v`, `w(i) += v`, `T x = w(i)`.
+/// @brief One element in a write phase: `w(i) = v`, `w(i) += v` (and -=, *=, /=), `T x = w(i)`.
 template <typename T, unsigned int S, Variant V>
 class Ref
 {
@@ -74,6 +74,24 @@ class Ref
     KOKKOS_INLINE_FUNCTION const Ref& operator+=(T v) const noexcept
     {
         w_.assign(i_, w_.load(i_) + v);
+        return *this;
+    }
+
+    KOKKOS_INLINE_FUNCTION const Ref& operator-=(T v) const noexcept
+    {
+        w_.assign(i_, w_.load(i_) - v);
+        return *this;
+    }
+
+    KOKKOS_INLINE_FUNCTION const Ref& operator*=(T v) const noexcept
+    {
+        w_.assign(i_, w_.load(i_) * v);
+        return *this;
+    }
+
+    KOKKOS_INLINE_FUNCTION const Ref& operator/=(T v) const noexcept
+    {
+        w_.assign(i_, w_.load(i_) / v);
         return *this;
     }
 

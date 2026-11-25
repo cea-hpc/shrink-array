@@ -24,6 +24,8 @@ set(Kokkos_ENABLE_${CHUNK_DEVICE_LANGUAGE} ON CACHE BOOL "" FORCE)
 set(Kokkos_ENABLE_SERIAL ON CACHE BOOL "" FORCE)
 set(Kokkos_ENABLE_COMPILE_AS_CMAKE_LANGUAGE ON CACHE BOOL "" FORCE)
 set(Kokkos_ARCH_${CHUNK_KOKKOS_ARCH} ON CACHE BOOL "" FORCE)
+# rocThrust (Kokkos's HIP sort) is not needed, and not in a ROCm without its libraries.
+set(Kokkos_ENABLE_ROCTHRUST OFF CACHE BOOL "" FORCE)
 include(FetchContent)
 # Pinned by its SHA-256: a release tarball is not supposed to change, a tag can move.
 # CHUNK_KOKKOS_URL: the tarball fetched beforehand (a path), where CMake cannot reach
@@ -35,7 +37,7 @@ FetchContent_Declare(Kokkos
   URL_HASH SHA256=71590c348be05d83b12b3b21ccac36072be0006e23ada3ff4cb91f018cfbb042)
 FetchContent_MakeAvailable(Kokkos)
 
-foreach (_t IN ITEMS kokkos_validation)
+foreach (_t IN ITEMS kokkos_validation kokkos_shrink_bench)
   add_executable(${_t} ${_t}.cu)
   set_source_files_properties(${_t}.cu PROPERTIES LANGUAGE ${CHUNK_DEVICE_LANGUAGE})
   set_target_properties(${_t} PROPERTIES ${CHUNK_DEVICE_LANGUAGE}_STANDARD 20 ${CHUNK_DEVICE_LANGUAGE}_STANDARD_REQUIRED ON)

@@ -59,7 +59,7 @@ jobs:
               device_core_validation device_arena_validation device_write_validation
               device_assign_validation device_convert_validation device_bench
               device_memory_validation_zero_any device_memory_validation_zero
-              kokkos_validation
+              kokkos_validation kokkos_shrink_bench
           # ROCm 7.2.4 without its libraries (rocm-dev: the compiler and the HIP
           # runtime, 1.1 GB against 6.9 for -complete); gfx942 (MI300A).
           # device_core_validation is CUDA only (CUDA runtime calls).
@@ -76,7 +76,7 @@ jobs:
               device_arena_validation device_write_validation
               device_assign_validation device_convert_validation device_bench
               device_memory_validation_zero_any device_memory_validation_zero
-              kokkos_validation
+              kokkos_validation kokkos_shrink_bench
     env:
       CC: gcc-14
       CXX: g++-14
