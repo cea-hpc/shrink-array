@@ -36,6 +36,10 @@ inline read_reclaim::ReadSection::ReadSection() noexcept
     {
         seq_ = g_reclaim_epoch.load(std::memory_order_relaxed); // ordered by dep(), not by an acquire
     }
+    else if constexpr (enabled && CHUNK_READ_SECTION_MODE == 6)
+    {
+        q_read_entry(); // EXPERIMENT mode 6: a quiescent point, reported when the epoch moved
+    }
     else if constexpr (enabled && CHUNK_READ_SECTION_MODE == 0)
     {
         ReaderSlot* slot = t_slot;

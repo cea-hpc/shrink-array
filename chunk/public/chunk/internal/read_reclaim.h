@@ -102,6 +102,11 @@
 //      in a region parks the buffers it releases, tagged with a new epoch; they are
 //      released by the same thread at its next pass once every other online thread
 //      has passed a quiescent point since, and by finalize_parallel_phase() otherwise
+//   6  mode 5 plus a read-side report: a ReadSection's entry is a quiescent point too
+//      (no pointer from an earlier read is held). It loads the epoch relaxed and
+//      compares it with its own slot; only when the epoch moved does it take an
+//      acquire fence and store the epoch, released, into its slot. A thread that
+//      only reads thus lets the writers' parked buffers go at their next pass
 #ifndef CHUNK_READ_SECTION_MODE
     #define CHUNK_READ_SECTION_MODE 0
 #endif
@@ -124,7 +129,7 @@ struct alignas(64) ReaderSlot
 };
 
 /// @brief EXPERIMENT mode 5: wait_for_readers() and ScanSection use scan_seq.
-inline constexpr bool scan_announce = CHUNK_READ_SECTION_MODE == 5;
+inline constexpr bool scan_announce = CHUNK_READ_SECTION_MODE == 5 || CHUNK_READ_SECTION_MODE == 6;
 
 /// @brief The sequence wait_for_readers() waits on.
 inline std::atomic<std::uint64_t>& announce_seq(ReaderSlot& slot) noexcept
@@ -226,7 +231,7 @@ class ReadSection
  *        published): what ArrayChunkCore::await_chunk_readers() waits for. In
  *        mode 5 a ReadSection does nothing; in the other modes this IS one.
  */
-#if CHUNK_READ_SECTION_MODE == 5
+#if CHUNK_READ_SECTION_MODE == 5 || CHUNK_READ_SECTION_MODE == 6
 class ScanSection
 {
   public:
@@ -391,7 +396,7 @@ inline bool defer_release(void (*release)(void*, int, void*) noexcept, void* chu
 // ---------------------------------------------------------------------------
 
 /// @brief Mode 5 is compiled in.
-inline constexpr bool qsbr = enabled && CHUNK_READ_SECTION_MODE == 5;
+inline constexpr bool qsbr = enabled && (CHUNK_READ_SECTION_MODE == 5 || CHUNK_READ_SECTION_MODE == 6);
 
 /// @brief A buffer parked by a pass, with the epoch its pass opened.
 struct QPending
@@ -407,6 +412,7 @@ inline std::atomic<long>                             g_qheld_peak{0}; ///< Most 
 inline std::atomic<long>                             g_qparked{0};    ///< Buffers parked in all.
 inline std::atomic<long> g_qdrained{0};     ///< Of those, released by finalize (not by a later pass).
 inline std::atomic<int>  g_qonline_peak{0}; ///< Most threads online in one phase.
+alignas(64) inline std::atomic<long> g_qread_reports{0}; ///< EXPERIMENT mode 6: read entries that saw the epoch move.
 
 /// @brief The report, at exit.
 struct QReport
@@ -420,8 +426,9 @@ struct QReport
         {
             std::fprintf(stderr,
                          "[qsbr] buffers parked %ld, released at phase end %ld, parked at once (peak) %ld, "
-                         "threads online (peak) %d\n",
-                         g_qparked.load(), g_qdrained.load(), g_qheld_peak.load(), g_qonline_peak.load());
+                         "threads online (peak) %d, read-side reports %ld\n",
+                         g_qparked.load(), g_qdrained.load(), g_qheld_peak.load(), g_qonline_peak.load(),
+                         g_qread_reports.load());
         }
     }
 };
@@ -476,6 +483,31 @@ CHUNK_FORCE_INLINE void quiescent_point() noexcept
         if (ReaderSlot* slot = t_slot; slot != nullptr) [[likely]]
         {
             slot->seq.store(g_reclaim_epoch.load(std::memory_order_acquire), std::memory_order_release);
+        }
+    }
+}
+
+/// @brief EXPERIMENT mode 6, the slow side of a read's entry: the epoch moved to @p epoch.
+/// @details The acquire fence pairs with the pass's seq_cst increment that the relaxed
+///          load read: the pass's swaps happen before this read's loads. The release
+///          store orders this thread's earlier reads (all their sections closed) before
+///          the slot the pass's owner acquires. Same pairing as quiescent_point().
+[[gnu::noinline]] inline void q_read_report(ReaderSlot* slot, std::uint64_t epoch) noexcept
+{
+    std::atomic_thread_fence(std::memory_order_acquire);
+    slot->seq.store(epoch, std::memory_order_release);
+    g_qread_reports.fetch_add(1, std::memory_order_relaxed);
+}
+
+/// @brief EXPERIMENT mode 6: a read's entry, a quiescent point reported only when the epoch moved.
+CHUNK_FORCE_INLINE void q_read_entry() noexcept
+{
+    if (ReaderSlot* slot = t_slot; slot != nullptr) [[likely]]
+    {
+        const std::uint64_t epoch = g_reclaim_epoch.load(std::memory_order_relaxed);
+        if (epoch != slot->seq.load(std::memory_order_relaxed)) [[unlikely]]
+        {
+            q_read_report(slot, epoch);
         }
     }
 }
