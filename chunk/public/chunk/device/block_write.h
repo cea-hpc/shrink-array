@@ -161,6 +161,9 @@ struct Writer
     __device__ void write(std::int64_t c, std::int64_t lo, std::int64_t hi, const F& f) const noexcept;
 
   private:
+    template <int BLOCK>
+    [[nodiscard]] __device__ bool
+    fold_whole(ChunkDesc<T, V>& d, std::int64_t base, std::int64_t valid_hi, const T* new_vals) const noexcept;
     __device__ void            assign_device(std::int64_t i, T v) const noexcept;
     [[nodiscard]] __device__ T load_device(std::int64_t i) const noexcept;
     template <int BLOCK>
@@ -368,6 +371,13 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
     }
     const std::int64_t valid_hi = base + S < n ? base + S : n;
     const bool         whole    = lo <= base && hi >= valid_hi;
+    if constexpr (V == Variant::zero_any)
+    {
+        if (whole && fold_whole<BLOCK>(d, base, valid_hi, new_vals))
+        {
+            return; // the chunk reads its new value, no buffer (docs/gpu_design.md 7.3)
+        }
+    }
     if (t == 0)
     {
         s_buf = take_buffer(c);
@@ -427,6 +437,58 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
     {
         write_plain<BLOCK>(winner, c, lo, hi, new_vals); // a whole-chunk writer overlapped: outside the contract
     }
+}
+
+/**
+ * @details zero_any, a compressed chunk the block writes whole (every element below n): if its
+ *          new values are one value, the chunk takes it as its constant and no buffer -- the
+ *          vote before materialising of docs/gpu_design.md 7.3, to a new value and not only to
+ *          the chunk's own. Without it a write of constants by bands (kokkos_shrink_bench's
+ *          init, shrink_bench's fill) materialised every chunk it changed, and the arena kept
+ *          that peak (MI300A, 5 x 8 GiB: 20 GB of arena for 1.5 GB held after compress()).
+ *          The constant is changed under the claim (busy_mark()), as assign() materialises: a
+ *          claim or a publication of the same kernel found there instead makes it false, and
+ *          the caller materialises as before. Every thread of the block calls it.
+ */
+template <typename T, unsigned int S, Variant V>
+template <int BLOCK>
+[[nodiscard]] __device__ bool Writer<T, S, V>::fold_whole(ChunkDesc<T, V>& d,
+                                                          std::int64_t     base,
+                                                          std::int64_t     valid_hi,
+                                                          const T*         new_vals) const noexcept
+{
+    constexpr int per_thread = static_cast<int>(S) / BLOCK;
+    // Raw storage: a __shared__ T may not have a constructor (std::complex); T is trivially copyable.
+    __shared__ alignas(T) unsigned char s_value[sizeof(T)];
+    __shared__ int                      s_folded;
+    T&                                  value = *reinterpret_cast<T*>(s_value);
+    const int                           t     = static_cast<int>(threadIdx.x);
+    if (t == 0)
+    {
+        value = new_vals[0]; // element base: whole, so base >= lo
+    }
+    __syncthreads();
+    bool other = false;
+    for (int j = 0; j < per_thread; ++j)
+    {
+        other = other || (base + t + j * BLOCK < valid_hi && !same_value(new_vals[j], value));
+    }
+    if (__syncthreads_or(other ? 1 : 0) != 0)
+    {
+        return false;
+    }
+    if (t == 0)
+    {
+        s_folded = 0;
+        if (cas_ptr(&d.buf, static_cast<T*>(nullptr), busy_mark<T>()) == nullptr)
+        {
+            d.constant = value;
+            (void)exchange_ptr(&d.buf, static_cast<T*>(nullptr));
+            s_folded = 1;
+        }
+    }
+    __syncthreads();
+    return s_folded != 0;
 }
 
 /// @details The 32 lanes of a warp, or half a wavefront, write 32 consecutive elements

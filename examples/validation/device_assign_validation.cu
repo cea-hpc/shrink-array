@@ -33,7 +33,7 @@
  *          wrote counts as a failure too.
  */
 
-#include <algorithm> // std::all_of, std::count, std::min, std::shuffle
+#include <algorithm> // std::all_of, std::count, std::fill, std::min, std::shuffle
 #include <cstdint>   // std::int64_t
 #include <cstdio>    // std::printf, std::snprintf
 #include <cstring>   // std::memcmp
@@ -148,6 +148,27 @@ struct Model
         , mat(static_cast<std::size_t>((n + S - 1) / S), 0)
         , cst(mat.size(), constant)
     {
+    }
+
+    /// @brief The chunk-aligned write of @p v over the whole array: zero_any, a compressed
+    ///        chunk takes v as its constant, no buffer (Writer::fold_whole).
+    void write_all_aligned(double v)
+    {
+        for (std::size_t c = 0; c < mat.size(); ++c)
+        {
+            const std::size_t lo = c * S;
+            const std::size_t hi = std::min<std::size_t>(lo + S, mirror.size());
+            if (V == sd::Variant::zero_any && mat[c] == 0)
+            {
+                std::fill(mirror.begin() + static_cast<long>(lo), mirror.begin() + static_cast<long>(hi), v);
+                cst[c] = v;
+                continue;
+            }
+            for (std::size_t i = lo; i < hi; ++i)
+            {
+                write(static_cast<std::int64_t>(i), v);
+            }
+        }
     }
 
     void write(std::int64_t i, double v)
@@ -275,10 +296,7 @@ void run(unsigned seed, std::int64_t n, unsigned long long arena_buffers, double
     //    first: the constant everywhere, folded).
     {
         a.parallel_for_chunks(0, n, Zero{});
-        for (std::int64_t i = 0; i < n; ++i)
-        {
-            model.write(i, 0.0);
-        }
+        model.write_all_aligned(0.0);
         const unsigned long long expected = model.fold();
         const unsigned long long folds    = a.compress();
         char                     line[160];

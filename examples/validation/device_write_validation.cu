@@ -33,7 +33,7 @@
  *          checked again after the pass.
  */
 
-#include <algorithm> // std::all_of, std::count, std::fill, std::min, std::shuffle
+#include <algorithm> // std::all_of, std::count, std::fill, std::max, std::min, std::shuffle
 #include <cstdint>   // std::int64_t
 #include <cstdio>    // std::printf, std::snprintf
 #include <cstring>   // std::memcmp
@@ -135,16 +135,42 @@ void run(unsigned           seed,
     const double         palette[] = {0.0, -0.0, 1.5, 2.5};
     double*              d_target  = sd::allocate<double>(nn);
     const FromArray      f{d_target};
-    const auto           note = [&](std::int64_t lo, std::int64_t hi)
+    // One Writer::write call on [lo, hi) of chunk c. zero_any: a compressed chunk written whole
+    // with one value takes it as its constant, no buffer (Writer::fold_whole).
+    const auto note_chunk = [&](std::int64_t c, std::int64_t lo, std::int64_t hi)
     {
+        const auto         cc       = static_cast<std::size_t>(c);
+        const std::int64_t valid_hi = std::min<std::int64_t>((c + 1) * S, n);
+        if (V == sd::Variant::zero_any && mat[cc] == 0 && lo <= c * S && hi >= valid_hi)
+        {
+            const double v       = target[static_cast<std::size_t>(c * S)];
+            bool         uniform = true;
+            for (std::int64_t i = c * S; i < valid_hi && uniform; ++i)
+            {
+                uniform = same_bits(target[static_cast<std::size_t>(i)], v);
+            }
+            if (uniform)
+            {
+                std::fill(mirror.begin() + c * S, mirror.begin() + valid_hi, v);
+                cst[cc] = v;
+                return;
+            }
+        }
         for (std::int64_t i = lo; i < hi; ++i)
         {
-            const auto c                        = static_cast<std::size_t>(i / S);
             mirror[static_cast<std::size_t>(i)] = target[static_cast<std::size_t>(i)];
-            if (!same_bits(target[static_cast<std::size_t>(i)], cst[c]))
+            if (!same_bits(target[static_cast<std::size_t>(i)], cst[cc]))
             {
-                mat[c] = 1;
+                mat[cc] = 1;
             }
+        }
+    };
+    // A span split into its chunks, as write_ranges and parallel_for_chunks call Writer::write.
+    const auto note = [&](std::int64_t lo, std::int64_t hi)
+    {
+        for (std::int64_t c = lo / S; c * S < hi; ++c)
+        {
+            note_chunk(c, std::max<std::int64_t>(lo, c * S), std::min<std::int64_t>(hi, (c + 1) * S));
         }
     };
 
