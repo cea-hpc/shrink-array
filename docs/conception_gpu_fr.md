@@ -912,9 +912,59 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   hébergés n'ont pas de GPU. nvcc 13.1 pour sm_75 et sm_90, et ROCm 7.2.4 pour gfx942,
   construisent toutes les validations device et `device_bench` (premier run vert, 25/11/2026).
 
-Suite : la mesure sur le MI300A du dernier changement de la réservation (publier avant
-d'attendre), les mesures de la variante `zero` sur le GH200 et le MI300A ; puis une façade au
-niveau des noyaux (Kokkos, section 13 étape 3).
+**Étape 3, commencée (novembre 2026) : la façade Kokkos.** Les bancs visent les codes Kokkos et
+Arcane, Kokkos d'abord. `chunk/device/kokkos_adaptor.h` : `device::kokkos::Array<T, S, V>`
+possède un `device::Array` ; `write()` donne un accès en écriture (`w(i) = v`, `w(i) += v`, `-=`,
+`*=`, `/=`, `T x = w(i)` : `Writer::assign` / `load` depuis une `KOKKOS_LAMBDA`), `end_write()`
+termine la phase (fence, `finish()`), `read()` donne la `View` d'une phase de lecture,
+`parallel_for_chunks(lo, hi, f)` est la boucle alignée de la bibliothèque (ses propres noyaux :
+les équipes CUDA de Kokkos sont sur `threadIdx.y`), `compress()`, `bytes()` / `arena_bytes()`.
+`-DCHUNK_DEVICE_KOKKOS=ON -DCHUNK_KOKKOS_ARCH=TURING75 | HOPPER90 | AMD_GFX942_APU` récupère
+Kokkos 5.3.0 (SHA-256 épinglé ; `CHUNK_KOKKOS_URL` accepte une archive locale là où le curl de
+CMake n'atteint pas GitHub), compilé pour CUDA ou HIP comme langage CMake, sans rocThrust. Sur le
+MI300A, le compilateur HIP ne doit pas viser GCC 14.1, dont il refuse le `<format>` (`++this` dans
+`bits/unicode.h` ; Kokkos inclut `<chrono>`) : GCC 15 ou 16. `kokkos_validation` passe sur la
+T1000 et le MI300A.
+
+Brancher Kokkos a trouvé quatre défauts de la bibliothèque, corrigés : `Writer::assign` / `load`
+n'étaient que `__device__` (désormais `CHUNK_HD`, un appel hôte avorte ; une branche
+`KOKKOS_IF_ON_DEVICE` dans la lambda de l'appelant ne se lançait pas) ; `lane_id()` valait
+`threadIdx.x % warp_size`, 0 pour toutes les lanes d'un bloc de `RangePolicy` Kokkos (ses threads
+sur y), et l'agrégation par warp ne finissait jamais (désormais la lane matérielle) ; l'arène
+grandissait par petits pas jusqu'à `max_arenas` (désormais d'un quart au moins) ; et l'écriture de
+la constante du chunk après un ajout du même élément par le même thread était perdue, le rejeu
+appliquait la valeur antérieure (MI300A, sommes de contrôle fausses et variables d'un run à
+l'autre ; l'étape 0 de `device_assign_validation` le reproduit sur la T1000).
+
+`examples/kokkos/kokkos_shrink_bench` : le motif d'accès de shrink_bench sur cinq
+`Kokkos::View<double*>` et sur cinq tableaux de la façade, les mêmes noyaux : les bandes
+d'initialisation (`bench_phase_fill.cpp`, par `parallel_for_chunks`), puis à chaque itération une
+fenêtre aléatoire (`bench_phase_compute.cpp` : les écritures avant et après, la fenêtre réécrite,
+20 passes de lecture, 2 passes de lecture-modification-écriture), une remise à zéro toutes les
+iters/10, `compress()` toutes les N. MI300A, 5 x 2^30 doubles, 2000 itérations, fenêtres de 10^5
+(871d5a370) :
+
+| | zero_any | zero |
+|---|---|---|
+| mémoire tenue à la fin / les 42,95 Go des vues | 1,51 Go (3,5 %) | 19,2 Go (44,6 %) |
+| avec les buffers libres des arènes | 1,98 Go (4,6 %) | 22,3 Go (52 %) |
+| initialisation (alignée) | 0,55x | 47,5x |
+| boucle | 2,84x | 2,26x |
+| 20 passes de lecture / 2 passes RMW | 1,00x / 4,44x | 1,01x / 4,14x |
+| écritures autour de la fenêtre / fenêtre réécrite | 36x / 39x | 24x / 19x |
+
+Sommes de contrôle égales à celles des vues. L'initialisation coûtait 23x et les arènes 20 Go
+avant qu'un chunk compressé écrit en entier avec une seule valeur ne la prenne comme constante
+(`Writer::fold_whole`, 7.3). Les petites phases (une fenêtre fait environ 100 chunks par tableau,
+15 us à plat) paient `end_write()` : une lecture des compteurs, le settle, des fences. Depuis ce
+run, `finish()` décide de chaque étape d'après une seule lecture des compteurs, le settle ne visite
+que les chunks publiés frais par la phase (une liste) sans synchronisation, et `write()` ne fait
+plus de fence : T1000, 5 x 2^24, la boucle d'environ 2,0x à 1,24x-1,46x (zero_any) et 1,07x-1,26x
+(zero), sommes égales ; le MI300A à remesurer. L'initialisation de `zero` (47x) refait grandir
+l'arène depuis 1/64 des chunks par étapes : à faire grandir d'un coup.
+
+Suite : le run MI300A du settle par liste ; la croissance à l'initialisation de `zero` ; rendre
+les arènes libres ; le GH200 ; puis Arcane.
 
 ## 14. Risques et questions ouvertes
 

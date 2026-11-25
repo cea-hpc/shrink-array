@@ -870,8 +870,55 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   have no GPU. nvcc 13.1 for sm_75 and sm_90, and ROCm 7.2.4 for gfx942, build every device
   validation and `device_bench` (first run green, 2026-11-25).
 
-Next: the MI300A measurement of the claim's last change (publish before waiting), the GH200 and
-MI300A runs of the `zero` variant; then a kernel-level facade (Kokkos, section 13 stage 3).
+**Stage 3, started (November 2026): the Kokkos facade.** The benchmarks target Kokkos and Arcane
+codes, Kokkos first. `chunk/device/kokkos_adaptor.h`: `device::kokkos::Array<T, S, V>` owns a
+`device::Array`; `write()` gives a write access (`w(i) = v`, `w(i) += v`, `-=`, `*=`, `/=`,
+`T x = w(i)`: `Writer::assign` / `load` from a `KOKKOS_LAMBDA`), `end_write()` ends the phase
+(fence, `finish()`), `read()` gives the `View` of a read phase, `parallel_for_chunks(lo, hi, f)` is
+the library's chunk-aligned loop (its own kernels: Kokkos's CUDA teams sit on `threadIdx.y`),
+`compress()`, `bytes()` / `arena_bytes()`. `-DCHUNK_DEVICE_KOKKOS=ON -DCHUNK_KOKKOS_ARCH=TURING75 |
+HOPPER90 | AMD_GFX942_APU` fetches Kokkos 5.3.0 (SHA-256 pinned; `CHUNK_KOKKOS_URL` takes a local
+tarball where CMake's curl cannot reach GitHub), built for CUDA or HIP as a CMake language, without
+rocThrust. On the MI300A the HIP compiler must not be pointed at GCC 14.1, whose `<format>` it
+rejects (`++this` in `bits/unicode.h`; Kokkos includes `<chrono>`): GCC 15 or 16.
+`kokkos_validation` passes on the T1000 and the MI300A.
+
+Plugging Kokkos in found four faults of the library, now fixed: `Writer::assign` / `load` were
+`__device__` only (now `CHUNK_HD`, a host call aborts; a `KOKKOS_IF_ON_DEVICE` branch in the
+caller's lambda failed to launch); `lane_id()` was `threadIdx.x % warp_size`, 0 for every lane of a
+Kokkos `RangePolicy` block (its threads on y), and the warp aggregation never ended (now the
+hardware lane); the arena grew by small steps until `max_arenas` (now by a quarter at least); and
+a write of the chunk's constant after an append of the same element by the same thread was
+dropped, the replay then applied the older value (MI300A, wrong checksums from run to run;
+`device_assign_validation` step 0 reproduces it on the T1000).
+
+`examples/kokkos/kokkos_shrink_bench`: shrink_bench's access pattern on five
+`Kokkos::View<double*>` and on five facade arrays, the same kernels: the init bands
+(`bench_phase_fill.cpp`, by `parallel_for_chunks`), then per iteration a random window
+(`bench_phase_compute.cpp`: the writes before and after it, the window rewritten, 20 read passes,
+2 read-modify-write passes), a reset every iters/10, `compress()` every N. MI300A, 5 x 2^30
+doubles, 2000 iterations, windows of 10^5 (871d5a370):
+
+| | zero_any | zero |
+|---|---|---|
+| memory held at the end / the views' 42.95 GB | 1.51 GB (3.5%) | 19.2 GB (44.6%) |
+| with the arenas' free buffers | 1.98 GB (4.6%) | 22.3 GB (52%) |
+| init (chunk-aligned) | 0.55x | 47.5x |
+| loop | 2.84x | 2.26x |
+| 20 read passes / 2 read-modify-write passes | 1.00x / 4.44x | 1.01x / 4.14x |
+| writes around the window / window rewritten | 36x / 39x | 24x / 19x |
+
+Checksums equal to the views'. The init had been 23x and the arenas 20 GB until a compressed chunk
+written whole with one value took it as its constant (`Writer::fold_whole`, 7.3). The small phases
+(a window is about 100 chunks an array, 15 us flat) pay `end_write()`: a counter read, the settle,
+fences. Since that run, `finish()` decides every step from one counter read, the settle visits
+the chunks a phase published fresh only (a fresh list) without a synchronisation, and `write()`
+no longer fences: T1000, 5 x 2^24, the loop from about 2.0x to 1.24x-1.46x (zero_any) and
+1.07x-1.26x (zero), checksums equal; the MI300A to measure again. zero's init (47x) regrows the
+arena from 1/64 of the chunks in steps: to grow in one.
+
+Next: the MI300A run of the listed settle; the zero init's growth; giving free arenas back; the
+GH200; then Arcane.
 
 ## 14. Risks and open questions
 
