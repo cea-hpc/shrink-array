@@ -305,6 +305,7 @@ class Array
     void                             replay_appends();
     [[nodiscard]] unsigned long long count_compressed(const std::vector<std::int64_t>& chunks);
     void                             fit_lost_list();
+    void                             grow_arena(unsigned long long more);
     void                             settle();
     void                             reclaim_lost();
     [[nodiscard]] std::size_t        batch_chunks() const noexcept
@@ -329,6 +330,7 @@ class Array
     std::int64_t*       append_index_ = nullptr;
     T*                  append_value_ = nullptr;
     unsigned long long  append_capacity_;
+    unsigned long long  cas_lost_seen_ = 0; ///< cas_lost when finish() last gave the parked buffers back
     DeviceArena<T, S>   arena_;
 };
 
@@ -440,11 +442,25 @@ void Array<T, S, V>::finish()
 
 /// @details The appends first: their replay skips the elements marked in a fresh buffer, and
 ///          settle_fresh clears the marks (docs/gpu_assign.md 3.4, 3.5).
+/// @details One read of the counters first: a phase that left no append, no failed span, no lost
+///          or parked buffer (cas_lost unchanged) and published no fresh buffer has nothing to
+///          finish -- a phase that only wrote into materialised chunks, or the constant onto its
+///          chunks. The full path read them, synchronised and scanned every chunk some eight
+///          times: about 115 us a call on the T1000, which made the small windows of
+///          kokkos_shrink_bench 12x to 38x their flat time.
 template <typename T, unsigned int S, Variant V>
 template <int BLOCK, typename F>
 void Array<T, S, V>::finish_impl(const F* f)
 {
     synchronize();
+    {
+        WriteCounters c{};
+        copy(&c, counters_, 1);
+        if (c.n_append == 0 && c.n_failed == 0 && c.n_lost == 0 && c.fresh == 0 && c.cas_lost == cas_lost_seen_)
+        {
+            return;
+        }
+    }
     replay_appends();
     settle();
     for (;;)
@@ -467,8 +483,7 @@ void Array<T, S, V>::finish_impl(const F* f)
                                      " Writer::write spans to write again: call finish(f)");
         }
         reclaim_lost();
-        arena_.grow(n_spans + n_spans / 4 + 1);
-        fit_lost_list();
+        grow_arena(n_spans + n_spans / 4 + 1);
         Span* spans = allocate<Span>(static_cast<std::size_t>(n_spans));
         copy(spans, failed_, static_cast<std::size_t>(n_spans));
         copy(&c, counters_, 1);
@@ -484,6 +499,9 @@ void Array<T, S, V>::finish_impl(const F* f)
         settle();
     }
     reclaim_lost();
+    WriteCounters c{};
+    copy(&c, counters_, 1);
+    cas_lost_seen_ = c.cas_lost; // its parked buffers given back just above
 }
 
 template <typename T, unsigned int S, Variant V>
@@ -496,6 +514,7 @@ void Array<T, S, V>::settle()
         kernels::settle_fresh<<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(writer(), n_chunks_);
     }
     synchronize();
+    zero(&counters_->fresh, 1); // every fresh buffer settled (a device address, not read here)
 }
 
 template <typename T, unsigned int S, Variant V>
@@ -516,6 +535,19 @@ void Array<T, S, V>::reclaim_lost()
         c.n_lost = 0;
         copy(counters_, &c, 1);
     }
+}
+
+/// @details By @p more buffers, or a quarter of the arena if that is more: a phase that misses a
+///          few buffers would otherwise add an arena each time, and an array whose chunks stay
+///          materialised (the zero variant under constants other than T{}) reached max_arenas
+///          after about 200 small phases (kokkos_shrink_bench). Geometric, the arenas stay
+///          O(log) of the growth. Between phases.
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::grow_arena(unsigned long long more)
+{
+    const unsigned long long quarter = arena_.buffers() / 4;
+    arena_.grow(more > quarter ? more : quarter);
+    fit_lost_list();
 }
 
 /// @details The lost list holds as many buffers as the arena: called after every growth,
@@ -606,8 +638,7 @@ void Array<T, S, V>::replay_appends()
         const unsigned long long free   = arena_.buffers() - arena_.in_use();
         if (needed > free)
         {
-            arena_.grow(needed - free + needed / 4 + 1);
-            fit_lost_list();
+            grow_arena(needed - free + needed / 4 + 1);
         }
         copy(&c, counters_, 1);
         c.n_append = 0;

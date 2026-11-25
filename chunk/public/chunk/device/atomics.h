@@ -88,6 +88,18 @@ __device__ inline P* load_ptr(P* const* slot) noexcept
 #endif
 }
 
+/// @brief A relaxed atomic store (a flag every writer may set: no read-modify-write).
+__device__ inline void store_relaxed(unsigned long long* p, unsigned long long v) noexcept
+{
+#if defined(CHUNK_DEVICE_HIP)
+    __hip_atomic_store(p, v, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+    asm volatile("st.relaxed.gpu.global.u64 [%0], %1;" : : "l"(p), "l"(v) : "memory");
+#else
+    *reinterpret_cast<volatile unsigned long long*>(p) = v;
+#endif
+}
+
 /// @brief Atomic load of a 32-bit word (a bit of the `written` bitmap).
 __device__ inline unsigned load(const unsigned* word) noexcept
 {

@@ -61,8 +61,8 @@
 #include <cstdint> // std::int64_t
 #include <cstdlib> // std::abort (Writer::assign / load called on the host)
 
-#include "chunk/device/arena.h"      // ArenaRef
-#include "chunk/device/atomics.h"    // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
+#include "chunk/device/arena.h"   // ArenaRef
+#include "chunk/device/atomics.h" // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr, store_relaxed
 #include "chunk/device/chunk_desc.h" // ChunkDesc, Variant, constant_of, busy_mark, is_fresh, tag_fresh, untag
 #include "chunk/device/warp.h" // ballot, group_by_key, lane_id, global_warp_id, active_lanes, shuffle_ptr, sync_lanes
 #include "chunk/internal/host_device.h" // CHUNK_HD
@@ -88,6 +88,9 @@ struct WriteCounters
     unsigned long long n_append;   ///< entries of the append-buffer (past its capacity: writes lost)
     unsigned long long claim_wait; ///< assign() calls that waited for another thread's claim
     unsigned long long claim_spin; ///< waits given up at the bound (the write was appended)
+    /// Nonzero once the phase published a fresh buffer (a relaxed store, not a count): finish()
+    /// settles only then.
+    unsigned long long fresh;
 };
 
 /// Polls of a claimed descriptor before an assign() gives up and appends (docs/gpu_assign.md
@@ -396,6 +399,10 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
             fetch_add(&counters->cas_lost, 1ULL);
             park(mine);
         }
+        else if (!whole)
+        {
+            store_relaxed(&counters->fresh, 1ULL);
+        }
         s_buf = found != nullptr ? found : published;
     }
     __syncthreads();
@@ -523,6 +530,10 @@ __device__ T* Writer<T, S, V>::publish(std::int64_t c, ChunkDesc<T, V>& d) const
     T* const mine = arena.take(c);
     T* const publ = mine != nullptr ? tag_fresh(mine) : nullptr;
     (void)exchange_ptr(&d.buf, publ);
+    if (publ != nullptr)
+    {
+        store_relaxed(&counters->fresh, 1ULL);
+    }
     return publ;
 }
 
