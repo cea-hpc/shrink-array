@@ -836,6 +836,14 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   `assign()` into materialised chunks, 1.67x against 1.97x at S = 1024 (2.14x against 2.22x at
   S = 256): a random access loads its descriptor, half the size. The read of a compressed array
   does not change there (0.45x): the descriptors stay in the cache at that size.
+  MI300A, 8 GiB (bb4207da2), zero against zero_any at S = 256 / 1024: the read of a compressed
+  array 0.38x / 0.35x the flat read against 0.65x / 0.62x (-42% / -44%: the read is a descriptor
+  load, 32 MB of them against 64 MB at S = 256), `compress()`'s scan -24% / -16%, the
+  chunk-aligned write into materialised chunks 2.09x / 1.09x against 2.15x / 1.27x, its first
+  write 4.70x / 1.65x against 5.07x / 1.75x, the range rewrites with `compress()` -8%; the read
+  of a materialised array, `+=` and the scattered writes into materialised chunks do not move
+  (their buffers dominate). At S = 256 the write into materialised chunks stays past the 2x
+  criterion in both variants.
 
 Next: the MI300A measurement of the claim's last change (publish before waiting), the GH200 and
 MI300A runs of the `zero` variant; then a kernel-level facade (Kokkos, section 13 stage 3).

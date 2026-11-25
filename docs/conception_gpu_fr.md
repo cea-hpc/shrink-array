@@ -875,7 +875,15 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   pour `assign()` dispersé dans des chunks matérialisés, 1,67x contre 1,97x à S = 1024 (2,14x
   contre 2,22x à S = 256) : un accès aléatoire charge son descripteur, deux fois plus petit. La
   lecture d'un tableau compressé ne change pas (0,45x) : à cette taille les descripteurs restent
-  dans le cache.
+  dans le cache. MI300A, 8 Gio (bb4207da2), zero contre zero_any à S = 256 / 1024 : la lecture
+  d'un tableau compressé 0,38x / 0,35x la lecture plate contre 0,65x / 0,62x (-42 % / -44 % : la
+  lecture est un chargement de descripteur, 32 Mo de descripteurs contre 64 Mo à S = 256), le
+  balayage de `compress()` -24 % / -16 %, l'écriture alignée dans des chunks matérialisés 2,09x /
+  1,09x contre 2,15x / 1,27x, sa première écriture 4,70x / 1,65x contre 5,07x / 1,75x, les
+  réécritures de plages avec `compress()` -8 % ; la lecture d'un tableau matérialisé, `+=` et
+  les écritures dispersées dans des chunks matérialisés ne bougent pas (leurs buffers dominent).
+  À S = 256 l'écriture dans des chunks matérialisés reste au-delà du critère de 2x dans les deux
+  variantes.
 
 Suite : la mesure sur le MI300A du dernier changement de la réservation (publier avant
 d'attendre), les mesures de la variante `zero` sur le GH200 et le MI300A ; puis une façade au
