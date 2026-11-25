@@ -183,6 +183,16 @@ elect a leader, which claims or waits; `group_by_key`, `warp.h`) the waits drop 
 T1000 and its grid-stride first write goes from 7.31x / 6.22x to 4.80x / 5.04x; the scattered
 writes do not change.
 
+MI300A, 8 GiB, S = 256 / 1024, with aggregation and the three-phase claim (491a05a87, two runs
+within 3%): into materialised chunks 1.78x / 1.60x, `+=` 0.97x / 0.94x, scattered into
+materialised chunks 1.08x / 1.05x and as a first write 1.69x / 1.47x (against the flat scattered
+write), the grid-stride first write 57x / 42x (the prototype's claim: 433x to 541x). No wait
+given up (0.3% before the three phases) and no arena growth, in the bench as in
+`device_assign_validation`. The grid-stride first write is still the hard case: about 3 waits
+per chunk at S = 256 and 9 at S = 1024, the other wavefronts of the chunk waiting for the
+winner's publication, which the cross-XCD atomics make long; warp aggregation does not group
+distinct wavefronts. Regular loops take the chunk-aligned path (1.75x at S = 1024).
+
 Added to `device_bench`: grid-stride first write by `assign()`, scattered writes (a random
 permutation of the indices), `+=` on a materialised array, range rewrites by `assign()`. Each
 with and without warp aggregation, and with one atomic or per element against one per 32 lanes

@@ -846,8 +846,18 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
 
 - `Writer::assign` / `load`, `Array::finish()` : les écritures à indices quelconques sans acquire
   ni release à l'échelle du device, conçues et mesurées dans [gpu_assign_fr.md](gpu_assign_fr.md) ;
-  `device_assign_validation` passe sur la T1000. L'agrégation par warp des réservations a suivi
-  (gpu_assign_fr.md, section 5).
+  `device_assign_validation` passe sur la T1000 et le MI300A. L'agrégation par warp des
+  réservations a suivi (gpu_assign_fr.md, section 5 : sur le MI300A aucune attente abandonnée,
+  écritures dispersées 1,05x à 1,69x l'écriture dispersée plate, première écriture en
+  grid-stride 57x / 42x à S = 256 / 1024).
+
+  Nouveau passage du banc complet sur le MI300A (491a05a87, 8 Gio) : par rapport au tableau du
+  24/11/2026, la première écriture alignée 5,07x / 1,75x (contre 4,33x / 1,60x) et l'écriture
+  dans des chunks matérialisés 2,15x / 1,27x (contre 2,02x / 1,21x ; au-delà du critère à
+  S = 256), la lecture 1,33x / 1,31x, `compress()` de 10 Go 4,7 / 3,6 ms. La perte de 6 % à
+  17 % du chemin aligné est à mesurer contre 407674ad5 (avant `assign()` ; `Writer::write` attend
+  désormais une réservation). La conversion : 3,5 Go/s pour `assign()`, 1,5 Go/s pour `image()`
+  (0,25 Gio ; à 1 Gio le job a manqué de mémoire hôte), pas optimisée.
 
 - La variante `zero` (8.1) : `Variant` (`chunk_desc.h`), un paramètre template de `ChunkDesc`,
   `View`, `Writer` et `Array`, `zero_any` par défaut. `ChunkDesc<T, Variant::zero>` ne contient

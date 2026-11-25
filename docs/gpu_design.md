@@ -808,8 +808,18 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
 
 - `Writer::assign` / `load`, `Array::finish()`: the writes at arbitrary indices without
   device-scope acquire or release, designed and measured in [gpu_assign.md](gpu_assign.md);
-  `device_assign_validation` passes on the T1000. The warp aggregation of the claims followed
-  (gpu_assign.md, section 5).
+  `device_assign_validation` passes on the T1000 and the MI300A. The warp aggregation of the
+  claims followed (gpu_assign.md, section 5: on the MI300A no wait given up, scattered writes
+  1.05x to 1.69x the flat scattered write, the grid-stride first write 57x / 42x at S = 256 /
+  1024).
+
+  MI300A rerun of the whole bench (491a05a87, 8 GiB): against the 2026-11-24 table, the
+  chunk-aligned first write 5.07x / 1.75x (was 4.33x / 1.60x) and the write into materialised
+  chunks 2.15x / 1.27x (was 2.02x / 1.21x; past the criterion at S = 256), read 1.33x / 1.31x,
+  `compress()` of 10 GB 4.7 / 3.6 ms. The 6% to 17% loss of the chunk-aligned path is to be
+  measured against 407674ad5 (before `assign()`; `Writer::write` now waits for a claim). The
+  conversion: 3.5 GB/s for `assign()`, 1.5 GB/s for `image()` (0.25 GiB; at 1 GiB the job ran
+  out of host memory), not tuned.
 
 - The `zero` variant (8.1): `Variant` (`chunk_desc.h`), a template parameter of `ChunkDesc`,
   `View`, `Writer` and `Array`, `zero_any` by default. `ChunkDesc<T, Variant::zero>` holds the

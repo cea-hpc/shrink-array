@@ -195,6 +195,17 @@ warp (les lanes actives sur un même chunk élisent une meneuse, qui réserve ou
 écriture en grid-stride passe de 7,31x / 6,22x à 4,80x / 5,04x ; les écritures dispersées ne
 changent pas.
 
+MI300A, 8 Gio, S = 256 / 1024, avec l'agrégation et la réservation en trois phases (491a05a87,
+deux runs à 3 % près) : dans des chunks matérialisés 1,78x / 1,60x, `+=` 0,97x / 0,94x, dispersé
+dans des chunks matérialisés 1,08x / 1,05x et en première écriture 1,69x / 1,47x (contre
+l'écriture dispersée plate), la première écriture en grid-stride 57x / 42x (la réservation du
+prototype : 433x à 541x). Aucune attente abandonnée (0,3 % avant les trois phases) et aucune
+croissance d'arène, dans le banc comme dans `device_assign_validation`. La première écriture en
+grid-stride reste le cas difficile : environ 3 attentes par chunk à S = 256 et 9 à S = 1024, les
+autres wavefronts du chunk attendant la publication de la gagnante, que les atomiques entre XCD
+rendent longue ; l'agrégation par warp ne regroupe pas des wavefronts distincts. Les boucles
+régulières prennent le chemin aligné (1,75x à S = 1024).
+
 Ajouts à `device_bench` : première écriture en grid-stride par `assign()`, écritures dispersées
 (une permutation aléatoire des indices), `+=` sur un tableau matérialisé, réécritures de plages
 par `assign()`. Chacun avec et sans agrégation par warp, et avec un or atomique par élément contre
