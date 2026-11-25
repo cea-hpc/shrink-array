@@ -475,13 +475,17 @@ __device__ T** Writer<T, S, V>::spare_slot() const noexcept
     return spare + ((thread / warp_size) & (spare_slots - 1));
 }
 
-/// @brief A buffer for chunk @p c: the warp's spare one, else one from the arena; nullptr when
-///        the arena is exhausted.
+/// @brief A buffer for chunk @p c: one from the arena, else the warp's spare one once the arena
+///        is exhausted; nullptr when neither has one.
+/// @details The arena first: the spare slot is almost always empty, and trying it first cost
+///          every materialisation one more device-scope atomic (MI300A, 8 GiB: the first
+///          chunk-aligned write +13% / +7% at S = 256 / 1024 against 407674ad5). The parked
+///          buffers go back to the arena at Array::finish() anyway.
 template <typename T, unsigned int S, Variant V>
 __device__ T* Writer<T, S, V>::take_buffer(std::int64_t c) const noexcept
 {
-    T* const mine = spare_slots != 0 ? exchange_ptr(spare_slot(), static_cast<T*>(nullptr)) : nullptr;
-    return mine != nullptr ? mine : arena.take(c);
+    T* const mine = arena.take(c);
+    return mine != nullptr || spare_slots == 0 ? mine : exchange_ptr(spare_slot(), static_cast<T*>(nullptr));
 }
 
 /// @brief The buffer of a lost publication into the warp's spare slot; the one it evicts, if
