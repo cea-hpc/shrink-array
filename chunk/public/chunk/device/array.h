@@ -453,17 +453,26 @@ template <int BLOCK, typename F>
 void Array<T, S, V>::finish_impl(const F* f)
 {
     synchronize();
+    WriteCounters first{};
+    copy(&first, counters_, 1);
+    const bool parked = first.n_lost != 0 || first.cas_lost != cas_lost_seen_;
+    if (first.n_append == 0 && first.n_failed == 0 && !parked && first.fresh == 0)
     {
-        WriteCounters c{};
-        copy(&c, counters_, 1);
-        if (c.n_append == 0 && c.n_failed == 0 && c.n_lost == 0 && c.fresh == 0 && c.cas_lost == cas_lost_seen_)
-        {
-            return;
-        }
+        return;
     }
-    replay_appends();
-    settle();
-    for (;;)
+    // Each step from that one read: a phase that only published fresh buffers (the writes of
+    // kokkos_shrink_bench's windows) costs one copy, the settle and one synchronisation, not
+    // the five copies, three kernels and three synchronisations of every step in turn (MI300A:
+    // 37x to 57x the flat time for those phases).
+    if (first.n_append != 0)
+    {
+        replay_appends(); // its assign() calls may publish fresh buffers: settled just below
+    }
+    if (first.fresh != 0 || first.n_append != 0)
+    {
+        settle();
+    }
+    while (first.n_failed != 0) // left by its break once the spans are all written
     {
         WriteCounters c{};
         copy(&c, counters_, 1);
@@ -498,10 +507,13 @@ void Array<T, S, V>::finish_impl(const F* f)
         release(spans);
         settle();
     }
-    reclaim_lost();
-    WriteCounters c{};
-    copy(&c, counters_, 1);
-    cas_lost_seen_ = c.cas_lost; // its parked buffers given back just above
+    if (parked || first.n_failed != 0 || first.n_append != 0)
+    {
+        reclaim_lost(); // the lost list and the spare slots back to the arena
+        WriteCounters c{};
+        copy(&c, counters_, 1);
+        cas_lost_seen_ = c.cas_lost;
+    }
 }
 
 template <typename T, unsigned int S, Variant V>
