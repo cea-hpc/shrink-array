@@ -850,6 +850,10 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   (their buffers dominate). At S = 256 the write into materialised chunks stays past the 2x
   criterion in both variants.
 
+- CI (`.github/workflows/device.yml`, on the `gpu` branch): compilation only, the hosted runners
+  have no GPU. nvcc 13.1 for sm_75 and sm_90, and ROCm 7.2.4 for gfx942, build every device
+  validation and `device_bench` (first run green, 2026-11-25).
+
 Next: the MI300A measurement of the claim's last change (publish before waiting), the GH200 and
 MI300A runs of the `zero` variant; then a kernel-level facade (Kokkos, section 13 stage 3).
 

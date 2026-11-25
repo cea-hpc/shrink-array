@@ -891,6 +891,10 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   À S = 256 l'écriture dans des chunks matérialisés reste au-delà du critère de 2x dans les deux
   variantes.
 
+- CI (`.github/workflows/device.yml`, sur la branche `gpu`) : compilation seule, les runners
+  hébergés n'ont pas de GPU. nvcc 13.1 pour sm_75 et sm_90, et ROCm 7.2.4 pour gfx942,
+  construisent toutes les validations device et `device_bench` (premier run vert, 25/11/2026).
+
 Suite : la mesure sur le MI300A du dernier changement de la réservation (publier avant
 d'attendre), les mesures de la variante `zero` sur le GH200 et le MI300A ; puis une façade au
 niveau des noyaux (Kokkos, section 13 étape 3).
