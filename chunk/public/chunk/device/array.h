@@ -307,6 +307,7 @@ class Array
     void                             fit_lost_list();
     void                             grow_arena(unsigned long long more);
     void                             settle();
+    void                             settle_listed(unsigned long long count);
     void                             reclaim_lost();
     [[nodiscard]] std::size_t        batch_chunks() const noexcept
     {
@@ -316,11 +317,12 @@ class Array
 
     std::int64_t     n_;
     std::int64_t     n_chunks_;
-    ChunkDesc<T, V>* desc_     = nullptr;
-    unsigned*        written_  = nullptr;
-    Span*            failed_   = nullptr;
-    T**              lost_     = nullptr;
-    WriteCounters*   counters_ = nullptr;
+    ChunkDesc<T, V>* desc_       = nullptr;
+    unsigned*        written_    = nullptr;
+    Span*            failed_     = nullptr;
+    T**              lost_       = nullptr;
+    std::int64_t*    fresh_list_ = nullptr; ///< as many entries as the arena has buffers (fit_lost_list)
+    WriteCounters*   counters_   = nullptr;
     /// One counter for compress() and materialised(), allocated once instead of a device
     /// allocation and free per call.
     unsigned long long* scratch_ = nullptr;
@@ -383,6 +385,7 @@ Array<T, S, V>::~Array()
     release(written_);
     release(failed_);
     release(lost_);
+    release(fresh_list_);
     release(counters_);
     release(scratch_);
     release(spare_);
@@ -400,6 +403,8 @@ template <typename T, unsigned int S, Variant V>
     w.written         = written_;
     w.lost            = lost_;
     w.lost_capacity   = lost_capacity_;
+    w.fresh_list      = fresh_list_;
+    w.fresh_capacity  = lost_capacity_;
     w.failed          = failed_;
     w.failed_capacity = failed_capacity_;
     w.counters        = counters_;
@@ -468,9 +473,13 @@ void Array<T, S, V>::finish_impl(const F* f)
     {
         replay_appends(); // its assign() calls may publish fresh buffers: settled just below
     }
-    if (first.fresh != 0 || first.n_append != 0)
+    if (first.n_append != 0)
     {
-        settle();
+        settle(); // the replay may have published fresh buffers: not counted in `first`
+    }
+    else if (first.fresh != 0)
+    {
+        settle_listed(first.fresh);
     }
     while (first.n_failed != 0) // left by its break once the spans are all written
     {
@@ -529,6 +538,24 @@ void Array<T, S, V>::settle()
     zero(&counters_->fresh, 1); // every fresh buffer settled (a device address, not read here)
 }
 
+/// @details The chunks of the first @p count fresh publications only, from the fresh list (a
+///          scan if it overflowed). No synchronisation: the next kernels, the library's and
+///          Kokkos's (its streams wait for the default one), run after it on the device, and a
+///          read on the host copies after it.
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::settle_listed(unsigned long long count)
+{
+    if (count > lost_capacity_)
+    {
+        settle();
+        return;
+    }
+    const unsigned long long warps_per_block = 256 / warp_size;
+    const unsigned long long blocks          = (count + warps_per_block - 1) / warps_per_block;
+    kernels::settle_listed<<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(writer(), count);
+    zero(&counters_->fresh, 1);
+}
+
 template <typename T, unsigned int S, Variant V>
 void Array<T, S, V>::reclaim_lost()
 {
@@ -572,8 +599,10 @@ void Array<T, S, V>::fit_lost_list()
         return;
     }
     release(lost_);
+    release(fresh_list_);
     lost_capacity_ = arena_.buffers() > 0 ? arena_.buffers() : 1;
     lost_          = allocate<T*>(static_cast<std::size_t>(lost_capacity_));
+    fresh_list_    = allocate<std::int64_t>(static_cast<std::size_t>(lost_capacity_));
 }
 
 /// @brief Chunks of @p chunks whose descriptor holds no buffer (between phases).

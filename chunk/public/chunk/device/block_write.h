@@ -61,8 +61,8 @@
 #include <cstdint> // std::int64_t
 #include <cstdlib> // std::abort (Writer::assign / load called on the host)
 
-#include "chunk/device/arena.h"   // ArenaRef
-#include "chunk/device/atomics.h" // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr, store_relaxed
+#include "chunk/device/arena.h"      // ArenaRef
+#include "chunk/device/atomics.h"    // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
 #include "chunk/device/chunk_desc.h" // ChunkDesc, Variant, constant_of, busy_mark, is_fresh, tag_fresh, untag
 #include "chunk/device/warp.h" // ballot, group_by_key, lane_id, global_warp_id, active_lanes, shuffle_ptr, sync_lanes
 #include "chunk/internal/host_device.h" // CHUNK_HD
@@ -88,8 +88,8 @@ struct WriteCounters
     unsigned long long n_append;   ///< entries of the append-buffer (past its capacity: writes lost)
     unsigned long long claim_wait; ///< assign() calls that waited for another thread's claim
     unsigned long long claim_spin; ///< waits given up at the bound (the write was appended)
-    /// Nonzero once the phase published a fresh buffer (a relaxed store, not a count): finish()
-    /// settles only then.
+    /// Fresh buffers the phase published, their chunks in Writer::fresh_list (past its capacity:
+    /// the settle scans every chunk). finish() settles only when nonzero.
     unsigned long long fresh;
 };
 
@@ -128,6 +128,8 @@ struct Writer
     std::int64_t*      append_index    = nullptr; ///< append-buffer: element indices
     T*                 append_value    = nullptr; ///< append-buffer: values
     unsigned long long append_capacity = 0;
+    std::int64_t*      fresh_list      = nullptr; ///< the chunks of the fresh publications, in order
+    unsigned long long fresh_capacity  = 0;
 
     /**
      * @brief a(i) = v, from any thread of a write kernel (docs/gpu_assign.md): no
@@ -180,6 +182,7 @@ struct Writer
     __device__ T*              wait_claim(ChunkDesc<T, V>& d, T* found) const noexcept;
     __device__ T*              materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen) const noexcept;
     __device__ void            append(std::int64_t i, T v) const noexcept;
+    __device__ void            note_fresh(std::int64_t c) const noexcept;
     [[nodiscard]] __device__ T appended_or(std::int64_t i, T otherwise) const noexcept;
 };
 
@@ -210,8 +213,40 @@ __global__ void __launch_bounds__(BLOCK) rewrite_spans(Writer<T, S, V> w, const 
     }
 }
 
-/// @brief Each fresh buffer: the constant where no bit is set, the bitmap cleared, the tag
-///        removed. One warp per chunk, grid-stride.
+/// @brief Chunk @p c, if its buffer is fresh: the constant where no bit is set, the bitmap
+///        cleared, the tag removed. Every lane of a warp calls it with the same c.
+template <typename T, unsigned int S, Variant V>
+__device__ void settle_chunk(const Writer<T, S, V>& w, std::int64_t c, int lane)
+{
+    ChunkDesc<T, V>& d   = w.desc[c];
+    T* const         buf = d.buf;
+    if (!is_fresh(buf))
+    {
+        return; // uniform per warp
+    }
+    T* const        p        = untag(buf);
+    const T         constant = constant_of(d);
+    unsigned* const bits     = w.written + c * Writer<T, S, V>::words;
+    for (unsigned int e = static_cast<unsigned int>(lane); e < S; e += warp_size)
+    {
+        if (((bits[e >> 5] >> (e & 31)) & 1U) == 0)
+        {
+            p[e] = constant;
+        }
+    }
+    sync_lanes(full_warp); // every lane has read the bitmap
+    for (unsigned int k = static_cast<unsigned int>(lane); k < Writer<T, S, V>::words; k += warp_size)
+    {
+        bits[k] = 0;
+    }
+    if (lane == 0)
+    {
+        d.buf = p;
+    }
+}
+
+/// @brief Every fresh buffer of the array, found by a scan of the descriptors: one warp per
+///        chunk, grid-stride (the fresh list overflowed, or the count is not known here).
 template <typename T, unsigned int S, Variant V>
 __global__ void settle_fresh(Writer<T, S, V> w, std::int64_t n_chunks)
 {
@@ -220,31 +255,21 @@ __global__ void settle_fresh(Writer<T, S, V> w, std::int64_t n_chunks)
     const std::int64_t first = (blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x) / warp_size;
     for (std::int64_t c = first; c < n_chunks; c += warps)
     {
-        ChunkDesc<T, V>& d   = w.desc[c];
-        T* const         buf = d.buf;
-        if (!is_fresh(buf))
-        {
-            continue; // uniform per warp
-        }
-        T* const        p        = untag(buf);
-        const T         constant = constant_of(d);
-        unsigned* const bits     = w.written + c * Writer<T, S, V>::words;
-        for (unsigned int e = static_cast<unsigned int>(lane); e < S; e += warp_size)
-        {
-            if (((bits[e >> 5] >> (e & 31)) & 1U) == 0)
-            {
-                p[e] = constant;
-            }
-        }
-        sync_lanes(full_warp); // every lane has read the bitmap
-        for (unsigned int k = static_cast<unsigned int>(lane); k < Writer<T, S, V>::words; k += warp_size)
-        {
-            bits[k] = 0;
-        }
-        if (lane == 0)
-        {
-            d.buf = p;
-        }
+        settle_chunk(w, c, lane);
+    }
+}
+
+/// @brief The fresh buffers of the fresh list's first @p count entries: one warp per entry.
+template <typename T, unsigned int S, Variant V>
+__global__ void settle_listed(Writer<T, S, V> w, unsigned long long count)
+{
+    const int                lane  = lane_id();
+    const unsigned long long warps = static_cast<unsigned long long>(gridDim.x) * (blockDim.x / warp_size);
+    const unsigned long long first =
+        (blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x) / warp_size;
+    for (unsigned long long k = first; k < count; k += warps)
+    {
+        settle_chunk(w, w.fresh_list[k], lane);
     }
 }
 
@@ -411,7 +436,7 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
         }
         else if (!whole)
         {
-            store_relaxed(&counters->fresh, 1ULL);
+            note_fresh(c);
         }
         s_buf = found != nullptr ? found : published;
     }
@@ -594,7 +619,7 @@ __device__ T* Writer<T, S, V>::publish(std::int64_t c, ChunkDesc<T, V>& d) const
     (void)exchange_ptr(&d.buf, publ);
     if (publ != nullptr)
     {
-        store_relaxed(&counters->fresh, 1ULL);
+        note_fresh(c); // after the publication: no waiter waits for it
     }
     return publ;
 }
@@ -661,6 +686,21 @@ __device__ T* Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, 
         got = wait_claim(d, found);
     }
     return shuffle_ptr(active, got, leader);
+}
+
+/// @details Chunk @p c, just published fresh, into the fresh list: settle() then visits the
+///          listed chunks only, not every chunk of the array (a scan of a million descriptors
+///          and its launch, per array and per phase, on the MI300A's 2^30 elements). Past the
+///          list's capacity -- the arena's buffers, which a phase cannot publish more of -- the
+///          count alone goes on and the settle scans.
+template <typename T, unsigned int S, Variant V>
+__device__ void Writer<T, S, V>::note_fresh(std::int64_t c) const noexcept
+{
+    const unsigned long long k = fetch_add(&counters->fresh, 1ULL);
+    if (k < fresh_capacity)
+    {
+        fresh_list[k] = c;
+    }
 }
 
 template <typename T, unsigned int S, Variant V>
