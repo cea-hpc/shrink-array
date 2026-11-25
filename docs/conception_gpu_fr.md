@@ -855,8 +855,14 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   24/11/2026, la première écriture alignée 5,07x / 1,75x (contre 4,33x / 1,60x) et l'écriture
   dans des chunks matérialisés 2,15x / 1,27x (contre 2,02x / 1,21x ; au-delà du critère à
   S = 256), la lecture 1,33x / 1,31x, `compress()` de 10 Go 4,7 / 3,6 ms. La perte de 6 % à
-  17 % du chemin aligné est à mesurer contre 407674ad5 (avant `assign()` ; `Writer::write` attend
-  désormais une réservation). La conversion : 3,5 Go/s pour `assign()`, 1,5 Go/s pour `image()`
+  17 % du chemin aligné, mesurée contre 407674ad5 (avant `assign()`) sur un même créneau, est en
+  partie l'écart du nœud d'un jour à l'autre (407674ad5 lui-même : 4,46x / 1,64x, et 2,08x pour
+  l'écriture dans des chunks matérialisés à S = 256, déjà au-delà du critère) ; le reste était
+  réel sur les écritures qui matérialisent, +13 % / +7 % sur la première écriture, une atomique
+  device de plus par prise (l'emplacement de réserve essayé avant l'arène). Avec l'arène d'abord
+  (fb14a408d) : 9,64 / 3,47 ms contre 9,41 / 3,44 ms avant `assign()`, les réécritures de plages
+  égales ; l'écriture dans des chunks matérialisés garde +2 % à +3,5 % (le contrôle d'une
+  réservation `assign()`). La conversion : 3,5 Go/s pour `assign()`, 1,5 Go/s pour `image()`
   (0,25 Gio ; à 1 Gio le job a manqué de mémoire hôte), pas optimisée.
 
 - La variante `zero` (8.1) : `Variant` (`chunk_desc.h`), un paramètre template de `ChunkDesc`,

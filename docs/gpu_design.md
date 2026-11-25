@@ -816,8 +816,13 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   MI300A rerun of the whole bench (491a05a87, 8 GiB): against the 2026-11-24 table, the
   chunk-aligned first write 5.07x / 1.75x (was 4.33x / 1.60x) and the write into materialised
   chunks 2.15x / 1.27x (was 2.02x / 1.21x; past the criterion at S = 256), read 1.33x / 1.31x,
-  `compress()` of 10 GB 4.7 / 3.6 ms. The 6% to 17% loss of the chunk-aligned path is to be
-  measured against 407674ad5 (before `assign()`; `Writer::write` now waits for a claim). The
+  `compress()` of 10 GB 4.7 / 3.6 ms. Measured against 407674ad5 (before `assign()`) in one
+  slot, part of that gap is the node's day to day (407674ad5 itself: 4.46x / 1.64x, and 2.08x
+  for the write into materialised chunks at S = 256, already past the criterion); the rest was
+  real on the materialising writes, +13% / +7% on the first write, from one more device-scope
+  atomic per take (the spare slot tried before the arena). With the arena first (fb14a408d):
+  9.64 / 3.47 ms against 9.41 / 3.44 ms before `assign()`, the range rewrites equal; the write
+  into materialised chunks keeps +2% to +3.5% (the check for an `assign()` claim). The
   conversion: 3.5 GB/s for `assign()`, 1.5 GB/s for `image()` (0.25 GiB; at 1 GiB the job ran
   out of host memory), not tuned.
 
