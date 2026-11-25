@@ -386,8 +386,20 @@ inline constexpr bool tsan_build = false;
  *          architectures (x86: the acquire is a plain load already).
  *          Measurement first: access_cost with and without it, on Grace.
  */
+// EXPERIMENT mode 7: the dependency-ordered entry by default under clang, on the two
+// architectures the model checks (formal/optimistic_read.c: ARMv8, TSO). clang keeps an
+// OpenMP reduction variable in memory across an acquire load (Grace: 2.40 -> 1.17 ns per
+// read with it); gcc reads faster with the acquire entry (1.38 against 1.53), so it keeps
+// it. An explicit -DCHUNK_READ_DEP_ORDER=0|1 wins.
+#if !defined(CHUNK_READ_DEP_ORDER) && defined(CHUNK_READ_SECTION_MODE) && CHUNK_READ_SECTION_MODE == 7 && \
+    defined(__clang__) && (defined(__aarch64__) || defined(__x86_64__))
+    #define CHUNK_READ_DEP_ORDER 1
+    #define CHUNK_READ_DEP_ORDER_AUTO 1
+#endif
 // EXPERIMENT: CHUNK_READ_DEP_ORDER_ANY_ARCH lifts the AArch64 restriction (clang x86: the spilled reduction)
-#if defined(CHUNK_READ_DEP_ORDER) && CHUNK_READ_DEP_ORDER && (defined(__aarch64__) || defined(CHUNK_READ_DEP_ORDER_ANY_ARCH)) && !defined(CHUNK_TSAN_BUILD)
+#if defined(CHUNK_READ_DEP_ORDER) && CHUNK_READ_DEP_ORDER && \
+    (defined(__aarch64__) || defined(CHUNK_READ_DEP_ORDER_ANY_ARCH) || defined(CHUNK_READ_DEP_ORDER_AUTO)) && \
+    !defined(CHUNK_TSAN_BUILD)
 inline constexpr bool read_dep_order = true;
 #else
 inline constexpr bool read_dep_order = false;

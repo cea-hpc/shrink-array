@@ -501,7 +501,7 @@ T zero_or_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                     test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
                     // raw-read: inside a read_reclaim::ReadSection
                     same = live == chunk_.second_value_ptr(BaseSpec::idx_) ||
-                           same_value(live[elem_offset_], second_value_);
+                           same_value(live[elem_offset_], second_value_); // raw-read: inside a read_reclaim::ReadSection
                 } while (section.retry_after(same));
                 if (same)
                 {

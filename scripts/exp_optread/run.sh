@@ -10,7 +10,7 @@
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC=${SRC:-$(cd "$HERE/../.." && pwd)}
-WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread9}
+WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread10}
 THREADS=${THREADS:-1,72}
 N=${N:-33554432}
 JOBS=${JOBS:-32}
@@ -42,8 +42,8 @@ load_env() {
 }
 
 # CONFIGS: <compiler>:<mode>[d], d = also -DCHUNK_READ_DEP_ORDER=1 (relaxed `values` load, AArch64)
-CONFIGS=${CONFIGS:-"gcc:0 gcc:7 gcc:7d llvm:0 llvm:7 llvm:7d"}
-ROUNDS=${ROUNDS:-2}
+CONFIGS=${CONFIGS:-"gcc:0 gcc:7 llvm:0 llvm:7"}
+ROUNDS=${ROUNDS:-3}
 LOOP_SYM=_ZN12_GLOBAL__N_18arr_readERN12shrink_array13zero_or_value5ArrayIdiEEi._omp_fn.0
 for cfg in $CONFIGS; do
   (

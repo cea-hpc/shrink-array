@@ -562,7 +562,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          not been applied. Use read_pure() unless you know otherwise.
     [[nodiscard]] T load_value() const noexcept
     {
-        return chunk_.read_value(elem_offset_);
+        // EXPERIMENT: every caller runs inside the write session (the compound / rmw
+        // bodies, the pre-marking check): no ReadSection needed (read_value_in_session).
+        return chunk_.read_value_in_session(elem_offset_);
     }
 
     /**
