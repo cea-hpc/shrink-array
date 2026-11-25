@@ -61,10 +61,10 @@
 #include <cstdint> // std::int64_t
 #include <cstdlib> // std::abort (Writer::assign / load called on the host)
 
-#include "chunk/device/arena.h"         // ArenaRef
-#include "chunk/device/atomics.h"       // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
-#include "chunk/device/chunk_desc.h"    // ChunkDesc, Variant, constant_of, busy_mark, is_fresh, tag_fresh, untag
-#include "chunk/device/warp.h"          // ballot, group_by_key, lane_id, active_lanes, shuffle_ptr, sync_lanes
+#include "chunk/device/arena.h"      // ArenaRef
+#include "chunk/device/atomics.h"    // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
+#include "chunk/device/chunk_desc.h" // ChunkDesc, Variant, constant_of, busy_mark, is_fresh, tag_fresh, untag
+#include "chunk/device/warp.h" // ballot, group_by_key, lane_id, global_warp_id, active_lanes, shuffle_ptr, sync_lanes
 #include "chunk/internal/host_device.h" // CHUNK_HD
 #include "chunk/internal/same_value.h"  // same_value
 
@@ -480,8 +480,7 @@ Writer<T, S, V>::write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64
 template <typename T, unsigned int S, Variant V>
 __device__ T** Writer<T, S, V>::spare_slot() const noexcept
 {
-    const unsigned long long thread = blockIdx.x * static_cast<unsigned long long>(blockDim.x) + threadIdx.x;
-    return spare + ((thread / warp_size) & (spare_slots - 1));
+    return spare + (global_warp_id() & (spare_slots - 1)); // any block shape: a caller's kernel
 }
 
 /// @brief A buffer for chunk @p c: one from the arena, else the warp's spare one once the arena

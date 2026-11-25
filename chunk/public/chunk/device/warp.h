@@ -44,10 +44,33 @@ using LaneMask = std::uint32_t;
 /// lanes may have left at different iterations (active_lanes() may then see only some).
 inline constexpr LaneMask full_warp = ~LaneMask{0};
 
-/// @brief This thread's lane in its warp.
+/// @brief This thread's lane in its warp, read from the hardware: right for any block shape.
+///        threadIdx.x % warp_size was wrong in a caller's kernel whose blocks are not 1-D in x
+///        (Kokkos's CUDA RangePolicy: blockDim.x == 1, the threads on y): every lane read 0 and
+///        group_by_key never ended.
 __device__ inline int lane_id() noexcept
 {
-    return static_cast<int>(threadIdx.x) % warp_size;
+#if defined(CHUNK_DEVICE_HIP)
+    return static_cast<int>(__lane_id());
+#else
+    unsigned int lane = 0;
+    asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane));
+    return static_cast<int>(lane);
+#endif
+}
+
+/// @brief This thread's warp in the grid, for any block shape (warps are cut from the thread's
+///        linear index in its block).
+__device__ inline unsigned long long global_warp_id() noexcept
+{
+    const unsigned long long in_block =
+        threadIdx.x + static_cast<unsigned long long>(blockDim.x) *
+                          (threadIdx.y + static_cast<unsigned long long>(blockDim.y) * threadIdx.z);
+    const unsigned long long block_threads = static_cast<unsigned long long>(blockDim.x) * blockDim.y * blockDim.z;
+    const unsigned long long block =
+        blockIdx.x + static_cast<unsigned long long>(gridDim.x) *
+                         (blockIdx.y + static_cast<unsigned long long>(gridDim.y) * blockIdx.z);
+    return (block * block_threads + in_block) / warp_size;
 }
 
 /// @brief The lanes of the warp that execute this call.
