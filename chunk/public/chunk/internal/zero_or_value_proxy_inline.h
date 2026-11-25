@@ -494,10 +494,16 @@ T zero_or_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                     return value;
                 }
                 const read_reclaim::ReadSection section;
-                const T* const                  live = chunk_.values_load();
-                test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
-                // raw-read: inside a read_reclaim::ReadSection
-                if (live == chunk_.second_value_ptr(BaseSpec::idx_) || same_value(live[elem_offset_], second_value_))
+                bool                            same = false;
+                do // EXPERIMENT mode 7: read again if a grace period began meanwhile
+                {
+                    const T* const live = chunk_.values_load();
+                    test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
+                    // raw-read: inside a read_reclaim::ReadSection
+                    same = live == chunk_.second_value_ptr(BaseSpec::idx_) ||
+                           same_value(live[elem_offset_], second_value_);
+                } while (section.retry_after(same));
+                if (same)
                 {
                     return value;
                 }
@@ -514,9 +520,14 @@ T zero_or_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // elem_get: for Bit, values_loc[elem_offset] would be a whole byte of 8
                 // elements, non-zero as soon as a NEIGHBOUR is true.
                 const read_reclaim::ReadSection section;
-                const T* const                  live = chunk_.values_load();
-                // raw-read: inside a read_reclaim::ReadSection
-                if (live == chunk_.second_value_ptr() || elem_get(live, static_cast<std::size_t>(elem_offset_)))
+                bool                            set = false;
+                do // EXPERIMENT mode 7: read again if a grace period began meanwhile
+                {
+                    const T* const live = chunk_.values_load();
+                    // raw-read: inside a read_reclaim::ReadSection
+                    set = live == chunk_.second_value_ptr() || elem_get(live, static_cast<std::size_t>(elem_offset_));
+                } while (section.retry_after(set));
+                if (set)
                 {
                     return true;
                 }

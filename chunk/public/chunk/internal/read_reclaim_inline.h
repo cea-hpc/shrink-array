@@ -28,7 +28,7 @@ namespace shrink_array
 
 inline read_reclaim::ReadSection::ReadSection() noexcept
 {
-    if constexpr (enabled && (CHUNK_READ_SECTION_MODE == 2 || CHUNK_READ_SECTION_MODE == 3))
+    if constexpr (enabled && (CHUNK_READ_SECTION_MODE == 2 || CHUNK_READ_SECTION_MODE == 3 || CHUNK_READ_SECTION_MODE == 7))
     {
         seq_ = g_reclaim_epoch.load(std::memory_order_acquire);
     }
@@ -128,6 +128,53 @@ template <typename V>
         passed_ = true;
     }
     return value;
+}
+
+/// @brief EXPERIMENT mode 7, the cold side of a retry: count it, take the new epoch.
+/// @details Acquire: the swaps of the pass that bumped it are visible to the read
+///          that follows, which therefore loads the new pointer.
+[[gnu::noinline, gnu::cold]] inline std::uint64_t read_reclaim::note_retry() noexcept
+{
+    g_optimistic_retries.fetch_add(1, std::memory_order_relaxed);
+    return g_reclaim_epoch.load(std::memory_order_acquire);
+}
+
+template <typename V>
+[[nodiscard]] CHUNK_FORCE_INLINE bool read_reclaim::ReadSection::retry_after(const V& value) const noexcept
+{
+    if constexpr (optimistic_retry)
+    {
+        static_assert(std::is_trivially_copyable_v<V>, "retry_after: the dependency is taken on the value's bytes");
+        std::uintptr_t raw = 0;
+        std::memcpy(&raw, &value, sizeof(V) < sizeof(raw) ? sizeof(V) : sizeof(raw));
+        // As pass(): zero = raw ^ raw, hidden from the compiler; the epoch's address
+        // depends on the element for the CPU, so its load is ordered after it.
+        std::uintptr_t opaque = raw;
+        __asm__ volatile("" : "+r"(opaque));
+        const std::uintptr_t zero  = opaque ^ raw;
+        const auto*          epoch = reinterpret_cast<const std::atomic<std::uint64_t>*>(
+            reinterpret_cast<std::uintptr_t>(&g_reclaim_epoch) + zero);
+        if (epoch->load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        {
+            seq_ = note_retry();
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] CHUNK_FORCE_INLINE bool read_reclaim::ReadSection::retry() const noexcept
+{
+    if constexpr (optimistic_retry)
+    {
+        std::atomic_thread_fence(std::memory_order_acquire); // the block's loads before the re-check
+        if (g_reclaim_epoch.load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        {
+            seq_ = note_retry();
+            return true;
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------

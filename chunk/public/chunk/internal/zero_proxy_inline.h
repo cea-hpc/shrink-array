@@ -920,8 +920,15 @@ zero::Proxy<T>::operator T() const noexcept
                 // pass in the region may release the buffer between the
                 // pointer load and the element load (read_reclaim.h).
                 const read_reclaim::ReadSection section;
-                // raw-read: inside a read_reclaim::ReadSection
-                return values_[elem_offset_];
+                for (;;) // EXPERIMENT mode 7: read again (values_ reloads) if a grace period began
+                {
+                    // raw-read: inside a read_reclaim::ReadSection
+                    const T value = values_[elem_offset_];
+                    if (!section.retry_after(value)) [[likely]]
+                    {
+                        return value;
+                    }
+                }
             }
         }
         return Base::read_pure();

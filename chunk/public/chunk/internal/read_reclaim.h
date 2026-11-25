@@ -107,6 +107,15 @@
 //      compares it with its own slot; only when the epoch moved does it take an
 //      acquire fence and store the epoch, released, into its slot. A thread that
 //      only reads thus lets the writers' parked buffers go at their next pass
+//   7  optimistic WITH retry (mode 3 made correct): a read announces nothing; it loads
+//      the epoch (acquire), reads, and re-checks the epoch -- ordered by an address
+//      dependency on the value (retry_after) or by an acquire fence (retry, the block
+//      reads). If a grace period started in between, it reads again. A pass bumps the
+//      epoch after its swaps and before its releases, and releases at once, as mode 0:
+//      no memory held longer. Needs the fast allocator: a released value buffer stays
+//      mapped (value pools never unmap, MADV_DONTNEED keeps the mapping), so a read of
+//      a reused buffer returns garbage the re-check discards, never a fault.
+//      The compressor's scans keep an announce (ScanSection), as in modes 5 / 6
 #ifndef CHUNK_READ_SECTION_MODE
     #define CHUNK_READ_SECTION_MODE 0
 #endif
@@ -129,7 +138,13 @@ struct alignas(64) ReaderSlot
 };
 
 /// @brief EXPERIMENT mode 5: wait_for_readers() and ScanSection use scan_seq.
-inline constexpr bool scan_announce = CHUNK_READ_SECTION_MODE == 5 || CHUNK_READ_SECTION_MODE == 6;
+inline constexpr bool scan_announce =
+    CHUNK_READ_SECTION_MODE == 5 || CHUNK_READ_SECTION_MODE == 6 || CHUNK_READ_SECTION_MODE == 7;
+
+/// @brief EXPERIMENT mode 7: optimistic reads that retry.
+inline constexpr bool optimistic_retry = enabled && CHUNK_READ_SECTION_MODE == 7;
+static_assert(!optimistic_retry || build_config::use_fast_alloc,
+              "CHUNK_READ_SECTION_MODE=7 needs the fast allocator: a free()d buffer may be unmapped");
 
 /// @brief The sequence wait_for_readers() waits on.
 inline std::atomic<std::uint64_t>& announce_seq(ReaderSlot& slot) noexcept
@@ -150,10 +165,31 @@ inline thread_local bool        t_overflow = false;   ///< This thread found no 
 alignas(64) inline std::atomic<std::uint64_t> g_reclaim_epoch{0};
 /// @brief EXPERIMENT mode 2: reads that saw the epoch move (would have retried).
 inline thread_local long                 t_optimistic_conflicts = 0;
+/// @brief EXPERIMENT mode 7: reads retried, all threads (counted on the cold path only).
+alignas(64) inline std::atomic<long> g_optimistic_retries{0};
 [[gnu::noinline, gnu::cold]] inline void note_optimistic_conflict() noexcept
 {
     ++t_optimistic_conflicts;
 }
+
+/// @brief EXPERIMENT mode 7: count a retry, return the new epoch (acquire).
+std::uint64_t note_retry() noexcept;
+
+/// @brief EXPERIMENT mode 7: the retry count, at exit.
+struct RetryReport
+{
+    RetryReport()                              = default;
+    RetryReport(const RetryReport&)            = delete;
+    RetryReport& operator=(const RetryReport&) = delete;
+    ~RetryReport()
+    {
+        if constexpr (enabled && CHUNK_READ_SECTION_MODE == 7)
+        {
+            std::fprintf(stderr, "[optimistic] reads retried %ld\n", g_optimistic_retries.load());
+        }
+    }
+};
+inline RetryReport g_retry_report;
 
 /// @brief First read of this thread: claim a slot (or join the overflow).
 inline ReaderSlot* claim_slot() noexcept
@@ -206,6 +242,16 @@ class ReadSection
     template <typename V>
     [[nodiscard]] V pass(V value) const noexcept;
 
+    /// @brief EXPERIMENT mode 7: true when a grace period began since the entry (or the
+    ///        last retry): the caller reads again. The re-check is ordered after the load
+    ///        of @p value by an address dependency. Other modes: false.
+    template <typename V>
+    [[nodiscard]] bool retry_after(const V& value) const noexcept;
+
+    /// @brief EXPERIMENT mode 7: retry_after() for a read of several values (a block):
+    ///        the re-check is ordered by an acquire fence. Other modes: false.
+    [[nodiscard]] bool retry() const noexcept;
+
     /// @brief EXPERIMENT mode 4: 0 at run time, an address dependency on the
     ///        entry load of the epoch for the CPU. Other modes: 0.
     [[nodiscard]] std::uintptr_t dep() const noexcept
@@ -220,9 +266,9 @@ class ReadSection
     }
 
   private:
-    ReaderSlot*   slot_   = nullptr;
-    std::uint64_t seq_    = 0;
-    mutable bool  passed_ = false; ///< EXPERIMENT mode 3: pass() did the re-check
+    ReaderSlot*           slot_   = nullptr;
+    mutable std::uint64_t seq_    = 0; ///< mode 7: refreshed by a retry
+    mutable bool          passed_ = false; ///< EXPERIMENT mode 3: pass() did the re-check
 };
 
 /**
@@ -231,7 +277,7 @@ class ReadSection
  *        published): what ArrayChunkCore::await_chunk_readers() waits for. In
  *        mode 5 a ReadSection does nothing; in the other modes this IS one.
  */
-#if CHUNK_READ_SECTION_MODE == 5 || CHUNK_READ_SECTION_MODE == 6
+#if CHUNK_READ_SECTION_MODE == 5 || CHUNK_READ_SECTION_MODE == 6 || CHUNK_READ_SECTION_MODE == 7
 class ScanSection
 {
   public:

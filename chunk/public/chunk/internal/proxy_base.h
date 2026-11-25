@@ -548,7 +548,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[nodiscard]] T read_values_outside_session() const noexcept
     {
         const read_reclaim::ReadSection section;
-        return read_values();
+        for (;;) // EXPERIMENT mode 7: read again if a grace period began meanwhile
+        {
+            const T value = read_values();
+            if (!section.retry_after(value)) [[likely]]
+            {
+                return value;
+            }
+        }
     }
     /// @brief Read through the chunk WITHOUT synchronising first.
     /// @warning Returns a stale value if a deferred write on this offset has
