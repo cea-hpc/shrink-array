@@ -10,7 +10,9 @@
 # device code, a shared header (same_value.h, host_device.h, chunk_state.h)
 # changed on the host side that nvcc or ROCm's clang rejects, and the two
 # translation units of device_convert_validation linked against one
-# libstdc++ (--gcc-install-dir under HIP).
+# libstdc++ (--gcc-install-dir under HIP); and the Kokkos facade
+# (chunk/device/kokkos_adaptor.h) with Kokkos 5.3.0 fetched, for the GH200 and
+# the MI300A.
 #
 # Every device target is named on the command line: a target the configure
 # left out (device_convert_validation when the GCC installations differ)
@@ -52,10 +54,12 @@ jobs:
               -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc
               -DCMAKE_CUDA_HOST_COMPILER=g++-14
               '-DCMAKE_CUDA_ARCHITECTURES=75;90'
+              -DCHUNK_KOKKOS_ARCH=HOPPER90
             targets: >-
               device_core_validation device_arena_validation device_write_validation
               device_assign_validation device_convert_validation device_bench
               device_memory_validation_zero_any device_memory_validation_zero
+              kokkos_validation
           # ROCm 7.2.4 without its libraries (rocm-dev: the compiler and the HIP
           # runtime, 1.1 GB against 6.9 for -complete); gfx942 (MI300A).
           # device_core_validation is CUDA only (CUDA runtime calls).
@@ -67,10 +71,12 @@ jobs:
               -DCMAKE_HIP_ARCHITECTURES=gfx942
               -DCMAKE_PREFIX_PATH=/opt/rocm
               -DCMAKE_HIP_FLAGS=--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/14
+              -DCHUNK_KOKKOS_ARCH=AMD_GFX942_APU
             targets: >-
               device_arena_validation device_write_validation
               device_assign_validation device_convert_validation device_bench
               device_memory_validation_zero_any device_memory_validation_zero
+              kokkos_validation
     env:
       CC: gcc-14
       CXX: g++-14
@@ -103,6 +109,7 @@ jobs:
           -DCHUNK_BUILD_DYN=OFF
           -DCHUNK_BUILD_VALIDATION=ON
           -DCHUNK_DEVICE_CORE_CHECK=ON
+          -DCHUNK_DEVICE_KOKKOS=ON
           -DCHUNK_DEVICE_LANGUAGE=${{ matrix.lang }}
           ${{ matrix.cmake_args }}
       - name: Build the device targets

@@ -147,6 +147,10 @@ option(CHUNK_WITH_TBB "Build the TBB adaptor's validation (needs oneTBB; the lib
 option(CHUNK_DEVICE_CORE_CHECK "Build the device validations (device_core_validation, device_arena_validation; needs a CUDA or HIP compiler)" OFF)
 set(CHUNK_DEVICE_LANGUAGE "CUDA" CACHE STRING "Language of the device validations: CUDA (NVIDIA) or HIP (AMD; device_arena_validation only so far)")
 set_property(CACHE CHUNK_DEVICE_LANGUAGE PROPERTY STRINGS CUDA HIP)
+# The Kokkos facade (chunk/device/kokkos_adaptor.h): Kokkos fetched (examples/kokkos), built
+# for CHUNK_DEVICE_LANGUAGE with CHUNK_KOKKOS_ARCH, its validation and its benchmark.
+option(CHUNK_DEVICE_KOKKOS "Build the Kokkos facade's validation and benchmark (fetches Kokkos; needs a CUDA or HIP compiler)" OFF)
+set(CHUNK_KOKKOS_ARCH "" CACHE STRING "Kokkos_ARCH_<this> for the device: TURING75 (T1000), HOPPER90 (GH200), AMD_GFX942_APU (MI300A)")
 if(CHUNK_WITH_TBB)
     find_package(TBB REQUIRED)
     if(CHUNK_THREADS_BACKEND STREQUAL "openmp")

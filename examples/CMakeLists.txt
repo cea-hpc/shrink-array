@@ -152,6 +152,11 @@ if (CHUNK_DEVICE_CORE_CHECK)
     add_subdirectory(device_bench)
 endif()
 
+# The Kokkos facade of device::Array: Kokkos fetched, its validation and benchmark
+if (CHUNK_DEVICE_KOKKOS)
+    add_subdirectory(kokkos)
+endif()
+
 # zero_or_value against zero_any on one workload (per-operation cost, compression)
 add_subdirectory(variant_compare)
 
