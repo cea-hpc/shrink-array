@@ -152,4 +152,40 @@ run error "MUT_ONE_LOOK (F7, before: store buffering)"          -- -DMUT_ONE_LOO
 run error "MUT_FENCE_ONE_SIDE (both sides need the fence)"      -- -DMUT_FENCE_ONE_SIDE $M6
 run error "MUT_RECHECK_NO_FENCE (the second look alone)"        -- -DMUT_RECHECK_NO_FENCE $M6
 
+# EXPERIMENT exp/optimistic-read (CHUNK_READ_SECTION_MODE=7). Every case names its memory model:
+# the dependency shape is the hardware's argument, so the verdict differs between models and the
+# command line's model (EXTRA) is not applied here. Verdicts as found (2026-11-25, GenMC 0.20):
+# correct under ARMv8 and TSO (the two targets), NOT under IMM nor RC11.
+M7=optimistic_read.c
+SAVED_EXTRA=("${EXTRA[@]}")
+EXTRA=()
+echo "== EXPERIMENT mode 7: optimistic readers <-> buffer reclamation ($M7) =="
+for model in --arm8 --tso; do
+run ok    "source $model, 1 element (retry_after)"               --check-liveness $model -- $M7
+run ok    "source $model, a block of 2 (fold + retry)"           --check-liveness $model -- -DNELEMS=2 $M7
+run ok    "source $model, 2 readers x 2 reads"                   --check-liveness $model -- -DNREADERS=2 -DNREADS=2 $M7
+run ok    "source $model, block of 2, 2 readers"                 --check-liveness $model -- -DNELEMS=2 -DNREADERS=2 $M7
+run ok    "source $model, reused by another thread"              --check-liveness $model -- -DNELEMS=2 -DRECYCLER_THREAD $M7
+run ok    "source $model, other thread, 2 readers x 2 reads"     --check-liveness $model -- -DRECYCLER_THREAD -DNREADERS=2 -DNREADS=2 $M7
+done
+echo "-- mutations: each must be refused --"
+for model in --arm8 --tso; do
+run error "MUT_NO_RECHECK $model (mode 3 without its retry)"     $model -- -DMUT_NO_RECHECK $M7
+run error "MUT_BUMP_AFTER_RELEASE $model (recycle, then bump)"   $model -- -DMUT_BUMP_AFTER_RELEASE $M7
+done
+run error "MUT_RECHECK_UNORDERED --arm8 (no dependency, no fence)" --arm8 -- -DMUT_RECHECK_UNORDERED $M7
+run error "MUT_ENTER_RELAXED --arm8 (entry load not acquire)"    --arm8 -- -DMUT_ENTER_RELAXED $M7
+run error "MUT_FOLD_FIRST_ONLY --arm8 (block: element 0 only)"   --arm8 -- -DNELEMS=2 -DMUT_FOLD_FIRST_ONLY $M7
+echo "-- TSO keeps load order: the ordering mutations are harmless on x86 --"
+run ok    "MUT_RECHECK_UNORDERED --tso"                          --tso -- -DMUT_RECHECK_UNORDERED $M7
+run ok    "MUT_ENTER_RELAXED --tso"                              --tso -- -DMUT_ENTER_RELAXED $M7
+echo "-- the limits: not a C11 (RC11) nor an IMM guarantee --"
+run error "source --rc11 (a dependency orders nothing in C11)"   --rc11 -- -DNELEMS=2 $M7
+run error "source --imm (nor in IMM, pass fence or not)"         --imm -- -DNELEMS=2 -DPASS_RELEASE_FENCE $M7
+run error "SHAPE_FENCE --rc11 (reader fence alone: no writer fence)" --rc11 -- -DSHAPE_FENCE -DNELEMS=2 $M7
+run ok    "SHAPE_FENCE + PASS_RELEASE_FENCE --rc11 (the C11 seqlock)" --rc11 -- -DSHAPE_FENCE -DPASS_RELEASE_FENCE -DNELEMS=2 $M7
+run ok    "SHAPE_FENCE + PASS_RELEASE_FENCE --imm"               --imm -- -DSHAPE_FENCE -DPASS_RELEASE_FENCE -DNELEMS=2 $M7
+run error "  ... but reused by another thread --rc11 (its stores need a release too)" --rc11 -- -DSHAPE_FENCE -DPASS_RELEASE_FENCE -DRECYCLER_THREAD -DNELEMS=2 $M7
+EXTRA=("${SAVED_EXTRA[@]}")
+
 exit $fail
