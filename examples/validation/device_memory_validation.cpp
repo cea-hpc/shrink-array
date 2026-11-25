@@ -63,11 +63,11 @@ namespace
 {
 
 #if defined(CHUNK_VARIANT_ZERO)
-using HostArray                  = sa::zero::Array<double>;
+using HostArray                    = sa::zero::Array<double>;
 constexpr bool        zero_variant = true;
 constexpr const char* variant      = "zero";
 #else
-using HostArray                  = sa::zero_any::Array<double>;
+using HostArray                    = sa::zero_any::Array<double>;
 constexpr bool        zero_variant = false;
 constexpr const char* variant      = "zero_any";
 #endif
@@ -179,7 +179,8 @@ std::vector<device_memory::Round> make_rounds(std::int64_t n, std::int64_t s)
     // 3. Scattered elements by Writer::assign: one in 64, palette values.
     {
         device_memory::Round r{{}, {}, std::vector<double>(static_cast<std::size_t>(n)), true};
-        for (std::int64_t i = static_cast<std::int64_t>(rng() % 64); i < n; i += 1 + static_cast<std::int64_t>(rng() % 127))
+        for (std::int64_t i = static_cast<std::int64_t>(rng() % 64); i < n;
+             i += 1 + static_cast<std::int64_t>(rng() % 127))
         {
             r.target[static_cast<std::size_t>(i)] = palette[rng() % 5];
             add_span(r, i, i + 1);
@@ -314,8 +315,9 @@ void run()
     a.resize(static_cast<int>(n));
     std::printf("[%s::Array<double> against device::Array, Variant::%s] S=%lld n=%lld\n", variant, variant,
                 static_cast<long long>(s), static_cast<long long>(n));
-    const std::vector<device_memory::Round>             rounds = make_rounds(n, s);
-    const std::vector<sa::ArrayImage<double>>           dev    = device_memory::device_replay(n, static_cast<unsigned int>(s), zero_variant, rounds);
+    const std::vector<device_memory::Round>   rounds = make_rounds(n, s);
+    const std::vector<sa::ArrayImage<double>> dev =
+        device_memory::device_replay(n, static_cast<unsigned int>(s), zero_variant, rounds);
     for (std::size_t r = 0; r < rounds.size(); ++r)
     {
         host_round(a, rounds[r]);
