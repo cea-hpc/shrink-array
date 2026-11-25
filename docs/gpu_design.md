@@ -864,7 +864,7 @@ In `chunk/public/chunk/device/`, from the prototype (`gpu/proto/zero_any_device.
   count of the last chunk through `ChunkElems` (the write proxy's three enqueues, the arrays'
   sweeps, the rechunk fold), with a count that a `resize()` between the enqueue and the pass
   cannot leave stale, and the deferred writes' replay. Not in `zero` (its tail is 0, its only
-  fold value).
+  fold value). Both pass on the T1000 and the MI300A, with the same layouts.
 
 - CI (`.github/workflows/device.yml`, on the `gpu` branch): compilation only, the hosted runners
   have no GPU. nvcc 13.1 for sm_75 and sm_90, and ROCm 7.2.4 for gfx942, build every device

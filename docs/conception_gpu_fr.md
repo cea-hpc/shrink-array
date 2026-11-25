@@ -906,7 +906,7 @@ Dans `chunk/public/chunk/device/`, à partir du prototype (`gpu/proto/zero_any_d
   trois mises en file du proxy d'écriture, les balayages des tableaux, le repli au rechunk),
   avec un compte qu'un `resize()` entre la mise en file et la passe ne peut pas rendre périmé,
   et le rejeu des écritures différées. Pas en `zero` (sa queue vaut 0, sa seule valeur de
-  repli).
+  repli). Les deux passent sur la T1000 et le MI300A, avec les mêmes dispositions.
 
 - CI (`.github/workflows/device.yml`, sur la branche `gpu`) : compilation seule, les runners
   hébergés n'ont pas de GPU. nvcc 13.1 pour sm_75 et sm_90, et ROCm 7.2.4 pour gfx942,
