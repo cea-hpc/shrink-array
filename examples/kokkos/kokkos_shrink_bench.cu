@@ -43,7 +43,8 @@
  *          Usage: kokkos_shrink_bench [log2(sz), default 27] [iterations, default 2000]
  *                                     [interval, default sz / 10^4]
  *                                     [compress every, default 10] [variants: zero_any, zero
- *                                     or both, default both]
+ *                                     or both, default both] [arenas from 1/N of the chunks,
+ *                                     default 64]
  *          The flat run comes first; each run frees its arrays before the next.
  */
 
@@ -69,6 +70,9 @@ namespace
 {
 
 using Int = std::int64_t;
+
+/// The arenas start at 1/g_arena_div of the chunks (sixth argument).
+Int g_arena_div = 64;
 
 constexpr double second_value_d  = 1.;
 constexpr double second_value_d0 = 3.5;
@@ -121,6 +125,10 @@ struct FlatStore
     {
         return 0;
     }
+    [[nodiscard]] static sd::WriteCounters counters()
+    {
+        return {};
+    }
     [[nodiscard]] static const char* name()
     {
         return "Kokkos::View<double*>";
@@ -144,7 +152,8 @@ struct ShrinkStore
         const auto chunks = static_cast<unsigned long long>((n + S - 1) / S);
         for (int k = 0; k < 5; ++k)
         {
-            a.push_back(new sk::Array<double, S, V>(n, chunks / 64 + 64, 0.0, 1ULL << 20));
+            a.push_back(new sk::Array<double, S, V>(
+                n, chunks / static_cast<unsigned long long>(g_arena_div) + 64, 0.0, 1ULL << 20));
         }
     }
     ~ShrinkStore()
@@ -190,6 +199,21 @@ struct ShrinkStore
         }
         return b;
     }
+    /// @brief The write path's counters, summed over the five arrays (claim_wait, claim_spin,
+    ///        cas_lost are cumulative).
+    [[nodiscard]] sd::WriteCounters counters() const
+    {
+        sd::WriteCounters t{};
+        for (auto* x : a)
+        {
+            const sd::WriteCounters c = x->native().write_counters();
+            t.claim_wait += c.claim_wait;
+            t.claim_spin += c.claim_spin;
+            t.cas_lost += c.cas_lost;
+        }
+        return t;
+    }
+
     /// @brief Bytes of the arenas' free buffers: reserved, not held by a chunk.
     [[nodiscard]] double reserved() const
     {
@@ -559,6 +583,9 @@ Result run(Int sz, Int interval, Int iters, Int compress_every, const std::vecto
     r.check        = checksum(st, sz);
     r.gb_end       = st.bytes() / 1e9;
     r.reserved_end = st.reserved() / 1e9;
+    const sd::WriteCounters wc = st.counters();
+    std::printf("  write path: %llu claim waits, %llu given up (appended), %llu lost CAS\n", wc.claim_wait,
+                wc.claim_spin, wc.cas_lost);
     std::printf("  end: %.3f GB held, %.3f GB of free arena buffers; val_sum %.12g, checksum %.12g\n", r.gb_end,
                 r.reserved_end, r.val_sum, r.check);
     return r;
@@ -601,12 +628,14 @@ int main(int argc, char** argv)
     const Int         interval       = argc > 3 ? std::atoll(argv[3]) : std::max<Int>(sz / 10000, 1000);
     const Int         compress_every = argc > 4 ? std::max<Int>(std::atoll(argv[4]), 1) : 10;
     const char* const variants       = argc > 5 ? argv[5] : "both";
+    g_arena_div                      = argc > 6 ? std::max<Int>(std::atoll(argv[6]), 1) : 64;
     const bool        any            = std::strcmp(variants, "zero") != 0;
     const bool        zero           = std::strcmp(variants, "zero_any") != 0;
     std::printf("kokkos_shrink_bench (%s): sz = %lld doubles x 5 arrays, %lld iterations, interval %lld, "
-                "compress() every %lld\n",
+                "compress() every %lld, arenas from 1/%lld of the chunks\n",
                 Kokkos::DefaultExecutionSpace::name(), static_cast<long long>(sz), static_cast<long long>(iters),
-                static_cast<long long>(interval), static_cast<long long>(compress_every));
+                static_cast<long long>(interval), static_cast<long long>(compress_every),
+                static_cast<long long>(g_arena_div));
     try
     {
         const std::vector<Window> windows = make_windows(sz, interval, iters);
