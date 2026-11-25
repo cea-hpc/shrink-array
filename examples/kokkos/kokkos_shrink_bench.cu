@@ -136,14 +136,15 @@ struct ShrinkStore
 
     std::vector<sk::Array<double, S, V>*> a;
 
-    /// @details An arena of a quarter of the chunks to start (grown as the phases need), an
+    /// @details A small arena to start, 1/64 of the chunks: it grows as the phases need, by a
+    ///          quarter at least, and what it reserves counts in the memory reported. An
     ///          append-buffer of 2^20 entries.
     explicit ShrinkStore(Int n)
     {
         const auto chunks = static_cast<unsigned long long>((n + S - 1) / S);
         for (int k = 0; k < 5; ++k)
         {
-            a.push_back(new sk::Array<double, S, V>(n, chunks / 4 + 1, 0.0, 1ULL << 20));
+            a.push_back(new sk::Array<double, S, V>(n, chunks / 64 + 64, 0.0, 1ULL << 20));
         }
     }
     ~ShrinkStore()
