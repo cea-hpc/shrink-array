@@ -59,12 +59,14 @@
  */
 
 #include <cstdint> // std::int64_t
+#include <cstdlib> // std::abort (Writer::assign / load called on the host)
 
-#include "chunk/device/arena.h"        // ArenaRef
-#include "chunk/device/atomics.h"      // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
-#include "chunk/device/chunk_desc.h"   // ChunkDesc, Variant, constant_of, busy_mark, is_fresh, tag_fresh, untag
-#include "chunk/device/warp.h"         // ballot, group_by_key, lane_id, active_lanes, shuffle_ptr, sync_lanes
-#include "chunk/internal/same_value.h" // same_value
+#include "chunk/device/arena.h"         // ArenaRef
+#include "chunk/device/atomics.h"       // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
+#include "chunk/device/chunk_desc.h"    // ChunkDesc, Variant, constant_of, busy_mark, is_fresh, tag_fresh, untag
+#include "chunk/device/warp.h"          // ballot, group_by_key, lane_id, active_lanes, shuffle_ptr, sync_lanes
+#include "chunk/internal/host_device.h" // CHUNK_HD
+#include "chunk/internal/same_value.h"  // same_value
 
 namespace shrink_array::device
 {
@@ -131,15 +133,20 @@ struct Writer
      *        empty and tagged fresh by a relaxed CAS. A fresh buffer: the element, then its bit
      *        in `written`. The arena exhausted: the append-buffer, replayed by
      *        Array::finish().
+     * @details CHUNK_HD so that a `__host__ __device__` lambda (KOKKOS_LAMBDA) calls it; its
+     *          body exists in device code only, a host call aborts. Not a branch inside the
+     *          caller's lambda: a lambda whose device body differs from its host one under
+     *          KOKKOS_IF_ON_DEVICE failed to launch (Kokkos 5.3, nvcc 13.1: "invalid resource
+     *          handle").
      */
-    __device__ void assign(std::int64_t i, T v) const noexcept;
+    CHUNK_HD void assign(std::int64_t i, T v) const noexcept;
 
     /// @brief a(i) in a write kernel (for `a(i) += v`): the constant of a compressed chunk, an
     ///        unwritten element of a fresh buffer included. What this thread wrote, or a thread
     ///        of its block before a __syncthreads(), it reads back -- an append included: once
     ///        the arena has run out in the kernel, an element that would read the constant is
     ///        looked up in the append-buffer first, from its end (slow, until finish()).
-    [[nodiscard]] __device__ T load(std::int64_t i) const noexcept;
+    [[nodiscard]] CHUNK_HD T load(std::int64_t i) const noexcept;
 
     /**
      * @brief a(i) = f(i) for every i of [@p lo, @p hi), a part of chunk @p c; called by every
@@ -151,6 +158,8 @@ struct Writer
     __device__ void write(std::int64_t c, std::int64_t lo, std::int64_t hi, const F& f) const noexcept;
 
   private:
+    __device__ void            assign_device(std::int64_t i, T v) const noexcept;
+    [[nodiscard]] __device__ T load_device(std::int64_t i) const noexcept;
     template <int BLOCK>
     __device__ void
     write_marked(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept;
@@ -594,7 +603,30 @@ __device__ void Writer<T, S, V>::append(std::int64_t i, T v) const noexcept
 }
 
 template <typename T, unsigned int S, Variant V>
-__device__ void Writer<T, S, V>::assign(std::int64_t i, T v) const noexcept
+CHUNK_HD void Writer<T, S, V>::assign(std::int64_t i, T v) const noexcept
+{
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    assign_device(i, v);
+#else
+    (void)i;
+    (void)v;
+    std::abort(); // a host thread: the write path runs in device kernels only
+#endif
+}
+
+template <typename T, unsigned int S, Variant V>
+CHUNK_HD T Writer<T, S, V>::load(std::int64_t i) const noexcept
+{
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    return load_device(i);
+#else
+    (void)i;
+    std::abort(); // a host thread: the write path runs in device kernels only
+#endif
+}
+
+template <typename T, unsigned int S, Variant V>
+__device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexcept
 {
     const std::int64_t c   = i / S;
     const auto         e   = static_cast<unsigned int>(i % S);
@@ -623,7 +655,7 @@ __device__ void Writer<T, S, V>::assign(std::int64_t i, T v) const noexcept
 }
 
 template <typename T, unsigned int S, Variant V>
-[[nodiscard]] __device__ T Writer<T, S, V>::load(std::int64_t i) const noexcept
+[[nodiscard]] __device__ T Writer<T, S, V>::load_device(std::int64_t i) const noexcept
 {
     const std::int64_t     c   = i / S;
     const auto             e   = static_cast<unsigned int>(i % S);
