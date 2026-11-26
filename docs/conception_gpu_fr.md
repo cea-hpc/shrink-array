@@ -1038,7 +1038,8 @@ MI300A, 5 x 2^30, 2000 itérations (d48588038) : buffers libres à la fin 0,465 
 écritures autour de la fenêtre 258 -> 257 ms et 193 -> 195 ms, RMW 220 -> 213 ms et
 204 -> 203 ms, mais fenêtre réécrite 380 -> 494 ms (19,8x) et 135 -> 147 ms (5,9x). La part de
 la croissance plus fréquente et celle du nœud d'un jour à l'autre ne sont pas séparées :
-7381cc5ba et d48588038 sont à passer dans le même créneau.
+7381cc5ba et d48588038 sont à passer dans le même créneau. Passés ainsi (section 13) : c'était
+la croissance, et la réserve de l'arène (a890cb3ea) la rattrape et au-delà.
 
 GH200, le même run (d48588038, nvcc 13.3, 8 tests sur 8, sommes égales), face au MI300A :
 
@@ -1129,8 +1130,39 @@ plus aucun ajout, la réécriture à 8,8x le plat, la boucle à 1,33x le plat et
 Grace, pour 1 Go de buffers libres en plus (la mémoire tenue ne change pas). Les petites
 fenêtres ne bougent pas (boucle 1254 ms, aucun ajout non plus).
 
-Suite : l'A/B sur le MI300A ; les noyaux d'écriture eux-mêmes (27 us contre 3,4) ; `compress()`
-dans la boucle ; puis Arcane.
+MI300A, l'A/B dans un seul job (5 x 2^30, 2000 itérations, interval 107374) :
+
+| | 7381cc5ba | d48588038 | a890cb3ea |
+|---|---|---|---|
+| zero_any, fenêtre réécrite | 409 ms (16,4x) | 506 ms (20,1x) | **237 ms (9,5x)** |
+| zero_any, boucle | 2272 ms (1,60x) | 2399 ms (1,68x) | 2173 ms (1,59x) |
+| zero_any, buffers libres à la fin | 0,465 Go | 0,318 Go | 0,318 Go |
+| zero, fenêtre réécrite | 136 ms | 148 ms | 148 ms |
+| zero, boucle | 2002 ms (1,41x) | 2029 ms (1,42x) | 2009 ms (1,47x) |
+
+La croissance d'1/8 au lieu d'1/4 (d48588038) coûtait 24 % à la réécriture de zero_any : l'arène
+trouvée vide plus souvent, comme sur les grandes fenêtres du GH200. La réserve la ramène à 42 %
+sous celle de 7381cc5ba, avec l'arène plus petite de d48588038 ; zero bouge dans le bruit. Aucun
+ajout, aucune attente abandonnée, sommes égales.
+
+MI300A, zero_or_value à a890cb3ea (7 tests sur 7, sommes égales, aucun ajout), face au GH200 :
+
+| | MI300A, interval 10^7 | GH200 | MI300A, interval 107374 | GH200 |
+|---|---|---|---|---|
+| boucle totale | 1540 ms (1,55x) | 708 ms (1,33x) | 2153 ms (1,57x) | 1254 ms (1,58x) |
+| fenêtre réécrite | 522 ms (43,9x) | 111 ms (8,8x) | 225 ms (9,0x) | 106 ms (4,9x) |
+| 20 passes de lecture | 820 ms (0,93x) | 474 ms (1,02x) | 1205 ms (1,01x) | 663 ms (0,99x) |
+| 2 passes RMW | 108 ms (1,14x) | 72 ms (1,48x) | 216 ms (1,81x) | 120 ms (1,57x) |
+| `compress()` dans la boucle | 36 ms | 24 ms | 214 ms | 192 ms |
+| mémoire à la fin | 11,346 Go (+ 2,080 libres) | la même | 4,972 Go (+ 0,460 libres) | la même |
+
+La réécriture des grandes fenêtres est l'écart du MI300A : 43,9x le plat contre 8,8x, avec
+2,3 x 10^7 attentes de claim (GH200 : 4,9 x 10^7). Ses atomiques à l'échelle du device sont
+lentes (plus haut dans cette section), et une grande fenêtre réserve environ 10^4 chunks par
+tableau et par phase.
+
+Suite : les claims du MI300A sur les grandes fenêtres ; les noyaux d'écriture eux-mêmes (27 us
+contre 3,4) ; `compress()` dans la boucle ; puis Arcane.
 
 ## 14. Risques et questions ouvertes
 

@@ -987,7 +987,8 @@ Checksums equal, 7 tests out of 7. The loop went 1.64x -> 1.73x (zero_any) and 1
 (zero): writes around the window 258 -> 257 ms and 193 -> 195 ms, read-modify-write 220 -> 213 ms
 and 204 -> 203 ms, but window rewritten 380 -> 494 ms (19.8x) and 135 -> 147 ms (5.9x). Whether
 the more frequent growth costs this or the node's day to day does is not settled: 7381cc5ba and
-d48588038 are to be run in the same slot.
+d48588038 are to be run in the same slot. Run so (section 13): the growth did, and the arena's
+headroom (a890cb3ea) takes it back and more.
 
 GH200, the same run (d48588038, nvcc 13.3, 8 tests out of 8, checksums equal), against the
 MI300A's:
@@ -1074,8 +1075,39 @@ a890cb3ea), and compress() keeps them through `release_free(keep)`: no append le
 8.8x flat, the loop 1.33x flat and 25x Grace's, for 1 GB more of free buffers (the memory held
 is unchanged). The small windows do not move (loop 1254 ms, no append either).
 
-Next: the A/B on the MI300A; the write kernels themselves (27 us against 3.4); `compress()` in
-the loop; then Arcane.
+MI300A, the A/B in one job (5 x 2^30, 2000 iterations, interval 107374):
+
+| | 7381cc5ba | d48588038 | a890cb3ea |
+|---|---|---|---|
+| zero_any, window rewritten | 409 ms (16.4x) | 506 ms (20.1x) | **237 ms (9.5x)** |
+| zero_any, loop | 2272 ms (1.60x) | 2399 ms (1.68x) | 2173 ms (1.59x) |
+| zero_any, free buffers at the end | 0.465 GB | 0.318 GB | 0.318 GB |
+| zero, window rewritten | 136 ms | 148 ms | 148 ms |
+| zero, loop | 2002 ms (1.41x) | 2029 ms (1.42x) | 2009 ms (1.47x) |
+
+The growth of 1/8 instead of 1/4 (d48588038) cost zero_any's rewrite 24 %: the arena found
+empty more often, as on the GH200's large windows. The headroom takes it to 42 % below
+7381cc5ba's with d48588038's smaller arena; zero moves within the noise. No append, no wait
+given up, checksums equal.
+
+MI300A, zero_or_value at a890cb3ea (7 tests out of 7, checksums equal, no append), against the
+GH200:
+
+| | MI300A, interval 10^7 | GH200 | MI300A, interval 107374 | GH200 |
+|---|---|---|---|---|
+| loop total | 1540 ms (1.55x) | 708 ms (1.33x) | 2153 ms (1.57x) | 1254 ms (1.58x) |
+| window rewritten | 522 ms (43.9x) | 111 ms (8.8x) | 225 ms (9.0x) | 106 ms (4.9x) |
+| 20 read passes | 820 ms (0.93x) | 474 ms (1.02x) | 1205 ms (1.01x) | 663 ms (0.99x) |
+| 2 read-modify-write passes | 108 ms (1.14x) | 72 ms (1.48x) | 216 ms (1.81x) | 120 ms (1.57x) |
+| `compress()` in the loop | 36 ms | 24 ms | 214 ms | 192 ms |
+| memory at the end | 11.346 GB (+ 2.080 free) | the same | 4.972 GB (+ 0.460 free) | the same |
+
+The large windows' rewrite is the MI300A's gap: 43.9x flat against 8.8x, with 2.3 x 10^7 claim
+waits (the GH200: 4.9 x 10^7). Its device-scope atomics are slow (section 13 above), and a large
+window claims about 10^4 chunks per array and phase.
+
+Next: the MI300A's claims on large windows; the write kernels themselves (27 us against 3.4);
+`compress()` in the loop; then Arcane.
 
 ## 14. Risks and open questions
 
