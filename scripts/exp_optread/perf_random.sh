@@ -10,7 +10,7 @@
 #   BUILDS  (default "gcc-mode0 gcc-mode7 llvm-mode0 llvm-mode7")
 #   N       elements (default 33554432)
 set -u
-WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread10}
+WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread11}
 BUILDS=${BUILDS:-"gcc-mode0 gcc-mode7 llvm-mode0 llvm-mode7"}
 N=${N:-33554432}
 OUT=$WORK/perf_random

@@ -143,6 +143,21 @@ inline constexpr bool scan_announce =
 
 /// @brief EXPERIMENT mode 7: optimistic reads that retry.
 inline constexpr bool optimistic_retry = enabled && CHUNK_READ_SECTION_MODE == 7;
+/// @brief EXPERIMENT mode 7: element_at loads an 8-byte element as an integer, so that the
+///        re-check's dependency is taken on the integer register the load wrote: no FP ->
+///        integer move (fmov / vmovq) on the chain from the missed element to the re-check
+///        (Grace, random reads: 90 % of the loop's samples on that fmov). -DCHUNK_RECHECK_INT_LOAD=0: off.
+// Default: gcc only. Under clang it flipped inlining elsewhere (x86: zero_any rmw 7.7 ->
+// 14.1 ns, read-bulk +11..22 %), and clang's dependency entry left it +5 % on random reads.
+#ifndef CHUNK_RECHECK_INT_LOAD
+    #if defined(__clang__)
+        #define CHUNK_RECHECK_INT_LOAD 0
+    #else
+        #define CHUNK_RECHECK_INT_LOAD 1
+    #endif
+#endif
+inline constexpr bool recheck_int_load = optimistic_retry && CHUNK_RECHECK_INT_LOAD != 0;
+
 /// @brief EXPERIMENT mode 7: a block read orders its re-check by the fold of its values
 ///        (AArch64: an acquire fence is a dmb ishld there); elsewhere by an acquire fence.
 #if defined(__aarch64__)

@@ -10,7 +10,7 @@
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC=${SRC:-$(cd "$HERE/../.." && pwd)}
-WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread10}
+WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread11}
 THREADS=${THREADS:-1,72}
 N=${N:-33554432}
 JOBS=${JOBS:-32}

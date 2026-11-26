@@ -22,6 +22,8 @@
 #include <algorithm>   // std::min
 #include <atomic> // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
 #include <cstddef> // std::size_t
+#include <bit>     // std::bit_cast (EXPERIMENT mode 7: recheck_int_load)
+#include <cstdint> // std::uint64_t (idem)
 #include <cstring> // std::memset, std::strerror
 #include <vector>  // std::vector
 
@@ -42,6 +44,31 @@
 
 namespace shrink_array
 {
+
+namespace internal
+{
+/// @brief EXPERIMENT mode 7 (read_reclaim::recheck_int_load): element_at's element load.
+///        An 8-byte element is loaded as an integer (a relaxed atomic load, through a
+///        may_alias type), then bit_cast: the re-check's dependency comes from the integer
+///        register, not from an FP -> integer move. Otherwise @p plain (load_at).
+template <typename T, bool Relaxed, bool Packed, typename Plain>
+[[nodiscard]] CHUNK_FORCE_INLINE T load_for_recheck(const T* vals, int offset, Plain plain) noexcept
+{
+    if constexpr (!Relaxed && !Packed && read_reclaim::recheck_int_load && sizeof(T) == sizeof(std::uint64_t) &&
+                  std::is_trivially_copyable_v<T>)
+    {
+        using U64Alias [[gnu::may_alias]] = std::uint64_t;
+        // raw-read: load_for_recheck -- element_at's element, under its ReadSection
+        const std::uint64_t bits = __atomic_load_n(reinterpret_cast<const U64Alias*>(vals + offset), __ATOMIC_RELAXED);
+        return std::bit_cast<T>(bits);
+    }
+    else
+    {
+        // raw-read: load_for_recheck -- the caller's load_at
+        return plain(vals, offset);
+    }
+}
+} // namespace internal
 
 template <typename T, typename Derived>
 void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T* val)
@@ -1406,7 +1433,7 @@ template <bool Relaxed>
             }
         }
         // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
-        return load_at<Relaxed>(vals, offset);
+        return internal::load_for_recheck<T, Relaxed, is_packed>(vals, offset, [](const T* v, int o) noexcept { return load_at<Relaxed>(v, o); });
     }
     const T* const vals = Relaxed ? values_load() : values_load_for_read(dep);
     // TEST KNOB (test_hooks.h): widens the load -> dereference window
@@ -1418,7 +1445,7 @@ template <bool Relaxed>
         test_hooks::maybe_read_delay();
     }
     // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
-    return load_at<Relaxed>(vals, offset);
+    return internal::load_for_recheck<T, Relaxed, is_packed>(vals, offset, [](const T* v, int o) noexcept { return load_at<Relaxed>(v, o); });
 }
 
 template <typename T, typename Derived>
