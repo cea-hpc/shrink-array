@@ -378,7 +378,12 @@ class Array
     void finish_impl(const F* f);
     template <int BLOCK, typename F>
     void                             finish_from(const WriteCounters& first, const F* f);
-    void                             replay_appends();
+    [[nodiscard]] unsigned long long replay_appends();
+    void                             keep_headroom(unsigned long long taken, unsigned long long demand, bool exact);
+    [[nodiscard]] unsigned long long headroom() const noexcept
+    {
+        return peak_demand_ + peak_demand_ / 4;
+    }
     [[nodiscard]] unsigned long long count_compressed(const std::vector<std::int64_t>& chunks);
     void                             fit_lost_list();
     void                             grow_arena(unsigned long long more);
@@ -413,6 +418,9 @@ class Array
     T                   second_{};                 ///< zero_or_value's second value, T{} while none
     unsigned*           appended_       = nullptr; ///< Writer::appended, a bit per chunk
     unsigned long long  appended_total_ = 0;       ///< appended()
+    unsigned long long  peak_demand_    = 0;       ///< most buffers one phase needed (keep_headroom)
+    unsigned long long  free_hint_      = 0;       ///< free buffers at most, while free_known_
+    bool                free_known_     = false;   ///< free_hint_ counted since the last in_use()
     DeviceArena<T, S>   arena_;
 };
 
@@ -575,9 +583,10 @@ void Array<T, S, V>::finish_from(const WriteCounters& first, const F* f)
     // kokkos_shrink_bench's windows) costs one copy, the settle and one synchronisation, not
     // the five copies, three kernels and three synchronisations of every step in turn (MI300A:
     // 37x to 57x the flat time for those phases).
+    unsigned long long demand = first.fresh; // the buffers this phase needed (keep_headroom)
     if (first.n_append != 0)
     {
-        replay_appends(); // its assign() calls may publish fresh buffers: settled just below
+        demand += replay_appends(); // its assign() calls may publish fresh buffers: settled just below
     }
     if (first.n_append != 0)
     {
@@ -629,6 +638,40 @@ void Array<T, S, V>::finish_from(const WriteCounters& first, const F* f)
         copy(&c, counters_, 1);
         cas_lost_seen_ = c.cas_lost;
     }
+    keep_headroom(first.fresh, demand, first.n_append != 0 || first.n_failed != 0 || parked);
+}
+
+/**
+ * @details The arena grows between phases only: a phase that finds it empty appends every
+ *          write left to a chunk without a buffer, each one after a claim and a scan of every
+ *          shard (the claim's waiters behind it), and finish() sorts the appends on the host.
+ *          Grown by what that phase needed, the arena was empty again at the next window
+ *          (kokkos_shrink_bench, GH200, windows of 10^7 elements: 1.2 x 10^8 appends, the
+ *          rewrite 545x flat). Kept instead with free buffers for the largest phase seen and a
+ *          quarter more: @p demand, the buffers this phase took or would have taken (@p taken
+ *          its fresh publications; not the failed spans of Writer::write, which a chunk-aligned
+ *          fill of the whole array leaves once and finish(f) grows for). The free count is followed on the host from
+ * those publications, and counted again (in_use(), a kernel and a wait) only when it falls below that or the phase was
+ * @p exact: appends, failed spans, parked buffers.
+ */
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::keep_headroom(unsigned long long taken, unsigned long long demand, bool exact)
+{
+    peak_demand_                  = demand > peak_demand_ ? demand : peak_demand_;
+    free_hint_                    = free_hint_ > taken ? free_hint_ - taken : 0;
+    const unsigned long long want = headroom();
+    if (free_known_ && !exact && free_hint_ >= want)
+    {
+        return;
+    }
+    const unsigned long long in_use = arena_.in_use();
+    const unsigned long long free   = arena_.buffers() - in_use;
+    if (free < want)
+    {
+        grow_arena(want - free);
+    }
+    free_hint_  = arena_.buffers() - in_use;
+    free_known_ = true;
 }
 
 template <typename T, unsigned int S, Variant V>
@@ -737,16 +780,18 @@ template <typename T, unsigned int S, Variant V>
 ///          one thread's appends are in its program order); the arena grows only if the chunks
 ///          still compressed need more buffers than it has free (one claim, one buffer per
 ///          chunk). The replay may append again (to the emptied buffer): repeat.
+/// @details Returns the buffers the replays needed: the appended chunks still compressed.
 template <typename T, unsigned int S, Variant V>
-void Array<T, S, V>::replay_appends()
+unsigned long long Array<T, S, V>::replay_appends()
 {
+    unsigned long long needed_all = 0;
     for (;;)
     {
         WriteCounters c{};
         copy(&c, counters_, 1);
         if (c.n_append == 0)
         {
-            return;
+            return needed_all;
         }
         if (c.n_append > append_capacity_)
         {
@@ -785,7 +830,8 @@ void Array<T, S, V>::replay_appends()
         // Room for the chunks still compressed: an append whose wait was given up (MI300A) or
         // whose chunk was published later finds a buffer, and growing for it piled up arenas.
         const unsigned long long needed = count_compressed(chunks);
-        const unsigned long long free   = arena_.buffers() - arena_.in_use();
+        needed_all += needed;
+        const unsigned long long free = arena_.buffers() - arena_.in_use();
         if (needed > free)
         {
             grow_arena(needed - free + needed / 8 + 1);
@@ -831,7 +877,8 @@ unsigned long long Array<T, S, V>::compress()
     copy(&folded, d, 1);
     if (folded > 0)
     {
-        (void)arena_.release_free(); // the arenas the folds emptied, back to the device
+        (void)arena_.release_free(headroom()); // the arenas the folds emptied, back to the device
+        free_known_ = false;                   // counted again at the next finish()
     }
     return folded;
 }
@@ -930,6 +977,7 @@ void Array<T, S, V>::assign(const ArrayState<T>& state)
     {
         throw std::runtime_error("shrink_array::device::Array::assign: the arena ran out");
     }
+    free_known_ = false; // buffers released and taken outside a phase: counted at the next finish()
 }
 
 template <typename T, unsigned int S, Variant V>

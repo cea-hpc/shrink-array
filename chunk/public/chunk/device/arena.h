@@ -180,9 +180,10 @@ class DeviceArena
 
     /// @brief Frees the arenas none of whose buffers is in use, the largest first, while the
     ///        others keep free buffers for an eighth of those in use (the growth step: the next
-    ///        phase does not grow again at once) and one arena is left. Between phases, after
-    ///        the give backs; the free stack is compacted. Waits. Returns the buffers freed.
-    unsigned long long release_free();
+    ///        phase does not grow again at once), and @p keep at least, and one arena is left.
+    ///        Between phases, after the give backs; the free stack is compacted. Waits.
+    ///        Returns the buffers freed.
+    unsigned long long release_free(unsigned long long keep = 0);
 
   private:
     std::vector<T*>              bases_;
@@ -436,7 +437,7 @@ template <typename T, unsigned int S>
 ///          before: Array::finish, Array::compress). The kept arenas' free-stack segments move
 ///          to new offsets: entries are buffer addresses, which do not move.
 template <typename T, unsigned int S>
-unsigned long long DeviceArena<T, S>::release_free()
+unsigned long long DeviceArena<T, S>::release_free(unsigned long long keep)
 {
     const int n = ref_.n_arenas;
     if (n <= 1)
@@ -454,7 +455,7 @@ unsigned long long DeviceArena<T, S>::release_free()
     {
         in_use += u;
     }
-    const unsigned long long reserve   = in_use / 8;
+    const unsigned long long reserve   = in_use / 8 > keep ? in_use / 8 : keep;
     unsigned long long       free_left = total_ - in_use;
     std::vector<int>         order(static_cast<std::size_t>(n));
     std::iota(order.begin(), order.end(), 0);
