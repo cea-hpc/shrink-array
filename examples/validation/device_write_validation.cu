@@ -28,9 +28,14 @@
  *          chunks against a host model: a chunk materialises when a value other than its
  *          constant is written into it (same_value: -0.0 is not 0.0). With compress() after
  *          each round, the model folds every materialised chunk whose elements below n are one
- *          value, which takes it as its constant (every even chunk at 2.5 in round 3); the
+ *          value, which takes it as its constant (every even chunk at 2.5 in round 3, and every
+ *          chunk 4k + 1 at 3.5 in zero_any); the
  *          number of folds, the elements, the materialised chunks and the buffers in use are
  *          checked again after the pass.
+ *
+ *          zero_or_value: the same rounds with the second value 2.5, then 1.5 from round 4 on;
+ *          the model folds only to +0.0 and the current second value, and the chunks folded to
+ *          2.5 keep reading it once the second value has changed.
  */
 
 #include <algorithm> // std::all_of, std::count, std::fill, std::max, std::min, std::shuffle
@@ -114,6 +119,12 @@ void check(const sd::Array<double, S, V>& a, const std::vector<double>& mirror, 
     expect(wrong == 0 && got_mat == expected, line);
 }
 
+/// @brief The variant's name, for the logs.
+const char* variant_name(sd::Variant v)
+{
+    return v == sd::Variant::zero ? "zero, " : v == sd::Variant::zero_or_value ? "zero_or_value, " : "";
+}
+
 template <unsigned int S, sd::Variant V = sd::Variant::zero_any>
 void run(unsigned           seed,
          std::int64_t       n,
@@ -123,9 +134,20 @@ void run(unsigned           seed,
          bool               with_compress = false)
 {
     constexpr int BLOCK = 256;
-    std::printf("[%s%s%s] S=%u n=%lld arena=%llu constant=%g\n", V == sd::Variant::zero ? "zero, " : "", label,
+    std::printf("[%s%s%s] S=%u n=%lld arena=%llu constant=%g\n", variant_name(V), label,
                 with_compress ? ", compress() each round" : "", S, static_cast<long long>(n), arena_buffers, constant);
     sd::Array<double, S, V> a(n, arena_buffers, constant);
+    // zero_or_value: the second value, 2.5 (round 3's) until round 4, then 1.5 (folds_to).
+    double second = constant;
+    if constexpr (V == sd::Variant::zero_or_value)
+    {
+        second = 2.5;
+        a.set_second_value(second);
+    }
+    const auto folds = [&](double v)
+    {
+        return V == sd::Variant::zero_any || same_bits(v, 0.0) || (V == sd::Variant::zero_or_value && same_bits(v, second));
+    };
     const auto           nn = static_cast<std::size_t>(n);
     std::vector<double>  mirror(nn, constant), target(nn);
     // The host model of the chunks: materialised or not, and the constant of each.
@@ -135,16 +157,17 @@ void run(unsigned           seed,
     const double         palette[] = {0.0, -0.0, 1.5, 2.5};
     double*              d_target  = sd::allocate<double>(nn);
     const FromArray      f{d_target};
-    // One Writer::write call on [lo, hi) of chunk c. zero_any: a compressed chunk written whole
-    // with one value takes it as its constant, no buffer (Writer::fold_whole).
+    // One Writer::write call on [lo, hi) of chunk c. zero_any, zero_or_value: a compressed chunk
+    // written whole with one value it folds to takes it as its constant, no buffer
+    // (Writer::fold_whole).
     const auto note_chunk = [&](std::int64_t c, std::int64_t lo, std::int64_t hi)
     {
         const auto         cc       = static_cast<std::size_t>(c);
         const std::int64_t valid_hi = std::min<std::int64_t>((c + 1) * S, n);
-        if (V == sd::Variant::zero_any && mat[cc] == 0 && lo <= c * S && hi >= valid_hi)
+        if (V != sd::Variant::zero && mat[cc] == 0 && lo <= c * S && hi >= valid_hi)
         {
             const double v       = target[static_cast<std::size_t>(c * S)];
-            bool         uniform = true;
+            bool         uniform = folds(v);
             for (std::int64_t i = c * S; i < valid_hi && uniform; ++i)
             {
                 uniform = same_bits(target[static_cast<std::size_t>(i)], v);
@@ -176,6 +199,15 @@ void run(unsigned           seed,
 
     for (int round = 0; round < 6; ++round)
     {
+        if constexpr (V == sd::Variant::zero_or_value)
+        {
+            if (round == 4)
+            {
+                second = 1.5; // the chunks at 2.5 keep it
+                a.set_second_value(second);
+                expect(a.second_value() == 1.5, "set_second_value(1.5)");
+            }
+        }
         for (auto& x : target)
         {
             const auto r = rng() % 8;
@@ -183,7 +215,8 @@ void run(unsigned           seed,
         }
         // Rounds 0, 2, 4: ranges, the first on a compressed array (fresh buffers shared by
         // two blocks, lost CAS); 1 and 5: the constant everywhere (votes only, no buffer);
-        // 3: the whole array, every even chunk 2.5 throughout (folds back to 2.5).
+        // 3: the whole array, every even chunk 2.5 throughout (folds back to 2.5), every chunk
+        // 4k + 1 3.5 throughout (zero_any folds it, zero and zero_or_value do not).
         const bool ranges_round = round % 2 == 0;
         if (round == 1 || round == 5)
         {
@@ -194,6 +227,10 @@ void run(unsigned           seed,
             for (std::int64_t c = 0; c * S < n; c += 2)
             {
                 std::fill(target.begin() + c * S, target.begin() + std::min<std::int64_t>((c + 1) * S, n), 2.5);
+            }
+            for (std::int64_t c = 1; c * S < n; c += 4)
+            {
+                std::fill(target.begin() + c * S, target.begin() + std::min<std::int64_t>((c + 1) * S, n), 3.5);
             }
         }
         sd::copy(d_target, target.data(), nn);
@@ -234,14 +271,15 @@ void run(unsigned           seed,
         if (with_compress)
         {
             // The model: a materialised chunk whose elements below n are one value folds (zero:
-            // only when that value is +0.0; -0.0 is another value, round 3's 2.5 stays).
+            // only when that value is +0.0; -0.0 is another value, round 3's 2.5 stays;
+            // zero_or_value: +0.0 or the second value).
             unsigned long long expected_folds = 0;
             for (std::size_t c = 0; c < mat.size(); ++c)
             {
                 const std::size_t lo = c * S;
                 const std::size_t hi = std::min<std::size_t>(lo + S, nn);
                 const double head = V == sd::Variant::zero ? 0.0 : mirror[lo];
-                if (mat[c] != 0 && std::all_of(mirror.begin() + static_cast<long>(lo), mirror.begin() + static_cast<long>(hi),
+                if (mat[c] != 0 && folds(head) && std::all_of(mirror.begin() + static_cast<long>(lo), mirror.begin() + static_cast<long>(hi),
                                                [&](double x) { return same_bits(x, head); }))
                 {
                     mat[c] = 0;
@@ -292,6 +330,17 @@ int main()
             refused = true;
         }
         expect(refused, "zero variant: a constant other than T{} refused");
+        // zero_or_value: folds to +0.0 and the second value only.
+        constexpr auto zov = sd::Variant::zero_or_value;
+        run<256, zov>(31, 1L << 20, 1L << 12, 0.0, "exact arena", true);
+        run<1024, zov>(32, (1L << 20) + 300, (1L << 10) + 1, 0.0, "exact arena, tail chunk", true);
+        run<256, zov>(33, 1L << 18, 16, 0.0, "small arena: failed spans written again", true);
+        run<1024, zov>(34, (1L << 18) + 77, 4, 0.0, "small arena, tail chunk", true);
+        run<1024, zov>(35, (1L << 18) + 77, 4, 0.0, "small arena, tail chunk, no compress()");
+        {
+            sd::Array<double, 256, zov> b(1024, 4, 2.5);
+            expect(b.second_value() == 2.5, "zero_or_value: a constant other than T{} is the second value");
+        }
     }
     catch (const std::exception& e)
     {

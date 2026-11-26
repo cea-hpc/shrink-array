@@ -63,7 +63,7 @@
 
 #include "chunk/device/arena.h"      // ArenaRef
 #include "chunk/device/atomics.h"    // backoff, cas_ptr, exchange_ptr, fetch_add, fetch_or, load, load_ptr
-#include "chunk/device/chunk_desc.h" // ChunkDesc, Variant, constant_of, busy_mark, is_fresh, tag_fresh, untag
+#include "chunk/device/chunk_desc.h" // ChunkDesc, Variant, constant_of, folds_to, busy_mark, is_fresh, tag_fresh, untag
 #include "chunk/device/warp.h" // ballot, group_by_key, lane_id, global_warp_id, active_lanes, shuffle_ptr, sync_lanes
 #include "chunk/internal/host_device.h" // CHUNK_HD
 #include "chunk/internal/same_value.h"  // same_value
@@ -130,6 +130,9 @@ struct Writer
     unsigned long long append_capacity = 0;
     std::int64_t*      fresh_list      = nullptr; ///< the chunks of the fresh publications, in order
     unsigned long long fresh_capacity  = 0;
+    /// zero_or_value: the array's second value (T{} while none is declared), the only value
+    /// other than T{} a whole-chunk write folds to (fold_whole); the other variants ignore it.
+    T second{};
 
     /**
      * @brief a(i) = v, from any thread of a write kernel (docs/gpu_assign.md): no
@@ -403,7 +406,7 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
     }
     const std::int64_t valid_hi = base + S < n ? base + S : n;
     const bool         whole    = lo <= base && hi >= valid_hi;
-    if constexpr (V == Variant::zero_any)
+    if constexpr (V != Variant::zero)
     {
         if (whole && fold_whole<BLOCK>(d, base, valid_hi, new_vals))
         {
@@ -472,8 +475,9 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
 }
 
 /**
- * @details zero_any, a compressed chunk the block writes whole (every element below n): if its
- *          new values are one value, the chunk takes it as its constant and no buffer -- the
+ * @details zero_any and zero_or_value, a compressed chunk the block writes whole (every
+ *          element below n): if its new values are one value (zero_or_value: T{} or the second
+ *          value, folds_to), the chunk takes it as its constant and no buffer -- the
  *          vote before materialising of docs/gpu_design.md 7.3, to a new value and not only to
  *          the chunk's own. Without it a write of constants by bands (kokkos_shrink_bench's
  *          init, shrink_bench's fill) materialised every chunk it changed, and the arena kept
@@ -505,9 +509,9 @@ template <int BLOCK>
     {
         other = other || (base + t + j * BLOCK < valid_hi && !same_value(new_vals[j], value));
     }
-    if (__syncthreads_or(other ? 1 : 0) != 0)
+    if (__syncthreads_or(other ? 1 : 0) != 0 || !folds_to<V>(value, second))
     {
-        return false;
+        return false; // value is shared: the whole block returns
     }
     if (t == 0)
     {

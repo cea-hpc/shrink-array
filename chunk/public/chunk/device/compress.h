@@ -21,7 +21,7 @@
  * @brief The compression pass of a device array (docs/gpu_design.md, section 7): a
  *        materialised chunk whose elements are all one value (same_value) takes that value
  *        as its constant and gives its buffer back to the arena (in the zero variant, only
- *        when that value is T{}).
+ *        when that value is T{}; in zero_or_value, when it is T{} or the second value).
  *
  * @details Stage 1, experimental (see chunk_desc.h), from the prototype's compress_warp: one
  *          warp per chunk, grid-stride over the chunks, each lane reading S / warp_size
@@ -43,7 +43,7 @@
 
 #include "chunk/device/arena.h"        // ArenaRef
 #include "chunk/device/atomics.h"      // fetch_add
-#include "chunk/device/chunk_desc.h"   // ChunkDesc, Variant, zero_value
+#include "chunk/device/chunk_desc.h"   // ChunkDesc, Variant, folds_to, zero_value
 #include "chunk/device/warp.h"         // ballot, full_warp, lane_id
 #include "chunk/internal/same_value.h" // same_value
 
@@ -52,8 +52,10 @@ namespace shrink_array::device::kernels
 
 /// @brief The pass: @p folded receives the number of chunks folded back. Blocks of a
 ///        multiple of warp_size threads: every lane of a warp takes the same chunks.
+///        @p second: zero_or_value's second value (folds_to), ignored by the other variants.
 template <typename T, unsigned int S, Variant V>
-__global__ void compress_chunks(ChunkDesc<T, V>* desc, std::int64_t n, ArenaRef<T, S> arena, unsigned long long* folded)
+__global__ void
+compress_chunks(ChunkDesc<T, V>* desc, std::int64_t n, ArenaRef<T, S> arena, T second, unsigned long long* folded)
 {
     const std::int64_t n_chunks = (n + S - 1) / S;
     const int          lane     = lane_id();
@@ -70,15 +72,16 @@ __global__ void compress_chunks(ChunkDesc<T, V>* desc, std::int64_t n, ArenaRef<
         }
         const std::int64_t valid = (c + 1) * S <= n ? S : n - c * S;
         // zero: the chunk folds only to T{}, so every element is compared with it.
-        const T head    = V == Variant::zero ? zero_value<T>() : buf[0];
-        bool    uniform = true;
+        const T head = V == Variant::zero ? zero_value<T>() : buf[0];
+        // zero_or_value: a head that is neither value cannot fold (every lane read it).
+        bool uniform = folds_to<V>(head, second);
         for (std::int64_t k = lane; k < valid && uniform; k += warp_size)
         {
             uniform = same_value(buf[k], head);
         }
         if (ballot(full_warp, !uniform) == 0 && lane == 0)
         {
-            if constexpr (V == Variant::zero_any)
+            if constexpr (V != Variant::zero)
             {
                 d.constant = head;
             }

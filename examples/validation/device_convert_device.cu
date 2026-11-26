@@ -18,7 +18,7 @@
  * @file device_convert_device.cu
  * @brief The device half of device_convert_validation (see device_convert_validation.h):
  *        device::Array::assign() and image() around a write phase and a compress(), in the
- *        zero_any or the zero variant.
+ *        zero_any, the zero or the zero_or_value variant.
  */
 
 #include <cstdint>   // std::int64_t
@@ -67,6 +67,10 @@ DeviceRoundTrip round_trip_in(const shrink_array::ArrayState<double>& state,
     a.assign(state);
     r.after_assign              = a.to_host();
     r.materialised_after_assign = a.materialised();
+    if constexpr (V == sd::Variant::zero_or_value)
+    {
+        a.set_second_value(2.5); // the ten chunks written 2.5 fold back to it
+    }
     a.parallel_for_chunks(lo1, hi1, Constant{2.5});
     a.parallel_for_chunks(lo2, hi2, Index{});
     r.folded             = a.compress();
@@ -80,20 +84,27 @@ DeviceRoundTrip round_trip_in(const shrink_array::ArrayState<double>& state,
 
 template <unsigned int S>
 DeviceRoundTrip round_trip(const shrink_array::ArrayState<double>& state,
-                           bool                                    zero_variant,
+                           DeviceVariant                           variant,
                            std::int64_t                            lo1,
                            std::int64_t                            hi1,
                            std::int64_t                            lo2,
                            std::int64_t                            hi2)
 {
-    return zero_variant ? round_trip_in<S, sd::Variant::zero>(state, lo1, hi1, lo2, hi2)
-                        : round_trip_in<S, sd::Variant::zero_any>(state, lo1, hi1, lo2, hi2);
+    switch (variant)
+    {
+        case DeviceVariant::zero:
+            return round_trip_in<S, sd::Variant::zero>(state, lo1, hi1, lo2, hi2);
+        case DeviceVariant::zero_or_value:
+            return round_trip_in<S, sd::Variant::zero_or_value>(state, lo1, hi1, lo2, hi2);
+        default:
+            return round_trip_in<S, sd::Variant::zero_any>(state, lo1, hi1, lo2, hi2);
+    }
 }
 
 } // namespace
 
 DeviceRoundTrip device_round_trip(const shrink_array::ArrayState<double>& state,
-                                  bool                                    zero_variant,
+                                  DeviceVariant                           variant,
                                   std::int64_t                            lo1,
                                   std::int64_t                            hi1,
                                   std::int64_t                            lo2,
@@ -102,17 +113,17 @@ DeviceRoundTrip device_round_trip(const shrink_array::ArrayState<double>& state,
     switch (state.chunk_size)
     {
         case 64:
-            return round_trip<64>(state, zero_variant, lo1, hi1, lo2, hi2);
+            return round_trip<64>(state, variant, lo1, hi1, lo2, hi2);
         case 128:
-            return round_trip<128>(state, zero_variant, lo1, hi1, lo2, hi2);
+            return round_trip<128>(state, variant, lo1, hi1, lo2, hi2);
         case 256:
-            return round_trip<256>(state, zero_variant, lo1, hi1, lo2, hi2);
+            return round_trip<256>(state, variant, lo1, hi1, lo2, hi2);
         case 512:
-            return round_trip<512>(state, zero_variant, lo1, hi1, lo2, hi2);
+            return round_trip<512>(state, variant, lo1, hi1, lo2, hi2);
         case 1024:
-            return round_trip<1024>(state, zero_variant, lo1, hi1, lo2, hi2);
+            return round_trip<1024>(state, variant, lo1, hi1, lo2, hi2);
         case 2048:
-            return round_trip<2048>(state, zero_variant, lo1, hi1, lo2, hi2);
+            return round_trip<2048>(state, variant, lo1, hi1, lo2, hi2);
         default:
             throw std::runtime_error("device_round_trip: chunk size " + std::to_string(state.chunk_size) +
                                      " not built");

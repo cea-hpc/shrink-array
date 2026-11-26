@@ -28,7 +28,9 @@
  *          zeros with one -0.0 (materialised: -0.0 is not 0.0), a half-constant chunk; and a
  *          partial last chunk. On the device: 2.5 over ten whole chunks (they fold back to a
  *          second value, materialised ones included), a(i) = i over a span across four
- *          chunks; then compress().
+ *          chunks; then compress(). zero_or_value declares 2.5 its second value after the
+ *          first assign(): the chunks of 1.5 get a buffer there (no second value yet), the ten
+ *          of 2.5 fold back and image() declares 2.5.
  */
 
 #include <cstdint>   // std::int64_t
@@ -105,19 +107,23 @@ long count_kind(const sa::ArrayState<double>& st, sa::ChunkKind kind, std::size_
     return n;
 }
 
-/// @brief The round trip into a device array of the zero_any variant, or of the zero one
-///        (@p zero_variant): there the ten chunks of 1.5 are materialised by assign(), and the
-///        ten of 2.5 do not fold.
-void run(bool zero_variant)
+/// @brief The round trip into a device array of the zero_any variant, the zero one (there
+///        the ten chunks of 1.5 are materialised by assign(), and the ten of 2.5 do not fold)
+///        or the zero_or_value one (the chunks of 1.5 materialised, those of 2.5 fold).
+void run(device_convert::DeviceVariant variant)
 {
-    HostArray          src(0);
+    using DV                          = device_convert::DeviceVariant;
+    const bool        zero_variant    = variant == DV::zero;
+    const bool        materialise_1_5 = variant != DV::zero_any;
+    const char* const name = variant == DV::zero ? "zero" : variant == DV::zero_or_value ? "zero_or_value" : "zero_any";
+    HostArray         src(0);
     const std::int64_t s    = src.chunk_size();
     const std::int64_t n    = (50 * s) + 17;
     const auto         nn   = static_cast<std::size_t>(n);
     const auto         used = static_cast<std::size_t>((n + s - 1) / s);
     src.resize(static_cast<int>(n));
-    std::printf("[zero_any::Array<double> <-> device::Array, %s variant] S=%lld n=%lld\n",
-                zero_variant ? "zero" : "zero_any", static_cast<long long>(s), static_cast<long long>(n));
+    std::printf("[zero_any::Array<double> <-> device::Array, %s variant] S=%lld n=%lld\n", name,
+                static_cast<long long>(s), static_cast<long long>(n));
     sa::parallel_phase(
         [&]
         {
@@ -146,9 +152,9 @@ void run(bool zero_variant)
 
     // The device half: assign, two writes, compress, image, assign again.
     const std::int64_t lo1 = 10 * s, hi1 = 20 * s, lo2 = (30 * s) + 5, hi2 = (33 * s) + 9;
-    const auto         r = device_convert::device_round_trip(state, zero_variant, lo1, hi1, lo2, hi2);
-    // zero: the second-value chunks get a buffer.
-    const long mat_assign = mat0 + (zero_variant ? count_kind(state, sa::ChunkKind::second_value, used) : 0);
+    const auto         r = device_convert::device_round_trip(state, variant, lo1, hi1, lo2, hi2);
+    // zero, zero_or_value (no second value yet): the second-value chunks get a buffer.
+    const long mat_assign = mat0 + (materialise_1_5 ? count_kind(state, sa::ChunkKind::second_value, used) : 0);
     std::snprintf(line, sizeof line, "assign(): %ld wrong, %llu/%ld chunks materialised", wrong(r.after_assign, want),
                   r.materialised_after_assign, mat_assign);
     expect(wrong(r.after_assign, want) == 0 &&
@@ -195,6 +201,11 @@ void run(bool zero_variant)
     std::snprintf(line, sizeof line, "assign() over held buffers: %ld wrong", wrong(r.after_reassign, want));
     expect(wrong(r.after_reassign, want) == 0, line);
     expect(r.arena_consistent, "device arena: one buffer per materialised chunk");
+    if (variant == DV::zero_or_value)
+    {
+        expect(r.image.state.has_second_value && same_bits(r.image.state.second_value, 2.5),
+               "image(): the second value 2.5 declared");
+    }
 }
 
 } // namespace
@@ -205,8 +216,9 @@ int main()
     std::printf("device_convert_validation: host <-> device through export_array / import_array\n");
     try
     {
-        run(false);
-        run(true);
+        run(device_convert::DeviceVariant::zero_any);
+        run(device_convert::DeviceVariant::zero);
+        run(device_convert::DeviceVariant::zero_or_value);
     }
     catch (const std::exception& e)
     {

@@ -37,7 +37,7 @@
 #include <type_traits> // std::is_arithmetic_v
 
 #include "chunk/internal/host_device.h" // CHUNK_HD
-#include "chunk/internal/same_value.h"  // internal::is_std_complex
+#include "chunk/internal/same_value.h"  // internal::is_std_complex, same_value
 
 namespace shrink_array::device
 {
@@ -48,14 +48,16 @@ namespace shrink_array::device
  */
 enum class Variant : unsigned char
 {
-    zero,     ///< T{} only (8.1): the descriptor is its pointer, the pass folds only to T{}.
-    zero_any, ///< Any value (8.3): the descriptor carries it.
+    zero,          ///< T{} only (8.1): the descriptor is its pointer, the pass folds only to T{}.
+    zero_any,      ///< Any value (8.3): the descriptor carries it.
+    zero_or_value, ///< T{} or the array's second value (8.2): the descriptor carries the value,
+                   ///< the pass and the whole-chunk write fold only to those two.
 };
 
 /**
  * @brief One chunk on the device.
  * @tparam T element type, trivially copyable
- * @tparam V the variant: zero_any carries the constant, zero has none (it is T{})
+ * @tparam V the variant: zero_any and zero_or_value carry the constant, zero has none (it is T{})
  */
 template <typename T, Variant V = Variant::zero_any>
 struct ChunkDesc
@@ -109,6 +111,32 @@ template <typename T>
 #else
     return T{};
 #endif
+}
+
+/**
+ * @brief Whether a chunk of variant @p V may fold to @p value, by the pass (compress.h) or a
+ *        write of the whole chunk (Writer::fold_whole): any value in zero_any, T{} in zero,
+ *        T{} or @p second (the array's second value, T{} while none is declared) in
+ *        zero_or_value.
+ */
+template <Variant V, typename T>
+[[nodiscard]] CHUNK_HD inline bool folds_to(const T& value, const T& second) noexcept
+{
+    if constexpr (V == Variant::zero_any)
+    {
+        (void)value;
+        (void)second;
+        return true;
+    }
+    else if constexpr (V == Variant::zero)
+    {
+        (void)second;
+        return same_value(value, zero_value<T>());
+    }
+    else
+    {
+        return same_value(value, zero_value<T>()) || same_value(value, second);
+    }
 }
 
 /// @brief What every element of chunk @p d reads while it holds no buffer.

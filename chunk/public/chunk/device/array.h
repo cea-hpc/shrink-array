@@ -18,7 +18,7 @@
 
 /**
  * @file array.h
- * @brief device::Array, the host side of a device zero_any or zero array: its descriptors,
+ * @brief device::Array, the host side of a device zero_any, zero_or_value or zero array: its descriptors,
  *        its arena, and the write phases of the chunk-aligned path (block_write.h).
  *
  * @details Stage 1, experimental (see chunk_desc.h). What it does now:
@@ -74,7 +74,7 @@ __global__ void init_desc(ChunkDesc<T, V>* desc, std::int64_t n_chunks, T consta
     for (std::int64_t c = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; c < n_chunks; c += stride)
     {
         desc[c].buf = nullptr;
-        if constexpr (V == Variant::zero_any)
+        if constexpr (V != Variant::zero)
         {
             desc[c].constant = constant;
         }
@@ -225,8 +225,9 @@ struct CounterSlot
  * @brief A device array of @p T in chunks of @p S, every element @p constant at first.
  * @tparam T element type, trivially copyable
  * @tparam S chunk size, a power of two, 32 at least (S = 1024 on GPU, docs/gpu_design.md 13)
- * @tparam V the variant (chunk_desc.h): zero_any, or zero (the constant is T{}, a chunk
- *           folds back only to it, and the descriptor is its pointer alone)
+ * @tparam V the variant (chunk_desc.h): zero_any; zero_or_value (a chunk folds back only to
+ *           T{} or the second value, set_second_value()); or zero (the constant is T{}, a
+ *           chunk folds back only to it, and the descriptor is its pointer alone)
  */
 template <typename T, unsigned int S, Variant V = Variant::zero_any>
 class Array
@@ -242,7 +243,8 @@ class Array
 
     /// @brief @p n elements reading @p constant; an arena of @p arena_buffers buffers to start;
     ///        an append-buffer of @p append_capacity entries (0: 1% of the arena's elements,
-    ///        4096 at least), for Writer::assign when the arena runs out.
+    ///        4096 at least), for Writer::assign when the arena runs out. zero_or_value: a
+    ///        @p constant other than T{} is also the second value (set_second_value()).
     /// @throws std::invalid_argument in the zero variant if @p constant is not T{}.
     Array(std::int64_t n, unsigned long long arena_buffers, T constant = T{}, unsigned long long append_capacity = 0);
     ~Array();
@@ -291,21 +293,42 @@ class Array
     void finish_end();
 
     /// @brief The compression pass (section 7), between phases: every materialised chunk
-    ///        whose elements below size() are one value folds back to it, its buffer back to
-    ///        the arena; the arenas left with no buffer in use go back to the device
+    ///        whose elements below size() are one value folds back to it (zero_or_value: if
+    ///        it is T{} or the second value; zero: if it is T{}), its buffer back to the
+    ///        arena; the arenas left with no buffer in use go back to the device
     ///        (DeviceArena::release_free). Returns the chunks folded back. Waits.
     unsigned long long compress();
+
+    /// @brief zero_or_value: the value other than T{} that the chunks may fold to from now on
+    ///        (T{}: none), between phases. The chunks already compressed to an earlier second
+    ///        value keep reading it, as on the host (its registry block never moves).
+    void set_second_value(T second) noexcept
+        requires(V == Variant::zero_or_value)
+    {
+        second_ = second;
+    }
+
+    /// @brief zero_or_value: the second value, T{} while none is declared.
+    [[nodiscard]] T second_value() const noexcept
+        requires(V == Variant::zero_or_value)
+    {
+        return second_;
+    }
 
     /// @brief Makes this array the one @p state describes (export_array() of a host array
     ///        of size() elements at chunk size S): what it held goes back to the arena, the
     ///        arena grows if the materialised chunks need it. Between phases. Waits. In the
-    ///        zero variant a chunk compressed to another value than T{} gets a buffer.
+    ///        zero variant a chunk compressed to another value than T{} gets a buffer; in
+    ///        zero_or_value, @p state's second value (if it declares one) becomes this array's,
+    ///        and a chunk compressed to a value neither T{} nor the second gets a buffer, as
+    ///        import_array() fills it on a host zero_or_value array.
     /// @throws std::runtime_error if @p state has another size or chunk size.
     void assign(const ArrayState<T>& state);
 
     /// @brief This array as an ArrayState that owns the materialised chunks' elements, for
     ///        import_array() on a host array. A compressed chunk is first_value if its
-    ///        constant is T{}, second_value otherwise. Between phases. Waits.
+    ///        constant is T{}, second_value otherwise. zero_or_value: the state declares the
+    ///        second value unless it is T{}. Between phases. Waits.
     [[nodiscard]] ArrayImage<T> image() const;
 
     /// @brief Elements.
@@ -379,6 +402,7 @@ class Array
     T*                  append_value_ = nullptr;
     unsigned long long  append_capacity_;
     unsigned long long  cas_lost_seen_ = 0; ///< cas_lost when finish() last gave the parked buffers back
+    T                   second_{};          ///< zero_or_value's second value, T{} while none
     DeviceArena<T, S>   arena_;
 };
 
@@ -402,6 +426,10 @@ Array<T, S, V>::Array(std::int64_t n, unsigned long long arena_buffers, T consta
     if (V == Variant::zero && !same_value(constant, T{}))
     {
         throw std::invalid_argument("shrink_array::device::Array: the zero variant reads T{}, no other constant");
+    }
+    if constexpr (V == Variant::zero_or_value)
+    {
+        second_ = constant; // T{}: none
     }
     const auto nc = static_cast<std::size_t>(n_chunks_);
     desc_         = allocate<ChunkDesc<T, V>>(nc);
@@ -461,6 +489,7 @@ template <typename T, unsigned int S, Variant V>
     w.append_index    = append_index_;
     w.append_value    = append_value_;
     w.append_capacity = append_capacity_;
+    w.second          = second_;
     return w;
 }
 
@@ -777,7 +806,7 @@ unsigned long long Array<T, S, V>::compress()
         const std::int64_t warps_per_block = 256 / warp_size;
         const std::int64_t blocks          = (n_chunks_ + warps_per_block - 1) / warps_per_block;
         kernels::compress_chunks<T, S, V>
-            <<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(desc_, n_, arena_.ref(), d);
+            <<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(desc_, n_, arena_.ref(), second_, d);
     }
     synchronize();
     unsigned long long folded = 0;
@@ -791,9 +820,10 @@ unsigned long long Array<T, S, V>::compress()
 
 /// @details The materialised and motif chunks are filled on the host into a staging buffer
 ///          (a motif expanded), copied in batches, and each batch's chunks take a buffer from
-///          the arena on the device; the tail of the last chunk holds T{}. In the zero
-///          variant a chunk compressed to another value than T{} (a zero_any or zero_or_value
-///          host array) is materialised too, every element that value.
+///          the arena on the device; the tail of the last chunk holds T{}. A chunk compressed
+///          to a value this variant does not fold to (folds_to: zero, another value than T{};
+///          zero_or_value, neither T{} nor the second value) is materialised too, every
+///          element that value.
 template <typename T, unsigned int S, Variant V>
 void Array<T, S, V>::assign(const ArrayState<T>& state)
 {
@@ -812,19 +842,28 @@ void Array<T, S, V>::assign(const ArrayState<T>& state)
         kernels::release_all<T, S, V><<<256, 256>>>(desc_, n_chunks_, arena_.ref());
     }
     synchronize();
+    if constexpr (V == Variant::zero_or_value)
+    {
+        if (state.has_second_value)
+        {
+            second_ = state.second_value;
+        }
+    }
     std::vector<ChunkDesc<T, V>> h(nc);
     std::vector<std::int64_t>    mats;
     for (std::size_t c = 0; c < nc; ++c)
     {
-        const ChunkState<T>& cs       = state.chunks[c];
-        const bool           constant = cs.kind == ChunkKind::first_value || cs.kind == ChunkKind::second_value;
-        h[c].buf                      = nullptr;
-        if constexpr (V == Variant::zero_any)
+        const ChunkState<T>& cs = state.chunks[c];
+        // zero, zero_or_value: a chunk compressed to a value they do not fold to is
+        // materialised, filled with it.
+        const bool constant =
+            (cs.kind == ChunkKind::first_value || cs.kind == ChunkKind::second_value) && folds_to<V>(cs.value, second_);
+        h[c].buf = nullptr;
+        if constexpr (V != Variant::zero)
         {
             h[c].constant = constant ? cs.value : T{};
         }
-        // zero: a chunk compressed to another value than T{} is materialised, filled with it.
-        if (!constant || (V == Variant::zero && !same_value(cs.value, T{})))
+        if (!constant)
         {
             mats.push_back(static_cast<std::int64_t>(c));
         }
@@ -855,7 +894,7 @@ void Array<T, S, V>::assign(const ArrayState<T>& state)
                 out[e] = e >= valid                           ? T{}
                          : cs.kind == ChunkKind::materialised ? cs.data[e]
                          : cs.kind == ChunkKind::motif        ? detail::motif_element(cs.data[e], cs.value)
-                                                              : cs.value; // zero: a constant other than T{}
+                                                              : cs.value; // a constant it does not fold to
             }
         }
         copy(d_stage, staging.get(), count * S);
@@ -885,6 +924,11 @@ template <typename T, unsigned int S, Variant V>
     ArrayImage<T> img;
     img.state.size       = static_cast<std::size_t>(n_);
     img.state.chunk_size = S;
+    if constexpr (V == Variant::zero_or_value)
+    {
+        img.state.has_second_value = !same_value(second_, T{});
+        img.state.second_value     = second_;
+    }
     img.state.chunks.resize(nc);
     std::vector<std::int64_t> mats;
     for (std::size_t c = 0; c < nc; ++c)

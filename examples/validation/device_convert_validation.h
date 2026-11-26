@@ -33,6 +33,14 @@
 namespace device_convert
 {
 
+/// @brief The variant of the device array (device::Variant, which this header does not name).
+enum class DeviceVariant
+{
+    zero_any,
+    zero,
+    zero_or_value, ///< second value 2.5, declared after the first assign()
+};
+
 /// @brief What the device half did with a host state, step by step.
 struct DeviceRoundTrip
 {
@@ -52,10 +60,10 @@ struct DeviceRoundTrip
  *        buffers it holds.
  * @throws std::runtime_error for a chunk size the device half was not built for.
  */
-/// @brief @p state into a device array (the zero variant if @p zero_variant, else zero_any),
-///        [lo1, hi1) written 2.5 and [lo2, hi2) written i, compress(), image(), assign again.
+/// @brief @p state into a device array of variant @p variant, [lo1, hi1) written 2.5 and
+///        [lo2, hi2) written i, compress(), image(), assign again.
 DeviceRoundTrip device_round_trip(const shrink_array::ArrayState<double>& state,
-                                  bool                                    zero_variant,
+                                  DeviceVariant                           variant,
                                   std::int64_t                            lo1,
                                   std::int64_t                            hi1,
                                   std::int64_t                            lo2,

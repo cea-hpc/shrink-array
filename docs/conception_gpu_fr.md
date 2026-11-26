@@ -383,6 +383,24 @@ qui le justifiait n'existe plus) : il est conservé pour l'interopérabilité et
 (ne compresser qu'à une valeur déclarée), **(à trancher)** s'il mérite un code séparé ou un
 `if constexpr` dans `zero_any`.
 
+Tranché : un `if constexpr`, `Variant::zero_or_value`. Son descripteur est celui de
+`zero_any`, `{buf, constant}` ; la seconde valeur est un champ de l'`Array`
+(`set_second_value()`, `second_value()`, opérations d'hôte entre deux phases ; T{} tant
+qu'aucune n'est déclarée ; une constante de construction autre que T{} est aussi la seconde
+valeur), copiée dans le `Writer` (`Writer::second`) et passée à la passe.
+`folds_to<V>(value, second)` (`chunk_desc.h`) est la seule différence : la passe et l'écriture
+d'un chunk entier (`Writer::fold_whole`) replient vers T{} ou la seconde valeur, jamais vers une
+autre. Écrire sa propre constante dans un chunk compressé ne coûte toujours rien, quelle que
+soit cette constante. Un chunk compressé à une ancienne seconde valeur continue de la lire,
+comme sur l'hôte (son bloc du registre ne bouge jamais). `assign(state)` prend la seconde
+valeur de `state` s'il en déclare une et matérialise un chunk compressé à une valeur qui n'est
+ni T{} ni la seconde, comme `import_array()` le remplit sur un `zero_or_value` hôte ;
+`image()` déclare la seconde valeur sauf si c'est T{}. `device_write_validation` passe les
+rondes de `zero` en `zero_or_value` (seconde valeur 2,5, puis 1,5 à partir de la ronde 4 ; les
+chunks à 3,5 de la ronde 3 ne doivent pas se replier), et `device_convert_validation` son
+aller-retour (2,5 déclaré après `assign()`). `kokkos_shrink_bench ... zero_or_value` déclare
+les secondes valeurs du banc CPU (1, 1, 1, 2, 100).
+
 ### 8.3 `zero_any`
 
 Le descripteur porte la constante : c'est la forme naturelle de `zero_any`, et la variante à

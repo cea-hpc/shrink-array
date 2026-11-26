@@ -42,9 +42,11 @@
  *
  *          Usage: kokkos_shrink_bench [log2(sz), default 27] [iterations, default 2000]
  *                                     [interval, default sz / 10^4]
- *                                     [compress every, default 10] [variants: zero_any, zero
- *                                     or both, default both] [arenas from 1/N of the chunks,
- *                                     default 64]
+ *                                     [compress every, default 10] [variants: zero_any, zero,
+ *                                     zero_or_value, both (zero_any and zero) or all, default
+ *                                     both] [arenas from 1/N of the chunks, default 64]
+ *          zero_or_value declares the CPU bench's second values (bench_array.h): 1 for arr1 to
+ *          arr3, 2 for arr4, 100 for arr5.
  *          The flat run comes first; each run frees its arrays before the next.
  */
 
@@ -156,6 +158,15 @@ struct ShrinkStore
             a.push_back(new sk::Array<double, S, V>(
                 n, chunks / static_cast<unsigned long long>(g_arena_div) + 64, 0.0, 1ULL << 20));
         }
+        if constexpr (V == sd::Variant::zero_or_value)
+        {
+            // shrink_bench.cpp's maybe_set_second_value: second_value_d, _d1, _d2.
+            constexpr double second[5] = {1.0, 1.0, 1.0, 2.0, 100.0};
+            for (int k = 0; k < 5; ++k)
+            {
+                a[static_cast<std::size_t>(k)]->native().set_second_value(second[k]);
+            }
+        }
     }
     ~ShrinkStore()
     {
@@ -225,7 +236,9 @@ struct ShrinkStore
     }
     [[nodiscard]] static const char* name()
     {
-        return V == sd::Variant::zero ? "device::kokkos::Array, zero" : "device::kokkos::Array, zero_any";
+        return V == sd::Variant::zero            ? "device::kokkos::Array, zero"
+               : V == sd::Variant::zero_or_value ? "device::kokkos::Array, zero_or_value"
+                                                 : "device::kokkos::Array, zero_any";
     }
 };
 
@@ -633,8 +646,15 @@ int main(int argc, char** argv)
     const Int         compress_every = argc > 4 ? std::max<Int>(std::atoll(argv[4]), 1) : 10;
     const char* const variants       = argc > 5 ? argv[5] : "both";
     g_arena_div                      = argc > 6 ? std::max<Int>(std::atoll(argv[6]), 1) : 64;
-    const bool        any            = std::strcmp(variants, "zero") != 0;
-    const bool        zero           = std::strcmp(variants, "zero_any") != 0;
+    const auto        is             = [&](const char* v) { return std::strcmp(variants, v) == 0; };
+    const bool        any            = is("zero_any") || is("both") || is("all");
+    const bool        zero           = is("zero") || is("both") || is("all");
+    const bool        zov            = is("zero_or_value") || is("all");
+    if (!any && !zero && !zov)
+    {
+        std::printf("kokkos_shrink_bench: variants zero_any, zero, zero_or_value, both or all, not '%s'\n", variants);
+        return 1;
+    }
     std::printf("kokkos_shrink_bench (%s): sz = %lld doubles x 5 arrays, %lld iterations, interval %lld, "
                 "compress() every %lld, arenas from 1/%lld of the chunks\n",
                 Kokkos::DefaultExecutionSpace::name(), static_cast<long long>(sz), static_cast<long long>(iters),
@@ -658,6 +678,10 @@ int main(int argc, char** argv)
         if (zero)
         {
             one(std::type_identity<ShrinkStore<1024, sd::Variant::zero>>{}, "zero, S = 1024");
+        }
+        if (zov)
+        {
+            one(std::type_identity<ShrinkStore<1024, sd::Variant::zero_or_value>>{}, "zero_or_value, S = 1024");
         }
     }
     catch (const std::exception& e)

@@ -368,6 +368,23 @@ justified it no longer exists): it is kept for interoperability and for its sema
 only to a declared value), **(to be decided)** whether it deserves separate code or an
 `if constexpr` in `zero_any`.
 
+Decided: an `if constexpr`, `Variant::zero_or_value`. Its descriptor is `zero_any`'s, `{buf,
+constant}`; the second value is a field of `Array` (`set_second_value()`, `second_value()`,
+host operations between phases; T{} while none is declared; a constructor constant other than
+T{} is also the second value), copied into the `Writer` (`Writer::second`) and passed to the
+pass. `folds_to<V>(value, second)` (`chunk_desc.h`) is the only difference: the pass and the
+whole-chunk write (`Writer::fold_whole`) fold to T{} or the second value, never to another
+value. A write of a compressed chunk's own constant still costs nothing, whatever that
+constant is. A chunk compressed to an earlier second value keeps reading it, as on the host
+(its registry block never moves). `assign(state)` takes `state`'s second value when it
+declares one and materialises a chunk compressed to a value neither T{} nor the second, as
+`import_array()` fills it on a host `zero_or_value` array; `image()` declares the second value
+unless it is T{}. `device_write_validation` runs the `zero` rounds in `zero_or_value` (second
+value 2.5, then 1.5 from round 4; round 3's chunks of 3.5 must not fold), and
+`device_convert_validation` its round trip (2.5 declared after `assign()`).
+`kokkos_shrink_bench ... zero_or_value` declares the CPU bench's second values (1, 1, 1, 2,
+100).
+
 ### 8.3 `zero_any`
 
 The descriptor carries the constant: it is the natural shape of `zero_any`, and the variant to
