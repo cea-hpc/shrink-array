@@ -1042,29 +1042,37 @@ ratio. Grace's flat fill (about 298 ms) is faster than the GPU's (about 336 ms, 
 `fill_value`'s `band[6][5]`, indexed at run time, likely sits in local memory there (not
 checked).
 
-Large windows, interval 10^7, 200 iterations (4fed30231; the append-buffers now hold two
-windows: with 2^20 entries the GPU run lost 911360 writes given up to them):
+Large windows, interval 10^7, 200 iterations (the append-buffers hold two windows since
+4fed30231: with 2^20 entries the GPU run lost 911360 writes given up to them). The GH200 before
+(4fed30231) and after (a890cb3ea) the arena's headroom:
 
-| phase | Grace | GH200 | GPU speed-up |
-|---|---|---|---|
-| **loop total** | **17685 ms** | **8063 ms** | **2.2x** |
-| writes around the window | 13 ms | 16 ms | 0.8x |
-| **window rewritten** | **1762 ms** | **7468 ms** | **0.24x** |
-| 20 read passes | 13945 ms | 477 ms | 29x |
-| 2 read-modify-write passes | 1732 ms | 74 ms | 23x |
-| resets | 63 ms | 4.3 ms | 15x |
-| `compress()`, 20 passes | 171 ms | 24 ms | 7.2x |
-| init: allocation + fill | 2055 ms | 306 ms | 6.7x |
-| loop / flat | 1.59x | 15.1x | |
-| memory at the end | 11.262 GB | 11.346 GB (+ 1.106 free) | |
+| phase | Grace | GH200 before | GH200 after | GPU speed-up (after) |
+|---|---|---|---|---|
+| **loop total** | **17685 ms** | **8063 ms** | **708 ms** | **25x** |
+| writes around the window | 13 ms | 16 ms | 20 ms | 0.65x |
+| **window rewritten** | **1762 ms** | **7468 ms** | **111 ms** | **16x** |
+| 20 read passes | 13945 ms | 477 ms | 474 ms | 29x |
+| 2 read-modify-write passes | 1732 ms | 74 ms | 72 ms | 24x |
+| resets | 63 ms | 4.3 ms | 6.5 ms | 9.7x |
+| `compress()`, 20 passes | 171 ms | 24 ms | 24 ms | 7.3x |
+| init: allocation + fill | 2055 ms | 306 ms | 308 ms | 6.7x |
+| loop / flat | 1.59x | 15.1x | 1.33x | |
+| memory at the end | 11.262 GB | 11.346 GB (+ 1.106 free) | 11.346 GB (+ 2.080 free) | |
 
 Flat against flat, the loop is 21x (about 11120 against 534 ms; reads 20x, read-modify-write 20x,
 rewrite 56x): the GPU is bandwidth-bound now, and shrink-array follows flat there (reads 1.02x,
-read-modify-write 1.51x); without the rewrite the GPU's loop would be about 27x Grace's. The
-rewrite is 591x flat on the GPU, 93 % of its loop, with 50 million claim waits (22200 writes
-given up). Suspected, to be measured: not the claims themselves but what one wait given up did
-to the phase -- every write of a constant appended and every load of a compressed element scanned
-the whole append-buffer (gpu_assign.md 3.4); the append and the scan are now per chunk.
+read-modify-write 1.51x). Before, the rewrite was 591x flat, 93 % of the GPU's loop. Making the
+append and the append-buffer's lookup per chunk (7377e494d, gpu_assign.md 3.4) changed nothing
+(545x): the 1.2 x 10^8 appends were not the 6453 waits given up but the arena found empty. It
+grew only after such a phase, by what that phase needed, and the windows pile up between two
+`compress()`: the next window found it empty again. Every write left to a chunk without a
+buffer then claimed, scanned every shard, released and appended, and finish() sorted the
+appends on the host (nsys, 20 iterations: 141 ms in the rewrite kernels, a few launches up to
+56 ms against a median of 0.33 ms, the rest on the host). finish() now keeps free buffers for
+the largest phase seen and a quarter more, capped at the chunks without a buffer (d238a4ae1,
+a890cb3ea), and compress() keeps them through `release_free(keep)`: no append left, the rewrite
+8.8x flat, the loop 1.33x flat and 25x Grace's, for 1 GB more of free buffers (the memory held
+is unchanged). The small windows do not move (loop 1254 ms, no append either).
 
 Next: the A/B on the MI300A; the write kernels themselves (27 us against 3.4); `compress()` in
 the loop; then Arcane.

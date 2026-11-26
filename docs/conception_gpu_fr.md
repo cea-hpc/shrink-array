@@ -1095,31 +1095,39 @@ plat de Grace (environ 298 ms) est plus rapide que celui du GPU (environ 336 ms,
 table `band[6][5]` de `fill_value`, indexée à l'exécution, y est sans doute en mémoire locale
 (non vérifié).
 
-Grandes fenêtres, interval 10^7, 200 itérations (4fed30231 ; les append-buffers tiennent
-maintenant deux fenêtres : avec 2^20 entrées le run GPU perdait 911360 écritures qui leur
-étaient confiées) :
+Grandes fenêtres, interval 10^7, 200 itérations (les append-buffers tiennent deux fenêtres
+depuis 4fed30231 : avec 2^20 entrées le run GPU perdait 911360 écritures qui leur étaient
+confiées). Le GH200 avant (4fed30231) et après (a890cb3ea) la réserve de l'arène :
 
-| phase | Grace | GH200 | gain GPU |
-|---|---|---|---|
-| **boucle totale** | **17685 ms** | **8063 ms** | **2,2x** |
-| écritures autour de la fenêtre | 13 ms | 16 ms | 0,8x |
-| **fenêtre réécrite** | **1762 ms** | **7468 ms** | **0,24x** |
-| 20 passes de lecture | 13945 ms | 477 ms | 29x |
-| 2 passes RMW | 1732 ms | 74 ms | 23x |
-| resets | 63 ms | 4,3 ms | 15x |
-| `compress()`, 20 passes | 171 ms | 24 ms | 7,2x |
-| init : allocation + remplissage | 2055 ms | 306 ms | 6,7x |
-| boucle / plat | 1,59x | 15,1x | |
-| mémoire à la fin | 11,262 Go | 11,346 Go (+ 1,106 libres) | |
+| phase | Grace | GH200 avant | GH200 après | gain GPU (après) |
+|---|---|---|---|---|
+| **boucle totale** | **17685 ms** | **8063 ms** | **708 ms** | **25x** |
+| écritures autour de la fenêtre | 13 ms | 16 ms | 20 ms | 0,65x |
+| **fenêtre réécrite** | **1762 ms** | **7468 ms** | **111 ms** | **16x** |
+| 20 passes de lecture | 13945 ms | 477 ms | 474 ms | 29x |
+| 2 passes RMW | 1732 ms | 74 ms | 72 ms | 24x |
+| resets | 63 ms | 4,3 ms | 6,5 ms | 9,7x |
+| `compress()`, 20 passes | 171 ms | 24 ms | 24 ms | 7,3x |
+| init : allocation + remplissage | 2055 ms | 306 ms | 308 ms | 6,7x |
+| boucle / plat | 1,59x | 15,1x | 1,33x | |
+| mémoire à la fin | 11,262 Go | 11,346 Go (+ 1,106 libres) | 11,346 Go (+ 2,080 libres) | |
 
 Plat contre plat, la boucle fait 21x (environ 11120 contre 534 ms ; lectures 20x, RMW 20x,
 réécriture 56x) : le GPU est maintenant limité par la bande passante, et shrink-array y suit le
-plat (lectures 1,02x, RMW 1,51x) ; sans la réécriture, la boucle du GPU serait environ 27x
-celle de Grace. La réécriture fait 591x le plat sur le GPU, 93 % de sa boucle, avec 50 millions
-d'attentes de claim (22200 écritures abandonnées). Soupçonné, à mesurer : non les claims
-eux-mêmes mais ce qu'une seule attente abandonnée faisait à la phase -- chaque écriture d'une
-constante ajoutée et chaque lecture d'un élément compressé parcourant tout l'append-buffer
-(gpu_assign_fr.md 3.4) ; l'ajout et le parcours sont maintenant par chunk.
+plat (lectures 1,02x, RMW 1,51x). Avant, la réécriture faisait 591x le plat, 93 % de la boucle
+du GPU. Rendre l'ajout et la recherche dans l'append-buffer par chunk (7377e494d,
+gpu_assign_fr.md 3.4) n'a rien changé (545x) : les 1,2 x 10^8 ajouts ne venaient pas des 6453
+attentes abandonnées mais de l'arène trouvée vide. Elle ne grandissait qu'après une telle phase,
+de ce dont cette phase avait eu besoin, et les fenêtres s'accumulent entre deux `compress()` :
+la fenêtre suivante la retrouvait vide. Chaque écriture restante sur un chunk sans buffer
+réservait alors, parcourait tous les shards, relâchait et ajoutait, et finish() triait les
+ajouts sur l'hôte (nsys, 20 itérations : 141 ms dans les noyaux de réécriture, quelques
+lancements jusqu'à 56 ms contre une médiane de 0,33 ms, le reste sur l'hôte). finish() garde
+maintenant des buffers libres pour la plus grosse phase vue et un quart de plus, plafonnés aux
+chunks sans buffer (d238a4ae1, a890cb3ea), et compress() les garde par `release_free(keep)` :
+plus aucun ajout, la réécriture à 8,8x le plat, la boucle à 1,33x le plat et 25x celle de
+Grace, pour 1 Go de buffers libres en plus (la mémoire tenue ne change pas). Les petites
+fenêtres ne bougent pas (boucle 1254 ms, aucun ajout non plus).
 
 Suite : l'A/B sur le MI300A ; les noyaux d'écriture eux-mêmes (27 us contre 3,4) ; `compress()`
 dans la boucle ; puis Arcane.
