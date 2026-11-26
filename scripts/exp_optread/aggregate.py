@@ -3,7 +3,8 @@
 """Median ns/elem of the array per (compiler, variant, threads, case, mode), over every round and rep.
 
 Columns: one per mode found (m0 announce, m1 none, m2 optimistic + fence, m3 optimistic +
-address dependency, m3d the same with CHUNK_READ_DEP_ORDER, m4 no acquire at all), then each mode's change against m0."""
+address dependency, m4 no acquire at all, m7 optimistic + retry; suffix d = CHUNK_READ_DEP_ORDER=1,
+i = CHUNK_RECHECK_INT_LOAD=1), then each mode's change against m0."""
 import csv, glob, os, statistics, sys
 from collections import defaultdict
 

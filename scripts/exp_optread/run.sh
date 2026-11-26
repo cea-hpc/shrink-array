@@ -1,16 +1,16 @@
 #!/bin/bash
-# Runs on the Grace node: 2 compilers x CHUNK_READ_SECTION_MODE 0/1/2, then
+# Runs on the Grace node: one build per CONFIGS entry (compiler x CHUNK_READ_SECTION_MODE), then
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-# access_cost in 3 rounds interleaving the 6 builds, then the table.
+# access_cost in ROUNDS rounds interleaving the builds, then the table.
 #   SRC  the exp/optimistic-read checkout (default: this script's repository)
 #   WORK where the builds and the CSVs go (default: $CCCWORKDIR/optread)
 #   THREADS (default 1,72)   N (default 33554432)   JOBS (default 32)
-#   CONFIGS (default "gcc:0 gcc:1 gcc:3 gcc:4")   ROUNDS (default 2)
+#   CONFIGS (default "llvm:0 llvm:7 llvm:7i")   ROUNDS (default 3)
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC=${SRC:-$(cd "$HERE/../.." && pwd)}
-WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread11}
+WORK=${WORK:-${CCCWORKDIR:-$HOME}/optread12}
 THREADS=${THREADS:-1,72}
 N=${N:-33554432}
 JOBS=${JOBS:-32}
@@ -41,15 +41,19 @@ load_env() {
     export CXX CC
 }
 
-# CONFIGS: <compiler>:<mode>[d], d = also -DCHUNK_READ_DEP_ORDER=1 (relaxed `values` load, AArch64)
-CONFIGS=${CONFIGS:-"gcc:0 gcc:7 llvm:0 llvm:7"}
+# CONFIGS: <compiler>:<mode>[d][i], suffixes in any order:
+#   d = also -DCHUNK_READ_DEP_ORDER=1 (relaxed `values` load, AArch64)
+#   i = also -DCHUNK_RECHECK_INT_LOAD=1 (mode 7: the element loaded as an integer; gcc's default, 0 under clang)
+CONFIGS=${CONFIGS:-"llvm:0 llvm:7 llvm:7i"}
 ROUNDS=${ROUNDS:-3}
 LOOP_SYM=_ZN12_GLOBAL__N_18arr_readERN12shrink_array13zero_or_value5ArrayIdiEEi._omp_fn.0
 for cfg in $CONFIGS; do
   (
-    comp=${cfg%%:*}; mode=${cfg#*:}; m=${mode%d}
+    comp=${cfg%%:*}; mode=${cfg#*:}; m=${mode%%[!0-9]*}; suffix=${mode#"$m"}
     flags=-DCHUNK_READ_SECTION_MODE=$m
-    [ "$mode" != "$m" ] && flags="$flags -DCHUNK_READ_DEP_ORDER=1"
+    case $suffix in *d*) flags="$flags -DCHUNK_READ_DEP_ORDER=1" ;; esac
+    case $suffix in *i*) flags="$flags -DCHUNK_RECHECK_INT_LOAD=1" ;; esac
+    case $suffix in *[!di]*) echo "[optread] unknown suffix in $cfg"; exit 1 ;; esac
     load_env $comp
     echo "[optread] $cfg: $($CXX --version | head -1), CXXFLAGS $flags"
     B=$WORK/$comp-mode$mode
