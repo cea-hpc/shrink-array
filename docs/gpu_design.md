@@ -963,8 +963,36 @@ padding of the failed spans and of the replay's needs likewise. T1000, 5 x 2^24:
 the end 0.009 -> 0.006 GB (zero_any) and 0.055 -> 0.021 GB (zero), the times unchanged. Mapping
 physical pages on demand (virtual memory) would take the tail's cost to nothing: not done.
 
-Next: the MI300A run of the growth step; the write kernels themselves (27 us against 3.4); the
-GH200; then Arcane.
+MI300A, 5 x 2^30, 2000 iterations (d48588038): free buffers at the end 0.465 -> 0.318 GB
+(zero_any) and 3.087 -> 1.233 GB (zero), the chunks held unchanged (1.514 and 19.166 GB, 3.5 %
+and 44.6 % of flat), so the device footprint at the end 1.98 -> 1.83 GB and 22.25 -> 20.40 GB.
+Checksums equal, 7 tests out of 7. The loop went 1.64x -> 1.73x (zero_any) and 1.45x -> 1.47x
+(zero): writes around the window 258 -> 257 ms and 193 -> 195 ms, read-modify-write 220 -> 213 ms
+and 204 -> 203 ms, but window rewritten 380 -> 494 ms (19.8x) and 135 -> 147 ms (5.9x). Whether
+the more frequent growth costs this or the node's day to day does is not settled: 7381cc5ba and
+d48588038 are to be run in the same slot.
+
+GH200, the same run (d48588038, nvcc 13.3, 8 tests out of 8, checksums equal), against the
+MI300A's:
+
+| | GH200 zero_any | MI300A zero_any | GH200 zero | MI300A zero |
+|---|---|---|---|---|
+| loop | 1.68x | 1.73x | 1.47x | 1.47x |
+| writes around the window | 148 ms (6.1x) | 257 ms (9.1x) | 106 ms (4.4x) | 195 ms (6.9x) |
+| window rewritten | 223 ms (11.2x) | 494 ms (19.8x) | 79 ms (4.0x) | 147 ms (5.9x) |
+| 20 read passes | 0.98x | 1.01x | 0.98x | 1.01x |
+| 2 read-modify-write passes | 1.56x | 1.79x | 1.54x | 1.71x |
+| `compress()`, 200 passes | 176 ms | 197 ms | 204 ms | 249 ms |
+| allocation + fill | 0.66x | 0.05x | 1.07x | 0.52x |
+
+The memory is the same to the byte (1.514 + 0.318 GB and 19.166 + 1.233 GB): it depends on the
+benchmark's writes, not on the device. The GH200 counts twice the claim waits (8.0 M and 4.2 M
+against 3.7 M and 2.0 M) and still writes faster. The loop's ratio is the same on both devices;
+`compress()` is 13 % (zero_any) and 18 % (zero) of the GH200's loop, about 0.9 ms a pass, the
+next cost after the writes.
+
+Next: the A/B on the MI300A; the write kernels themselves (27 us against 3.4); `compress()` in
+the loop; then Arcane.
 
 ## 14. Risks and open questions
 

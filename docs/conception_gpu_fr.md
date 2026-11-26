@@ -1013,8 +1013,35 @@ T1000, 5 x 2^24 : buffers libres à la fin 0,009 -> 0,006 Go (zero_any) et 0,055
 (zero), les temps inchangés. Mapper les pages physiques à la demande (mémoire virtuelle)
 ramènerait le coût de la queue à rien : pas fait.
 
-Suite : le run MI300A du pas de croissance ; les noyaux d'écriture eux-mêmes (27 us contre 3,4) ;
-le GH200 ; puis Arcane.
+MI300A, 5 x 2^30, 2000 itérations (d48588038) : buffers libres à la fin 0,465 -> 0,318 Go
+(zero_any) et 3,087 -> 1,233 Go (zero), les chunks tenus inchangés (1,514 et 19,166 Go, 3,5 % et
+44,6 % du plat), donc l'empreinte device à la fin 1,98 -> 1,83 Go et 22,25 -> 20,40 Go. Sommes
+égales, 7 tests sur 7. La boucle passe de 1,64x à 1,73x (zero_any) et de 1,45x à 1,47x (zero) :
+écritures autour de la fenêtre 258 -> 257 ms et 193 -> 195 ms, RMW 220 -> 213 ms et
+204 -> 203 ms, mais fenêtre réécrite 380 -> 494 ms (19,8x) et 135 -> 147 ms (5,9x). La part de
+la croissance plus fréquente et celle du nœud d'un jour à l'autre ne sont pas séparées :
+7381cc5ba et d48588038 sont à passer dans le même créneau.
+
+GH200, le même run (d48588038, nvcc 13.3, 8 tests sur 8, sommes égales), face au MI300A :
+
+| | GH200 zero_any | MI300A zero_any | GH200 zero | MI300A zero |
+|---|---|---|---|---|
+| boucle | 1,68x | 1,73x | 1,47x | 1,47x |
+| écritures autour de la fenêtre | 148 ms (6,1x) | 257 ms (9,1x) | 106 ms (4,4x) | 195 ms (6,9x) |
+| fenêtre réécrite | 223 ms (11,2x) | 494 ms (19,8x) | 79 ms (4,0x) | 147 ms (5,9x) |
+| 20 passes de lecture | 0,98x | 1,01x | 0,98x | 1,01x |
+| 2 passes RMW | 1,56x | 1,79x | 1,54x | 1,71x |
+| `compress()`, 200 passes | 176 ms | 197 ms | 204 ms | 249 ms |
+| allocation + remplissage | 0,66x | 0,05x | 1,07x | 0,52x |
+
+La mémoire est la même à l'octet près (1,514 + 0,318 Go et 19,166 + 1,233 Go) : elle dépend des
+écritures du banc, pas du device. Le GH200 compte deux fois plus d'attentes de claim (8,0 M et
+4,2 M contre 3,7 M et 2,0 M) et écrit pourtant plus vite. Le rapport de la boucle est le même
+sur les deux devices ; `compress()` fait 13 % (zero_any) et 18 % (zero) de la boucle du GH200,
+environ 0,9 ms par passe, le coût suivant après les écritures.
+
+Suite : l'A/B sur le MI300A ; les noyaux d'écriture eux-mêmes (27 us contre 3,4) ; `compress()`
+dans la boucle ; puis Arcane.
 
 ## 14. Risques et questions ouvertes
 
