@@ -77,6 +77,9 @@ using Int = std::int64_t;
 /// The arenas start at 1/g_arena_div of the chunks (sixth argument).
 Int g_arena_div = 64;
 
+/// The window's largest size (third argument): the append-buffers hold a phase's assigns of it.
+Int g_interval = 0;
+
 constexpr double second_value_d  = 1.;
 constexpr double second_value_d0 = 3.5;
 constexpr double second_value_d1 = 2;
@@ -147,16 +150,20 @@ struct ShrinkStore
 
     std::vector<sk::Array<double, S, V>*> a;
 
-    /// @details A small arena to start, 1/64 of the chunks: it grows as the phases need, by a
-    ///          quarter at least, and what it reserves counts in the memory reported. An
-    ///          append-buffer of 2^20 entries.
+    /// @details A small arena to start, 1/64 of the chunks: it grows as the phases need, by an
+    ///          eighth at least, and what it reserves counts in the memory reported. An
+    ///          append-buffer of 2^20 entries, or of two windows and 1024 if larger: a phase
+    ///          assigns an array at most 2 x interval + 768 times (the constant rewrite and the
+    ///          read-modify-write assign some elements twice), so it never overflows even when
+    ///          every write is given up to it (claim waits past claim_spin_max: large windows).
     explicit ShrinkStore(Int n)
     {
         const auto chunks = static_cast<unsigned long long>((n + S - 1) / S);
         for (int k = 0; k < 5; ++k)
         {
             a.push_back(new sk::Array<double, S, V>(
-                n, chunks / static_cast<unsigned long long>(g_arena_div) + 64, 0.0, 1ULL << 20));
+                n, chunks / static_cast<unsigned long long>(g_arena_div) + 64, 0.0,
+                std::max<unsigned long long>(1ULL << 20, (2 * static_cast<unsigned long long>(g_interval)) + 1024)));
         }
         if constexpr (V == sd::Variant::zero_or_value)
         {
@@ -643,6 +650,7 @@ int main(int argc, char** argv)
     const Int         sz             = Int{1} << log2sz;
     const Int         iters          = argc > 2 ? std::atoll(argv[2]) : 2000;
     const Int         interval       = argc > 3 ? std::atoll(argv[3]) : std::max<Int>(sz / 10000, 1000);
+    g_interval                       = interval;
     const Int         compress_every = argc > 4 ? std::max<Int>(std::atoll(argv[4]), 1) : 10;
     const char* const variants       = argc > 5 ? argv[5] : "both";
     g_arena_div                      = argc > 6 ? std::max<Int>(std::atoll(argv[6]), 1) : 64;
