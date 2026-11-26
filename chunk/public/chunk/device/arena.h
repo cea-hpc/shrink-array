@@ -27,8 +27,16 @@
  *          S = 256 from 36% to 62% of the stream bandwidth on the GH200.
  *
  *          - A write kernel takes (ArenaRef::take): in each arena, the newest first, the
- *            chunk's home shard (its index modulo n_shards) and then the next ones; in a
- *            shard its free stack, else its bump. Pops only: no ABA guard (6.3).
+ *            chunk's home shard (its index modulo n_shards) and then the next ones that the
+ *            arena's mask still marks; in a shard its free stack, else its bump. Pops only:
+ *            no ABA guard (6.3).
+ *          - The mask (ArenaDesc::avail, a bit per shard): a take that finds a shard empty
+ *            clears its bit, a give back sets it, a growth sets the new arena's. In a write
+ *            kernel nothing is given back, so a cleared bit is a shard really empty until the
+ *            next compression pass; a set bit may be stale (one look, then cleared). Without
+ *            it a take past an empty home shard looked at the shards one by one, two
+ *            dependent loads each: 29 on average in kokkos_shrink_bench (T1000, small
+ *            arenas), the publication of a chunk and every writer waiting for it behind.
  *          - The compression pass gives back (ArenaRef::give_back): a buffer goes to the
  *            shard of its address, so a segment never overflows. Pushes only, after
  *            DeviceArena::normalise() (the failed pops of a write kernel leave a top below
@@ -46,7 +54,7 @@
 #include <type_traits> // std::is_trivially_copyable_v
 #include <vector>      // std::vector
 
-#include "chunk/device/atomics.h"       // fetch_add, load
+#include "chunk/device/atomics.h"       // fetch_add, fetch_and, fetch_or, load
 #include "chunk/device/backend.h"       // allocate, release, zero, copy, synchronize
 #include "chunk/internal/host_device.h" // CHUNK_HD
 
@@ -55,6 +63,9 @@ namespace shrink_array::device
 
 /// Shards per arena: as many bumps and free-stack tops, on as many cache lines.
 inline constexpr int n_shards = 128;
+
+/// Words of an arena's mask of shards (ArenaDesc::avail).
+inline constexpr int mask_words = n_shards / 32;
 
 /// Most arenas a DeviceArena may have (grow() adds one).
 inline constexpr int max_arenas = 32;
@@ -75,6 +86,7 @@ struct ArenaDesc
     unsigned long long shard_size;   ///< buffers per shard (the last shards may hold fewer, or none)
     unsigned long long stack_offset; ///< first free-stack entry of this arena
     Shard*             shards;       ///< n_shards counters
+    unsigned*          avail;        ///< mask_words words: bit s, shard s may hold a buffer
 
     /// @brief Buffers of shard @p s.
     [[nodiscard]] CHUNK_HD unsigned long long shard_len(int s) const noexcept
@@ -101,6 +113,9 @@ struct ArenaRef
     /// @brief A buffer for chunk @p home, or nullptr when every arena is exhausted. Write
     ///        kernels only. Its contents are whatever its last owner left.
     [[nodiscard]] __device__ T* take(long long home) const noexcept;
+
+    /// @brief A buffer from shard @p s of arena @p ar, or nullptr: the shard is empty.
+    [[nodiscard]] __device__ T* take_from(const ArenaDesc<T, S>& ar, int s) const noexcept;
 
     /// @brief @p buf back to the free-stack segment of its shard. The compression pass
     ///        only, after DeviceArena::normalise(); no take() runs meanwhile.
@@ -158,6 +173,7 @@ class DeviceArena
   private:
     std::vector<T*>              bases_;
     std::vector<Shard*>          shards_;
+    std::vector<unsigned*>       masks_;
     std::vector<ArenaDesc<T, S>> descs_;
     ArenaDesc<T, S>*             d_descs_ = nullptr; ///< max_arenas slots on the device
     unsigned long long           total_   = 0;
@@ -191,8 +207,9 @@ __global__ void normalise_shards(ArenaRef<T, S> r)
 
 /**
  * @details The home shard is tried with its atomics directly (two at most, on counters that
- *          the neighbouring chunks do not share); the other shards only after a look, so
- *          that a nearly full arena costs loads, not atomics.
+ *          the neighbouring chunks do not share); past it, the arena's mask names the next
+ *          shards worth a try, a shard found empty clears its bit. An arena whose mask is
+ *          empty costs mask_words loads.
  */
 template <typename T, unsigned int S>
 [[nodiscard]] __device__ T* ArenaRef<T, S>::take(long long home) const noexcept
@@ -201,26 +218,62 @@ template <typename T, unsigned int S>
     for (int a = n_arenas - 1; a >= 0; --a)
     {
         const ArenaDesc<T, S>& ar = arenas[a];
-        for (int k = 0; k < n_shards; ++k)
+        if ((load(&ar.avail[s0 / 32]) >> (s0 % 32) & 1U) != 0)
         {
-            const int                s   = (s0 + k) % n_shards;
-            Shard&                   sh  = ar.shards[s];
-            const unsigned long long len = ar.shard_len(s);
-            if (k > 0 && load(&sh.top) <= 0 && load(&sh.bump) >= len)
+            if (T* const b = take_from(ar, s0); b != nullptr)
             {
-                continue;
+                return b;
             }
-            const long long top = fetch_add(&sh.top, -1LL) - 1;
-            if (top >= 0)
-            {
-                return free_stack[ar.stack_offset + s * ar.shard_size + static_cast<unsigned long long>(top)];
-            }
-            const unsigned long long b = fetch_add(&sh.bump, 1ULL);
-            if (b < len)
-            {
-                return ar.base + (s * ar.shard_size + b) * S;
-            }
+            (void)fetch_and(&ar.avail[s0 / 32], ~(1U << (s0 % 32)));
         }
+        for (int tries = 0; tries < n_shards; ++tries)
+        {
+            // The first marked shard after s0, circularly: the words from s0's, rotated.
+            int s = -1;
+            for (int w = 0; w <= mask_words && s < 0; ++w)
+            {
+                const int      word = (s0 / 32 + w) % mask_words;
+                unsigned       bits = load(&ar.avail[word]);
+                const unsigned from = w == 0 ? static_cast<unsigned>(s0 % 32) + 1 : 0;
+                bits                = from >= 32 ? 0U : bits & (~0U << from);
+                if (w == mask_words)
+                {
+                    bits &= (1U << (s0 % 32)) - 1; // back to s0's word: the bits below s0
+                }
+                if (bits != 0)
+                {
+                    s = word * 32 + __ffs(static_cast<int>(bits)) - 1;
+                }
+            }
+            if (s < 0)
+            {
+                break; // the arena's mask is empty
+            }
+            if (T* const b = take_from(ar, s); b != nullptr)
+            {
+                return b;
+            }
+            (void)fetch_and(&ar.avail[s / 32], ~(1U << (s % 32)));
+        }
+    }
+    return nullptr;
+}
+
+template <typename T, unsigned int S>
+[[nodiscard]] __device__ T* ArenaRef<T, S>::take_from(const ArenaDesc<T, S>& ar, int s) const noexcept
+{
+    Shard&                   sh  = ar.shards[s];
+    const unsigned long long len = ar.shard_len(s);
+    const long long          top = fetch_add(&sh.top, -1LL) - 1;
+    if (top >= 0)
+    {
+        return free_stack[ar.stack_offset + static_cast<unsigned long long>(s) * ar.shard_size +
+                          static_cast<unsigned long long>(top)];
+    }
+    const unsigned long long b = fetch_add(&sh.bump, 1ULL);
+    if (b < len)
+    {
+        return ar.base + (static_cast<unsigned long long>(s) * ar.shard_size + b) * S;
     }
     return nullptr;
 }
@@ -237,6 +290,7 @@ __device__ void ArenaRef<T, S>::give_back(T* buf) const noexcept
             const unsigned long long s   = idx / ar.shard_size;
             const long long          top = fetch_add(&ar.shards[s].top, 1LL);
             free_stack[ar.stack_offset + s * ar.shard_size + static_cast<unsigned long long>(top)] = buf;
+            (void)fetch_or(&ar.avail[s / 32], 1U << (s % 32));
             return;
         }
     }
@@ -264,6 +318,10 @@ DeviceArena<T, S>::~DeviceArena()
     {
         release(sh);
     }
+    for (unsigned* m : masks_)
+    {
+        release(m);
+    }
     release(d_descs_);
     release(ref_.free_stack);
 }
@@ -284,6 +342,17 @@ void DeviceArena<T, S>::grow(unsigned long long more)
     T*     base   = allocate<T>(static_cast<std::size_t>(more) * S);
     Shard* shards = allocate<Shard>(n_shards);
     zero(shards, n_shards);
+    const unsigned long long shard_size = (more + n_shards - 1) / n_shards;
+    std::vector<unsigned>    mask(32, 0U); // 32 words: the mask alone on its 128-byte line
+    for (int s = 0; s < n_shards; ++s)
+    {
+        if (static_cast<unsigned long long>(s) * shard_size < more)
+        {
+            mask[static_cast<std::size_t>(s / 32)] |= 1U << (s % 32);
+        }
+    }
+    unsigned* avail = allocate<unsigned>(mask.size());
+    copy(avail, mask.data(), mask.size());
     T** stack = allocate<T*>(static_cast<std::size_t>(total_ + more));
     if (ref_.free_stack != nullptr)
     {
@@ -292,7 +361,8 @@ void DeviceArena<T, S>::grow(unsigned long long more)
     }
     bases_.push_back(base);
     shards_.push_back(shards);
-    descs_.push_back(ArenaDesc<T, S>{base, more, (more + n_shards - 1) / n_shards, total_, shards});
+    masks_.push_back(avail);
+    descs_.push_back(ArenaDesc<T, S>{base, more, shard_size, total_, shards, avail});
     total_ += more;
     copy(d_descs_, descs_.data(), descs_.size());
     ref_.free_stack = stack;

@@ -46,6 +46,16 @@ __device__ inline long long fetch_add(long long* counter, long long v) noexcept
         atomicAdd(reinterpret_cast<unsigned long long*>(counter), static_cast<unsigned long long>(v)));
 }
 
+/// @brief Ands @p bits into @p *word; returns the former value.
+__device__ inline unsigned fetch_and(unsigned* word, unsigned bits) noexcept
+{
+#if defined(CHUNK_DEVICE_HIP)
+    return __hip_atomic_fetch_and(word, bits, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+#else
+    return atomicAnd(word, bits);
+#endif
+}
+
 /// @brief Ors @p bits into @p *word; returns the former value.
 __device__ inline unsigned fetch_or(unsigned* word, unsigned bits) noexcept
 {
