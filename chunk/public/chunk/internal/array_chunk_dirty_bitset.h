@@ -39,11 +39,10 @@
  * @see ArrayChunkBase::sync_chunk — the sole hot-path reader of the bits
  */
 
-#include <algorithm> // std::min
-#include <atomic>    // std::atomic, std::memory_order
-#include <cstddef>   // std::size_t
-#include <cstdint>   // uint64_t
-#include <utility>   // std::swap
+#include <atomic>  // std::atomic, std::memory_order
+#include <cstddef> // std::size_t
+#include <cstdint> // uint64_t
+#include <utility> // std::swap
 
 #include "chunk/config.h"                         // build_config::threaded
 #include "chunk/internal/array_chunk_for.h"       // ArrayKey (clear_all_dirty_bitsets)

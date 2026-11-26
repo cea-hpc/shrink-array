@@ -17,7 +17,6 @@
 #pragma once
 #include <vector>      // std::vector
 #include <unistd.h>    // sysconf(_SC_PAGESIZE)
-#include <algorithm>   // std::min, the constant scans
 #include <map>         // std::map
 #include <cstdint>     // uint32_t, int32_t, std::uint64_t
 #include <type_traits> // std::conditional_t, std::is_arithmetic_v

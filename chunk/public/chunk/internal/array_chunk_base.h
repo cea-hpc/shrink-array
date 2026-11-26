@@ -39,7 +39,6 @@
 
 #include <compare>     // std::strong_ordering (const_iterator's operator<=>)
 #include <cstddef>     // std::size_t (size_type)
-#include <span>        // std::span (for_each_span)
 #include <utility>     // std::swap, std::as_const
 #include <iterator>    // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
 #include <type_traits> // std::conditional_t
@@ -50,7 +49,6 @@
 #include "chunk/internal/crtp_support.h"        // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
-#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
 #include "chunk/internal/element_ref.h"         // ElementRef: what operator[] returns
 #include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
