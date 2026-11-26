@@ -364,7 +364,7 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
      *        after this call): this proxy's element counts as zero, and is
      *        written when the chunk stays.
      */
-    void manage_full_zero(bool pending = false) const;
+    void manage_full_zero(this const Derived& self, bool pending = false);
 };
 
 #ifdef __clang__

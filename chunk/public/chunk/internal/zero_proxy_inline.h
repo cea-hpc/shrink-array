@@ -57,22 +57,22 @@ const zero::Proxy<T>& zero::Proxy<T>::operator=(const zero::Proxy<T>& from) noex
 }
 
 template <typename Derived, typename T>
-void zero::ProxyFastCompPolicy<Derived, T, false>::manage_full_zero(bool pending) const
+void zero::ProxyFastCompPolicy<Derived, T, false>::manage_full_zero(this const Derived& self, bool pending)
 {
     const T            zero = Chunk<T>::first_value;
-    const unsigned int n    = this->count_raw_equal(zero, pending);
-    if (n == this->chunk_size())
+    const unsigned int n    = self.count_raw_equal(zero, pending);
+    if (n == self.chunk_size())
     {
-        chunk_.clear_st();
+        self.chunk_.clear_st();
         return;
     }
     // The counter drifted (a raw store): keep the chunk, finish the write, re-state the count.
     if (pending)
     {
-        this->raw_elem_set(zero);
+        self.raw_elem_set(zero);
     }
     // Through the proxy: the counter base of Chunk<T> befriends zero::Proxy<T> only.
-    static_cast<const Derived&>(*this).resync_n_val_eq_zero(static_cast<CounterValueT>(n));
+    self.resync_n_val_eq_zero(static_cast<CounterValueT>(n));
 }
 
 template <typename T>
