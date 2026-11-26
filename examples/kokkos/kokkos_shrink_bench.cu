@@ -173,10 +173,7 @@ struct ShrinkStore
     }
     void end_write() const
     {
-        for (auto* x : a)
-        {
-            x->end_write();
-        }
+        sk::end_write(*a[0], *a[1], *a[2], *a[3], *a[4]); // one fence and one wait for the five
     }
     [[nodiscard]] Five<R> read() const
     {

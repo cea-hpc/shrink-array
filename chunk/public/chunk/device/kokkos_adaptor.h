@@ -35,6 +35,7 @@
  *          Kokkos::parallel_reduce("s", n, KOKKOS_LAMBDA(std::int64_t i, double& s) { s += r(i); }, sum);
  *          a.parallel_for_chunks(0, n, KOKKOS_LAMBDA(std::int64_t i) { return g(i); }); // aligned
  *          a.compress();
+ *          sk::end_write(a, b, c);                     // a phase over several arrays: one wait
  *          @endcode
  *          The writes of a phase go through Writer::assign (any index, any thread); a write
  *          phase ends with end_write() before any read. parallel_for_chunks is the library's
@@ -214,5 +215,14 @@ class Array
   private:
     std::unique_ptr<device::Array<T, S, V>> a_; ///< not movable itself: held by pointer
 };
+
+/// @brief end_write() of every array of @p a: one Kokkos fence and one wait for all
+///        (device::finish_all), for a write phase over several arrays.
+template <typename... A>
+void end_write(A&... a)
+{
+    Kokkos::fence("shrink_array::kokkos::end_write");
+    device::finish_all(a.native()...);
+}
 
 } // namespace shrink_array::device::kokkos

@@ -76,6 +76,20 @@ void copy(T* dst, const T* src, std::size_t n);
 /// @brief Waits for every kernel launched so far; reports a launch or execution error.
 inline void synchronize();
 
+/// @brief @p n objects of @p T in pinned host memory (uninitialised), for copy_async();
+///        nullptr for n == 0.
+template <typename T>
+[[nodiscard]] T* allocate_pinned(std::size_t n);
+
+/// @brief Frees what allocate_pinned() returned (nullptr: nothing); never throws.
+inline void release_pinned(void* p) noexcept;
+
+/// @brief Enqueues a copy of @p n objects of @p T after the kernels launched so far (the
+///        default stream), from device memory to pinned host memory: done at the next
+///        synchronize().
+template <typename T>
+void copy_async(T* dst, const T* src, std::size_t n);
+
 // ---------------------------------------------------------------------------
 
 inline void check(Error e, const char* what)
@@ -135,6 +149,41 @@ void copy(T* dst, const T* src, std::size_t n)
     check(hipMemcpy(dst, src, n * sizeof(T), hipMemcpyDefault), "hipMemcpy");
 #else
     check(cudaMemcpy(dst, src, n * sizeof(T), cudaMemcpyDefault), "cudaMemcpy");
+#endif
+}
+
+template <typename T>
+[[nodiscard]] T* allocate_pinned(std::size_t n)
+{
+    void* p = nullptr;
+    if (n == 0)
+    {
+        return nullptr;
+    }
+#if defined(CHUNK_DEVICE_HIP)
+    check(hipHostMalloc(&p, n * sizeof(T), hipHostMallocDefault), "hipHostMalloc");
+#else
+    check(cudaMallocHost(&p, n * sizeof(T)), "cudaMallocHost");
+#endif
+    return static_cast<T*>(p);
+}
+
+inline void release_pinned(void* p) noexcept
+{
+#if defined(CHUNK_DEVICE_HIP)
+    (void)hipHostFree(p);
+#else
+    (void)cudaFreeHost(p);
+#endif
+}
+
+template <typename T>
+void copy_async(T* dst, const T* src, std::size_t n)
+{
+#if defined(CHUNK_DEVICE_HIP)
+    check(hipMemcpyAsync(dst, src, n * sizeof(T), hipMemcpyDeviceToHost, nullptr), "hipMemcpyAsync");
+#else
+    check(cudaMemcpyAsync(dst, src, n * sizeof(T), cudaMemcpyDeviceToHost, nullptr), "cudaMemcpyAsync");
 #endif
 }
 

@@ -974,8 +974,19 @@ remplissage (c4dad808f chronomètre les deux). Allocation et initialisation ense
 tout ; le premier passage raté et le second coûtent environ 50 ms. Rien à changer dans la
 bibliothèque.
 
-Suite : les attentes de réservation des écritures
-dispersées ; rendre les arènes libres ; le GH200 ; puis Arcane.
+Les attentes de réservation n'étaient pas le coût de ces écritures : ce qu'elles attendaient
+l'était. Un take passé un shard d'origine vide regardait les shards un par un, deux lectures
+dépendantes chacun, 29 en moyenne (T1000, petites arènes) ; chaque arène a maintenant un masque
+de ses shards à essayer (`ArenaDesc::avail`, effacé par un take qui trouve un shard vide, remis
+par un give back), le suivant trouvé par ffs. Et les cinq tableaux d'une phase attendaient
+chacun dans `end_write()`, une synchronisation et une copie bloquante des compteurs :
+`kokkos::end_write(a1, ..., a5)` (`device::finish_all`) met les cinq copies en file et attend une
+fois. T1000, 5 x 2^24, 400 itérations, runs alternés : zero_any écritures autour de la fenêtre
+76 -> 52 -> 43 ms, fenêtre réécrite 58 -> 49 -> 39 ms, boucle 1,50x -> 1,39x -> 1,20x ; zero
+38 -> 27 ms et 27 -> 17 ms, boucle 1,21x -> 1,13x (le masque laisse zero tel quel). Le MI300A à
+remesurer.
+
+Suite : le run MI300A des deux ; rendre les arènes libres ; le GH200 ; puis Arcane.
 
 ## 14. Risques et questions ouvertes
 

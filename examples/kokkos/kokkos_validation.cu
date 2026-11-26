@@ -25,7 +25,8 @@
  *          partial last chunk: scattered `w(i) = v` in two kernels before one end_write();
  *          `w(i) += 1.5` twice by the owner thread; parallel_for_chunks over a range; a write
  *          of zeros over half the array, then compress() (its folds against the host model);
- *          a parallel_reduce over read().
+ *          a parallel_reduce over read(); one phase over two arrays ended by one
+ *          end_write(a, b) (one wait for both, device::finish_all).
  */
 
 #include <cstdint> // std::int64_t
@@ -202,6 +203,29 @@ void run(std::int64_t n, unsigned long long arena_buffers, const char* label)
         expect(sum == want || (sum - want) * (sum - want) <= 1e-18 * want * want, line);
         std::printf("  %zu bytes held (%llu materialised chunks), %zu bytes of arena\n", a.bytes(), a.materialised(),
                     a.arena_bytes());
+    }
+
+    // 6. One phase over a and a second array, ended by one end_write(a, b).
+    {
+        sk::Array<double, S, V> b(n, arena_buffers, 0.0, static_cast<unsigned long long>(n));
+        std::vector<double>     mirror_b(static_cast<std::size_t>(n), 0.0);
+        const std::int64_t      m  = n / 4;
+        const auto              wa = a.write();
+        const auto              wb = b.write();
+        Kokkos::parallel_for("two arrays", m, KOKKOS_LAMBDA(std::int64_t k) {
+            const std::int64_t i = permuted(k, n);
+            wa(i)                = value_of(i, 6);
+            wb(n - 1 - i)        = value_of(i, 7);
+        });
+        sk::end_write(a, b);
+        for (std::int64_t k = 0; k < m; ++k)
+        {
+            const std::int64_t i                            = permuted(k, n);
+            mirror[static_cast<std::size_t>(i)]             = value_of(i, 6);
+            mirror_b[static_cast<std::size_t>(n - 1 - i)]   = value_of(i, 7);
+        }
+        check(a, mirror, "end_write(a, b): a");
+        check(b, mirror_b, "end_write(a, b): b");
     }
 }
 

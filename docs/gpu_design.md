@@ -926,8 +926,18 @@ timed, the arenas' growth falls in the fill (c4dad808f times both). Allocation a
 allocation, a fill of 0.24 s (the first touch of 18 GB of buffers), 1.16 s in all; the failed
 first pass and the second cost about 50 ms. Nothing to change in the library.
 
-Next: the claim waits of the scattered writes; giving free arenas back;
-the GH200; then Arcane.
+The claim waits were not the cost of those writes: what the waiters waited for was. A take past
+an empty home shard looked at the shards one by one, two dependent loads each, 29 on average
+(T1000, small arenas); each arena now has a mask of its shards worth a try (`ArenaDesc::avail`,
+cleared by a take that finds a shard empty, set by a give back), the next one found by ffs. And
+the five arrays of a phase waited once each in `end_write()`, a synchronisation and a blocking
+copy of the counters: `kokkos::end_write(a1, ..., a5)` (`device::finish_all`) enqueues the five
+copies and waits once. T1000, 5 x 2^24, 400 iterations, interleaved runs: zero_any writes around
+the window 76 -> 52 -> 43 ms, window rewritten 58 -> 49 -> 39 ms, loop 1.50x -> 1.39x -> 1.20x;
+zero 38 -> 27 ms and 27 -> 17 ms, loop 1.21x -> 1.13x (the mask leaves zero as it was). The
+MI300A to measure again.
+
+Next: the MI300A run of both; giving free arenas back; the GH200; then Arcane.
 
 ## 14. Risks and open questions
 

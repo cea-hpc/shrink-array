@@ -248,6 +248,15 @@ class Array
     ///         Writer::write span failed (it needs finish(f)).
     void finish();
 
+    /// @brief The first half of finish() for several arrays at once (finish_all()): the
+    ///        copy of the counters enqueued. Then synchronize(), then finish_end().
+    void finish_begin();
+
+    /// @brief The second half: finish() from the counters finish_begin() copied, after a
+    ///        synchronize(). Waits only for the steps that need it (appends, failed spans,
+    ///        parked buffers).
+    void finish_end();
+
     /// @brief The compression pass (section 7), between phases: every materialised chunk
     ///        whose elements below size() are one value folds back to it, its buffer back to
     ///        the arena. Returns the chunks folded back. Waits.
@@ -301,7 +310,9 @@ class Array
     {
     };
     template <int BLOCK, typename F>
-    void                             finish_impl(const F* f);
+    void finish_impl(const F* f);
+    template <int BLOCK, typename F>
+    void                             finish_from(const WriteCounters& first, const F* f);
     void                             replay_appends();
     [[nodiscard]] unsigned long long count_compressed(const std::vector<std::int64_t>& chunks);
     void                             fit_lost_list();
@@ -323,6 +334,7 @@ class Array
     T**              lost_       = nullptr;
     std::int64_t*    fresh_list_ = nullptr; ///< as many entries as the arena has buffers (fit_lost_list)
     WriteCounters*   counters_   = nullptr;
+    WriteCounters*   seen_       = nullptr; ///< pinned host copy of the counters (finish_begin)
     /// One counter for compress() and materialised(), allocated once instead of a device
     /// allocation and free per call.
     unsigned long long* scratch_ = nullptr;
@@ -362,6 +374,7 @@ Array<T, S, V>::Array(std::int64_t n, unsigned long long arena_buffers, T consta
     written_      = allocate<unsigned>(nc * Writer<T, S, V>::words);
     failed_       = allocate<Span>(static_cast<std::size_t>(failed_capacity_));
     counters_     = allocate<WriteCounters>(1);
+    seen_         = allocate_pinned<WriteCounters>(1);
     scratch_      = allocate<unsigned long long>(1);
     spare_        = allocate<T*>(spare_slots);
     append_index_ = allocate<std::int64_t>(static_cast<std::size_t>(append_capacity_));
@@ -387,6 +400,7 @@ Array<T, S, V>::~Array()
     release(lost_);
     release(fresh_list_);
     release(counters_);
+    release_pinned(seen_);
     release(scratch_);
     release(spare_);
     release(append_index_);
@@ -460,6 +474,27 @@ void Array<T, S, V>::finish_impl(const F* f)
     synchronize();
     WriteCounters first{};
     copy(&first, counters_, 1);
+    finish_from<BLOCK>(first, f);
+}
+
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::finish_begin()
+{
+    copy_async(seen_, counters_, 1);
+}
+
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::finish_end()
+{
+    const WriteCounters first = *seen_;
+    finish_from<default_block>(first, static_cast<const NoFunction*>(nullptr));
+}
+
+/// @details Every step from @p first, the counters read once after the phase's kernels.
+template <typename T, unsigned int S, Variant V>
+template <int BLOCK, typename F>
+void Array<T, S, V>::finish_from(const WriteCounters& first, const F* f)
+{
     const bool parked = first.n_lost != 0 || first.cas_lost != cas_lost_seen_;
     if (first.n_append == 0 && first.n_failed == 0 && !parked && first.fresh == 0)
     {
@@ -899,6 +934,18 @@ template <typename T, unsigned int S, Variant V>
     copy(out.data(), d, out.size());
     release(d);
     return out;
+}
+
+/// @brief finish() of every array of @p a with one wait for all: the copies of their counters
+///        enqueued, one synchronize(), each array finished from its copy. A phase that wrote
+///        several arrays (kokkos_shrink_bench's five) waited once per array: a synchronisation
+///        and a blocking copy each, most of such a phase's time when its kernels are small.
+template <typename... A>
+void finish_all(A&... a)
+{
+    (a.finish_begin(), ...);
+    synchronize();
+    (a.finish_end(), ...);
 }
 
 } // namespace shrink_array::device
