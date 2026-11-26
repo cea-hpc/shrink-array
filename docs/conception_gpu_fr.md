@@ -983,10 +983,21 @@ chacun dans `end_write()`, une synchronisation et une copie bloquante des compte
 `kokkos::end_write(a1, ..., a5)` (`device::finish_all`) met les cinq copies en file et attend une
 fois. T1000, 5 x 2^24, 400 itérations, runs alternés : zero_any écritures autour de la fenêtre
 76 -> 52 -> 43 ms, fenêtre réécrite 58 -> 49 -> 39 ms, boucle 1,50x -> 1,39x -> 1,20x ; zero
-38 -> 27 ms et 27 -> 17 ms, boucle 1,21x -> 1,13x (le masque laisse zero tel quel). Le MI300A à
-remesurer.
+38 -> 27 ms et 27 -> 17 ms, boucle 1,21x -> 1,13x (le masque laisse zero tel quel). MI300A,
+5 x 2^30, 2000 itérations (7ee357b5e contre a707bbcf3), sommes égales, aucune attente
+abandonnée, la mémoire inchangée :
 
-Suite : le run MI300A des deux ; rendre les arènes libres ; le GH200 ; puis Arcane.
+| | zero_any | zero |
+|---|---|---|
+| boucle | 2,08x -> 1,77x | 1,87x -> 1,54x |
+| écritures autour de la fenêtre | 440 -> 354 ms (12,6x) | 338 -> 255 ms (9,1x) |
+| fenêtre réécrite | 529 -> 450 ms (18,2x) | 271 -> 171 ms (6,9x) |
+| 2 passes RMW | 499 -> 256 ms (2,1x) | 486 -> 240 ms (2,0x) |
+
+Les petites phases d'écriture coûtent encore environ 200 us par itération là où les vues en
+prennent 15 : à profiler sur le MI300A (noyaux contre appels de l'hôte).
+
+Suite : ce profil ; rendre les arènes libres ; le GH200 ; puis Arcane.
 
 ## 14. Risques et questions ouvertes
 

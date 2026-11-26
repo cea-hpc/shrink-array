@@ -934,10 +934,21 @@ the five arrays of a phase waited once each in `end_write()`, a synchronisation 
 copy of the counters: `kokkos::end_write(a1, ..., a5)` (`device::finish_all`) enqueues the five
 copies and waits once. T1000, 5 x 2^24, 400 iterations, interleaved runs: zero_any writes around
 the window 76 -> 52 -> 43 ms, window rewritten 58 -> 49 -> 39 ms, loop 1.50x -> 1.39x -> 1.20x;
-zero 38 -> 27 ms and 27 -> 17 ms, loop 1.21x -> 1.13x (the mask leaves zero as it was). The
-MI300A to measure again.
+zero 38 -> 27 ms and 27 -> 17 ms, loop 1.21x -> 1.13x (the mask leaves zero as it was). MI300A,
+5 x 2^30, 2000 iterations (7ee357b5e against a707bbcf3), checksums equal, no wait given up, the
+memory unchanged:
 
-Next: the MI300A run of both; giving free arenas back; the GH200; then Arcane.
+| | zero_any | zero |
+|---|---|---|
+| loop | 2.08x -> 1.77x | 1.87x -> 1.54x |
+| writes around the window | 440 -> 354 ms (12.6x) | 338 -> 255 ms (9.1x) |
+| window rewritten | 529 -> 450 ms (18.2x) | 271 -> 171 ms (6.9x) |
+| 2 read-modify-write passes | 499 -> 256 ms (2.1x) | 486 -> 240 ms (2.0x) |
+
+The small write phases still cost about 200 us an iteration where the views take 15 us: to
+profile on the MI300A (kernels against the host's calls).
+
+Next: that profile; giving free arenas back; the GH200; then Arcane.
 
 ## 14. Risks and open questions
 
