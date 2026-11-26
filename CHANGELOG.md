@@ -58,6 +58,67 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- `scripts/compile_all.sh --pgo=generate|use` (and `compile_all_gnu.sh`), CMake option `CHUNK_PGO`
+  (`OFF`, `GENERATE`, `USE`) and `CHUNK_PGO_DIR`: profile-guided optimisation of the C++ code, in two
+  passes on the same build directories (the optimised ones, as `--lto`). GCC, Clang and IntelLLVM
+  (whose `.profraw` files are merged by `llvm-profdata` at configure time). On the development
+  machine, shrink_bench zero_any trained on another size: 15 to 20 % off the total time.
+- `scripts/compile_all.sh --lto` (and `compile_all_gnu.sh --lto`): link-time optimisation
+  (`CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`) on the optimised builds, not on the Debug, sanitizer
+  and nvhpc ones; every other configure gets it OFF. With a Clang-based compiler and LTO, the
+  top-level CMakeLists links with lld instead of mold: mold and ld.bfd read LLVM bitcode only
+  through LLVMgold.so, which some LLVM installs lack.
+- `transform_ranges_mt(dst, first, last, op, a, b, ...)` (`chunk/range_ops.h`): `dst[i] = op(a[i], b[i], ...)`
+  computed chunk by chunk. The sources -- chunked arrays of any variant, chunk size and element
+  type, or contiguous containers -- are read by blocks, `op` runs in a plain loop over contiguous
+  values, and each chunk span is stored with one write session; where every source is compressed
+  on the span, `op` is called once and the span is filled with its result, so that the target
+  chunk is not materialised. Callable from several threads on their own indices. A loop over two
+  arrays written element by element, `c[i] = a[i] + k * b[i]`, costs 13 to 23 times a
+  `std::vector`'s on the development machine (2 cores, GCC 13, `zero_any`, 2^25 doubles); through
+  `transform_ranges_mt` 1.7 times on dense data, and a fifth to a quarter of the vector's time
+  when nine chunks in ten are compressed. A source that is also the target is not supported.
+  Behind it, `read_range_or_constant()`, the bulk read that reports a compressed chunk instead of
+  copying it. New harness transform_ranges_validation.
+- differential_validation, a harness that draws its operations: random sequences of container
+  operations (writes, compound operations, `resize`, `push_back`, `assign`, `swap`, copies and
+  moves, `compress`, `shrink_to_fit`, the range operations, `alloc_chunk`, export / import,
+  parallel phases, `rechunk_to` at dyn) applied to an array and to a `std::vector`, the two read
+  back in full after each. A difference prints the seed and the last operations. In the grouped
+  executables, static and dyn, at 1 and 8 threads.
+
+- The start of a core layer shared with a future GPU backend (docs/gpu_design.md, stage 1):
+  `CHUNK_HD` (`chunk/internal/host_device.h`) is `__host__ __device__` in a CUDA or HIP
+  translation unit and nothing otherwise. It marks `same_value`, `identity_less`,
+  `ValueIdentity::same`, `log2int`, `StaticChunkSize` and `ChunkElems`, and the uniformity test
+  of the compression scans, now the free function `internal::walk_constant`
+  (`chunk/internal/constant_walk.h`) that `ChunkBase::walk_constant` calls. CPU builds are
+  unchanged. `-DCHUNK_DEVICE_CORE_CHECK=ON` builds device_core_validation, which runs these
+  functions in a CUDA kernel and compares them with the host, signed zeros and NaN payloads
+  included, for float, double, `std::complex` and `std::array` (nvcc 13.1 and 13.3, clang 23).
+  `same_value` and `identity_less` read the parts of a `std::complex` or a `std::array` through
+  `internal::part()`, since `real()`, `imag()` and `std::array::operator[]` are host functions
+  to nvcc. nvcc only warns about such a call, so the check builds with `-Werror=all-warnings`.
+
+### Fixed
+
+- `swap()` between two arrays of different chunk sizes (a run-time geometry build, one of them
+  rechunked by `rechunk_to()` or the decider) aborted a check build ("mismatched chunk
+  geometry") while a release build did it right, and while a move -- the same exchange, geometry
+  included -- was accepted in both. The geometry goes with the chunks, as in a move: the check
+  is gone, the documentation says so, and `swap_move_validation` is built at the run-time
+  geometry too, with a swap after a rechunk.
+- Serial builds, `zero` and `zero_or_value`: a value stored through the raw reference
+  `operator()(i)` (after `alloc_chunk()`) could be lost. These builds decide to fold a chunk
+  from per-chunk counters of its constants, kept by the writes through `operator[]` alone; the
+  raw store left them claiming "all constant", and the next `operator[]` write of the constant
+  into that chunk folded it, the raw value with it. The buffer is now counted before a fold:
+  when it disagrees, the chunk stays and the counters are set from the buffer. One scan of a
+  chunk per fold. Found by `differential_validation` (`bool`, seed 6); `alloc_chunk_validation`
+  has the case (`mixed`). OpenMP builds were not affected (no counters).
+
 ## 0.4.0 -- 2026-11-23
 
 A breaking release: every compatibility path for a former name is gone (see Removed).

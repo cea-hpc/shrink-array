@@ -102,12 +102,34 @@
 #                           resize's release) and zero_any's operator== equal a
 #                           std::vector's, with the phase bracketed; inside a
 #                           region they stay on the calling thread.
+#   differential_validation random sequences of container operations on an
+#                           array and on a std::vector, the two read back
+#                           in full after every operation (40 seeds of 120
+#                           operations; double, int, bool): writes, compound
+#                           operations, sizes, swap, copies and moves,
+#                           compression, range operations, alloc_chunk,
+#                           export / import, parallel phases, rechunk_to at
+#                           dyn. A difference prints the seed and the last
+#                           operations.
+#   transform_ranges_validation transform_ranges_mt(), dst[i] = op(a[i], b[i],
+#                           ...) by chunks: sources on a pattern by whole
+#                           chunks (T{}, a constant, data) shifted from one
+#                           to the next, so that a target chunk meets every
+#                           combination; from a team, on slices cut inside
+#                           chunks. Two chunked sources, onto a new target
+#                           and onto data; the chunks whose sources both
+#                           read T{} stay without a buffer; three sources
+#                           of two element types and a std::vector; a bool
+#                           source and a std::vector target (element path);
+#                           empty, clamped and one-chunk ranges; at dyn, a
+#                           source of another chunk size.
 #   alloc_chunk_validation  alloc_chunk() then the raw reference, operator()(i):
 #                           a preallocated chunk is materialised and holds
 #                           what it held (T{}, the second value it was
 #                           compressed to, its elements), raw stores stay in
-#                           their chunk; at dyn, its buffer has the array's
-#                           chunk size.
+#                           their chunk, and survive the operator[] writes of
+#                           the constant around them (serial counters); at
+#                           dyn, its buffer has the array's chunk size.
 #   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
@@ -297,9 +319,11 @@ set(_rt_harnesses       compress_roundtrip_validation pool_accounting_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         fill_range_constant_validation copy_range_constant_validation
                         constant_switch_validation shrink_to_fit_validation chunk_exchange_validation
-                        signed_zero_validation no_init_release_validation nan_check_validation alloc_chunk_validation)
+                        signed_zero_validation no_init_release_validation nan_check_validation alloc_chunk_validation
+                        differential_validation transform_ranges_validation)
 set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation
-                        alloc_chunk_validation)
+                        alloc_chunk_validation swap_move_validation differential_validation
+                        transform_ranges_validation)
 
 # Compile definitions of a variant at a geometry.
 function(validation_variant_defs tgt vmacro geom)
@@ -1083,6 +1107,27 @@ foreach(_vi RANGE ${_rt_nvar_last})
     endif()
   endif()
 endforeach()
+
+# --- device_core_validation: the core layer (chunk/internal/host_device.h) compiled
+# for a CUDA device and compared with the host. Opt-in: the CPU builds need no CUDA.
+# Only the include path and the definitions of a library target, not its compile
+# options (host flags such as -march would reach the CUDA compiler).
+if (CHUNK_DEVICE_CORE_CHECK)
+  enable_language(CUDA)
+  add_executable(device_core_validation device_core_validation.cu)
+  set_target_properties(device_core_validation PROPERTIES CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON)
+  # nvcc only warns (#20013) when a CHUNK_HD function calls a constexpr host function
+  # (std::complex::real(), std::array::size()...): an error here, or the check proves nothing.
+  target_compile_options(device_core_validation PRIVATE
+          $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:-Werror=all-warnings>)
+  target_include_directories(device_core_validation PRIVATE
+          $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_INCLUDE_DIRECTORIES>
+          ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+  target_compile_definitions(device_core_validation PRIVATE
+          $<TARGET_PROPERTY:chunk_zero_any,INTERFACE_COMPILE_DEFINITIONS>)
+  add_test(NAME device_core_validation COMMAND device_core_validation)
+  set_property(TEST device_core_validation PROPERTY LABELS validation)
+endif()
 
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).

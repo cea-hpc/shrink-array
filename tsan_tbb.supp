@@ -17,6 +17,10 @@
 # under test runs in execute() -> run_body(), not under a constructor of
 # start_for (except the body's copy constructor): its races stay visible.
 race:tbb::detail::d1::start_for*::start_for
+# The same construction when gcc inlines the constructor: the frame is then
+# named only "start_for", and the one above it is the allocation,
+# new_object<tbb::detail::d1::start_for<...>> (seen in CI, 2026-11-23).
+race:new_object<tbb::detail::d1::start_for
 
 # The wait tree (partitioner.h): the caller's wait_node and each split's
 # tree_node are built by one thread and folded (fold_tree) by the last child

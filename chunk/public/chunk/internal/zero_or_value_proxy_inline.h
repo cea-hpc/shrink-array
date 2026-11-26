@@ -330,7 +330,7 @@ void zero_or_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexce
 
                 if (chunk_.is_full_first_value(this->chunk_size()))
                 {
-                    this->manage_full_first_value();
+                    this->manage_full_first_value(/*pending=*/true);
                     return;
                 }
             }
@@ -372,7 +372,7 @@ void zero_or_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexce
 
             if (chunk_.is_full_second_value(this->chunk_size()))
             {
-                this->manage_full_second_value();
+                this->manage_full_second_value(/*pending=*/true);
                 return;
             }
         }
@@ -1223,8 +1223,26 @@ template <typename Derived, typename T, typename ChunkT, bool Enabled>
 // ---------------------------------------------------------------------------
 
 template <typename Derived, typename T, typename ChunkT>
-void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full_first_value() const
+void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::restate_counters(InT<T> value, bool pending) const
 {
+    if (pending)
+    {
+        this->raw_elem_set(value);
+    }
+    const T first = ChunkT::first_value;
+    chunk_.set_n_val_eq_first_value(static_cast<CounterValueT>(this->count_raw_equal(first, false)));
+    chunk_.set_n_val_eq_second_value(static_cast<CounterValueT>(this->count_raw_equal(second_value_, false)));
+}
+
+template <typename Derived, typename T, typename ChunkT>
+void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full_first_value(bool pending) const
+{
+    const T first = ChunkT::first_value;
+    if (this->count_raw_equal(first, pending) != this->chunk_size())
+    {
+        restate_counters(first, pending);
+        return;
+    }
     // Pin the ambient chunk size before the free chain (clear_st -> ... ->
     // get_chunk_allocator(thr_rank).free_elem_pow2()): get_chunk_allocator() routes by the
     // ambient thread_chunk_size(), not by the buffer. A stale ambient (left by another
@@ -1246,8 +1264,13 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full_
 }
 
 template <typename Derived, typename T, typename ChunkT>
-void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full_second_value() const
+void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full_second_value(bool pending) const
 {
+    if (this->count_raw_equal(second_value_, pending) != this->chunk_size())
+    {
+        restate_counters(second_value_, pending);
+        return;
+    }
     // Same rule as manage_full_first_value(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
     {

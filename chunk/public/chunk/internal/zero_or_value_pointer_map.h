@@ -97,8 +97,11 @@ class ZeroOrValueArrayInfoPolicy
      */
     [[nodiscard]] std::vector<const ArrayInfo*> all_array_infos() const
     {
-        return array_info_map_ | std::views::values | std::views::transform([](const ArrayInfo& v) { return &v; }) |
-               std::ranges::to<std::vector>();
+        // ranges::to in its call form, not `| std::ranges::to<std::vector>()`:
+        // clang 23.1 (the apt.llvm.org snapshot of the nightly) rejects the
+        // pipe's closure object with libstdc++ 14.
+        return std::ranges::to<std::vector>(array_info_map_ | std::views::values |
+                                            std::views::transform([](const ArrayInfo& v) { return &v; }));
     }
 
     /**
@@ -261,7 +264,7 @@ class PointerMap
     /// @brief Every registered second value, in map order.
     [[nodiscard]] std::vector<T> get_all_second_value() const
     {
-        return second_value_idx_map_ | std::views::keys | std::ranges::to<std::vector>();
+        return std::ranges::to<std::vector>(second_value_idx_map_ | std::views::keys); // call form, as above
     }
 
     /// @brief Index of second value @p key in the shared value table, or -1

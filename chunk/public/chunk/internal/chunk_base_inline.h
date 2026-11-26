@@ -739,24 +739,9 @@ template <typename T, typename Derived>
 [[nodiscard]] ChunkBase<T, Derived>::ConstantWalk
 ChunkBase<T, Derived>::walk_constant(const T* vals, InT<T> value, unsigned int from, unsigned int count) noexcept
 {
-    // Same shape as scan_constants(): branch-free blocks, exit between them.
-    unsigned int i = from;
-    while (i < count)
-    {
-        const unsigned int block_end = std::min(count, i + scan_block);
-        unsigned int       bad       = 0;
-        for (unsigned int j = i; j < block_end; ++j)
-        {
-            // raw-read: compressor scan of a chunk this pass claimed (steal mark), or a sequential caller
-            bad |= static_cast<unsigned int>(!same_value(vals[j], value));
-        }
-        i = block_end;
-        if (bad != 0)
-        {
-            return ConstantWalk{false, i};
-        }
-    }
-    return ConstantWalk{true, count};
+    // The core layer's walk (constant_walk.h), shared with the GPU's compress() pass.
+    const T& v = value;
+    return internal::walk_constant(vals, v, from, count);
 }
 
 template <typename T, typename Derived>

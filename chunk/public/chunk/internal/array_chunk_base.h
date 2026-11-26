@@ -642,6 +642,20 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      */
     template <typename OutIt>
     OutIt read_range(IndexType first, IndexType last, OutIt out) const;
+
+    /**
+     * @brief read_range() into a T*, unless [@p first, @p last) lies in one
+     *        chunk that is compressed: then nothing is copied and
+     *        @p constant receives what every element of the range reads.
+     * @details What transform_ranges_mt() reads its sources with: a
+     *          compressed chunk costs one test, and the caller can keep the
+     *          result compressed too. A range over several chunks is always
+     *          copied, each block straight into @p out.
+     * @pre  0 <= @p first < @p last <= size(); read_range()'s otherwise.
+     * @return true when @p constant was set (and @p out left untouched),
+     *         false when @p out holds the last - first elements.
+     */
+    bool read_range_or_constant(IndexType first, IndexType last, T* out, T& constant) const;
     /** @} */
 
     /**
@@ -746,9 +760,12 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param other the container to exchange state with
      * @note noexcept: the drain and registry update only fail on memory
      *       exhaustion or a corrupt registry, which terminates.
-     * @pre Both operands share chunk geometry (with StaticChunkSize always true).
+     * @note The geometries may differ (a run-time geometry build, after
+     *       rechunk_to()): the geometry is exchanged with the chunks, as a move
+     *       does -- each array keeps reading its values at the chunk size they
+     *       came with.
      */
-    void swap(this Derived& self, Derived& other) noexcept pre(self.size_policy_.size() == other.size_policy_.size());
+    void swap(this Derived& self, Derived& other) noexcept;
 
     /**
      * @brief Const read access (used by read_value()).

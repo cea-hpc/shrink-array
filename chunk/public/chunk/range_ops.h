@@ -56,6 +56,9 @@
 #include <cstddef>     // std::size_t, std::ptrdiff_t
 #include <type_traits> // std::is_same_v, std::conditional_t
 #include <memory> // std::unique_ptr, std::make_unique_for_overwrite (the span buffer of copy_range_mt / transform_range_mt)
+#include <concepts> // std::convertible_to (transform_ranges_mt's contiguous sources)
+#include <tuple>    // std::tuple, std::get (transform_ranges_mt: one span per source)
+#include <utility>  // std::index_sequence, std::index_sequence_for (transform_ranges_mt)
 
 #include "chunk/bit.h"                     // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/element_access.h" // internal::as_words: Bit chunks are words of bits
@@ -1553,6 +1556,176 @@ void transform_range_mt(Arr& arr, std::size_t first, std::size_t last, It src_fi
 {
     internal::store_range_mt<false>(arr, first, last, [&src_first, &op, first](std::size_t i)
                                     { return op(*(src_first + static_cast<std::ptrdiff_t>(i - first))); });
+}
+
+namespace internal
+{
+
+/// @brief True for a source transform_ranges_mt() reads by blocks: a chunked
+///        array or a contiguous container (std::vector, std::span, std::array)
+///        whose elements are plain values (not bool, not Bit).
+template <typename Src>
+inline constexpr bool block_source_v =
+    raw_fillable_v<typename Src::value_type> && (ChunkedArray<Src> || requires(const Src& src) {
+        { src.data() } -> std::convertible_to<const typename Src::value_type*>;
+    });
+
+/// @brief What one source of transform_ranges_mt() holds on the span being
+///        computed: one value (a compressed chunk), or its elements.
+template <typename V>
+struct SourceSpan
+{
+    const V* data        = nullptr; ///< the span's elements, unless is_constant
+    V        constant    = V{};     ///< what every element reads, when is_constant
+    bool     is_constant = false;
+};
+
+/// @brief The calling thread's buffer of source @p Slot of
+///        transform_ranges_mt(), at least @p chunk_sz elements. One per
+///        thread, element type and position in the call, reused across calls
+///        (store_range_mt's reasons); not zeroed.
+template <typename V, std::size_t Slot>
+[[nodiscard]] V* source_span_buffer(unsigned int chunk_sz)
+{
+    thread_local std::unique_ptr<V[]> tl_buf;
+    if (thread_local unsigned int tl_cap = 0; tl_cap < chunk_sz)
+    {
+        tl_buf = std::make_unique_for_overwrite<V[]>(chunk_sz);
+        tl_cap = chunk_sz;
+    }
+    return tl_buf.get();
+}
+
+/// @brief Source @p Slot on [lo, hi): a chunked array is read into the
+///        thread's buffer, or reported constant when the span lies in one of
+///        its compressed chunks; a contiguous container is used in place.
+template <std::size_t Slot, typename Src>
+[[nodiscard]] SourceSpan<typename Src::value_type>
+load_source_span(const Src& src, std::size_t lo, std::size_t hi, unsigned int chunk_sz)
+{
+    using V = Src::value_type;
+    SourceSpan<V> span;
+    if constexpr (ChunkedArray<Src>)
+    {
+        using IndexType = decltype(src.size());
+        V* const buf    = source_span_buffer<V, Slot>(chunk_sz);
+        span.is_constant =
+            src.read_range_or_constant(static_cast<IndexType>(lo), static_cast<IndexType>(hi), buf, span.constant);
+        span.data = buf;
+    }
+    else
+    {
+        span.data = src.data() + lo;
+    }
+    return span;
+}
+
+/// @brief Makes @p span readable element by element: a constant chunked
+///        source is written out into its buffer (the span is then computed
+///        with a source that is not constant).
+template <std::size_t Slot, typename V>
+void expand_source_span(SourceSpan<V>& span, std::size_t count, unsigned int chunk_sz)
+{
+    if (span.is_constant)
+    {
+        V* const buf = source_span_buffer<V, Slot>(chunk_sz);
+        for (std::size_t k = 0; k < count; ++k)
+        {
+            buf[k] = span.constant;
+        }
+        span.data        = buf;
+        span.is_constant = false;
+    }
+}
+
+/// @brief transform_ranges_mt() by blocks (every source a block_source_v).
+template <ChunkedArray Arr, typename Op, typename... Srcs, std::size_t... Slot>
+void transform_ranges_by_blocks(Arr&        arr,
+                                std::size_t first,
+                                std::size_t last,
+                                Op&         op,
+                                std::index_sequence<Slot...> /*slots*/,
+                                const Srcs&... srcs)
+{
+    using T                     = Arr::value_type;
+    const unsigned int chunk_sz = arr.chunk_size();
+    for (std::size_t lo = first; lo < last;)
+    {
+        const std::size_t hi = std::min(last, (lo / chunk_sz + 1) * chunk_sz);
+        // The sources are read here, before any write session of the span
+        // (store_range_mt's rule for the caller's code).
+        std::tuple spans{load_source_span<Slot>(srcs, lo, hi, chunk_sz)...};
+        if ((std::get<Slot>(spans).is_constant && ...))
+        {
+            // Every source compressed on this span: one value, and the target
+            // chunk is not materialised for it.
+            const T value = static_cast<T>(op(std::get<Slot>(spans).constant...));
+            store_range_mt<true>(arr, lo, hi, [&value](std::size_t) -> const T& { return value; });
+        }
+        else
+        {
+            (expand_source_span<Slot>(std::get<Slot>(spans), hi - lo, chunk_sz), ...);
+            store_range_mt<false>(arr, lo, hi, [&op, &spans, lo](std::size_t i)
+                                  { return op(std::get<Slot>(spans).data[i - lo]...); });
+        }
+        lo = hi;
+    }
+}
+
+} // namespace internal
+
+/**
+ * @brief dst[i] = op(a[i], b[i], ...) for i in [first, last), computed chunk
+ *        by chunk; callable concurrently from several threads, each on its own
+ *        indices.
+ *
+ * @details For each chunk span of @p arr the sources are read by blocks, the
+ *          operation runs in a plain loop over contiguous values (one the
+ *          compiler can vectorise), and the results are stored with one write
+ *          session (copy_range_mt's protocol). Where every source is
+ *          compressed on the span -- a chunked source whose chunk holds one
+ *          value -- @p op is called once and the span is filled with its
+ *          result (fill_range_mt's protocol): the target chunk is not
+ *          materialised, and nothing is left for the compression pass.
+ *
+ *          A source is a chunked array (any variant, any chunk size, any
+ *          element type @p op accepts) or a contiguous container
+ *          (std::vector, std::span, std::array); a scalar goes in @p op's
+ *          capture. Sources of bool or Bit, and other containers with
+ *          operator[], are read element by element.
+ *
+ * @pre   fill_range_mt's. Every source holds at least @p last elements, is
+ *        none of @p arr, and is not written during the call (another chunked
+ *        array is read as read_range() reads it). @p op does not touch
+ *        @p arr; it must give the same result for the same arguments (it is
+ *        called once for a span of compressed sources).
+ * @param arr   target array
+ * @param first first index, inclusive (clamped to size())
+ * @param last  last index, exclusive (clamped to size())
+ * @param op    called as op(a[i], b[i], ...), the sources in the order given;
+ *              returns a value convertible to the element type
+ * @param srcs  the sources, at least one
+ */
+template <internal::ChunkedArray Arr, typename Op, typename... Srcs>
+    requires(sizeof...(Srcs) >= 1)
+void transform_ranges_mt(Arr& arr, std::size_t first, std::size_t last, Op&& op, const Srcs&... srcs)
+{
+    using T         = Arr::value_type;
+    const auto size = static_cast<std::size_t>(arr.size());
+    if (first >= last || first >= size)
+    {
+        return;
+    }
+    last = std::min(last, size);
+    if constexpr ((internal::block_source_v<Srcs> && ...) && internal::raw_fillable_v<T>)
+    {
+        internal::transform_ranges_by_blocks(arr, first, last, op, std::index_sequence_for<Srcs...>{}, srcs...);
+    }
+    else
+    {
+        internal::store_range_mt<false>(arr, first, last, [&op, &srcs...](std::size_t i)
+                                        { return op(srcs[static_cast<decltype(srcs.size())>(i)]...); });
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

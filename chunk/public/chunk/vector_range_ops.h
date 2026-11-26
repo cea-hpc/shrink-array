@@ -214,6 +214,27 @@ void transform_range_mt(C& container, std::size_t first, std::size_t last, It sr
     }
 }
 
+/**
+ * @brief transform_ranges_mt on a plain container: element i of
+ *        [first, last) gets op(srcs[i]...); callable from several threads at
+ *        once on DISJOINT indices (see fill_range_mt's overload).
+ * @pre   Every source holds at least @p last elements and is not written
+ *        during the call.
+ */
+template <typename C, typename Op, typename... Srcs>
+    requires(!internal::ChunkedArray<C> && sizeof...(Srcs) >= 1)
+void transform_ranges_mt(C& container, std::size_t first, std::size_t last, Op&& op, const Srcs&... srcs)
+{
+    static_assert(!std::is_same_v<C, std::vector<bool>>,
+                  "transform_ranges_mt: std::vector<bool> packs neighbouring indices into one word");
+    const auto size = static_cast<std::size_t>(std::size(container));
+    last            = std::min(last, size);
+    for (std::size_t i = first; i < last; ++i)
+    {
+        container[i] = op(srcs[static_cast<decltype(srcs.size())>(i)]...);
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Bulk reads, generic half: for_each_value / read_range on any container.
 // range_ops.h adds the chunked overloads (one read section per

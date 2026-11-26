@@ -129,6 +129,7 @@ build, deferred or not: an `int` element `*= 1.5` is multiplied by 1, `/= 0.5` d
 | `fill_range_mt(a, first, last, v)` | callable by several threads at once, on disjoint ranges (a chunk may be shared) |
 | `copy_range_mt(a, first, last, src_first)` | `copy_range`, callable as `fill_range_mt` is |
 | `transform_range_mt(a, first, last, src_first, op)` | element `i` gets `op(*(src_first + (i - first)))`, callable as `fill_range_mt` is; `op` must not touch `a` |
+| `transform_ranges_mt(a, first, last, op, b, c, ...)` | element `i` gets `op(b[i], c[i], ...)`, computed chunk by chunk: the sources (chunked arrays or contiguous containers) are read by blocks, `op` runs in a loop the compiler can vectorise, and a span where every source is compressed is filled with one result, without a buffer; callable as `fill_range_mt` is. No source may be `a`, nor be written meanwhile |
 | `for_each_value(a, first, last, f)` | read: `f(v)` on each element, one read section per block |
 | `for_each_span(a, first, last, f)` | read: `f(std::span<const T>)` per block (a vectorisable loop); a compressed chunk as `f(v, count)` when `f` accepts it. A `std::vector` is one span |
 | `read_range(a, first, last, out)` | read: `[first, last)` copied to `out` |

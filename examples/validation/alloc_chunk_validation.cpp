@@ -48,11 +48,14 @@
 //            chunks read the second value, and the raw stores into one of
 //            them leave the others, compressed or not, as they were;
 //   geometry (dyn) an array at twice the size the thread used last: the
-//            preallocated chunks hold chunk_size() elements each.
-//
-// What is NOT asserted: mixing raw stores and operator[] on one chunk. The raw
-// reference bypasses the library (docs/api.md, section 3): a serial build
-// counts the constants of a chunk from the proxy writes alone.
+//            preallocated chunks hold chunk_size() elements each;
+//   mixed    a raw store of another value into a chunk preallocated from its
+//            constant, then the constant through operator[] over the rest of
+//            the chunk: the raw value survives. A serial build counts the
+//            constants of a chunk from the proxy writes, which do not see the
+//            raw store; the count said "all constant" and the chunk was folded,
+//            the raw value with it (differential_validation, seed 6). The
+//            buffer is now counted before a fold.
 //
 // EXIT STATUS: 0 when every check holds, 1 otherwise.
 
@@ -433,6 +436,65 @@ int case_geometry()
     }
 }
 
+// ── mixed: raw store, then operator[] on the same chunk ─────────────────────
+/// A value that is not @p constant.
+template <typename T>
+T other_than(T constant)
+{
+    if constexpr (std::is_same_v<T, bool>)
+    {
+        return !constant;
+    }
+    else
+    {
+        return static_cast<T>(constant + static_cast<T>(100));
+    }
+}
+
+template <typename T>
+int case_mixed(const char* what, T constant)
+{
+    constexpr int n_chunks = 4;
+    constexpr int chunk    = 1;
+    Arr<T>        arr(0);
+    const auto    chunk_size = static_cast<int>(arr.chunk_size());
+    const int     count      = n_chunks * chunk_size;
+    arr.resize(count);
+    declare_second_value<T>(arr, second_value<T>());
+    std::vector<T> ref(static_cast<std::size_t>(count), T{});
+
+    // Chunk 1 written, then folded to the constant.
+    proxy_fill<T>(arr, chunk, chunk + 1, T{}, true);
+    proxy_fill<T>(arr, chunk, chunk + 1, constant, false);
+    arr.shrink_to_fit();
+    const int base = chunk * chunk_size;
+    for (int index = base; index < base + chunk_size; ++index)
+    {
+        ref[static_cast<std::size_t>(index)] = constant;
+    }
+
+    // One raw store of another value, then the constant through operator[]
+    // over every other element of the chunk: each of these writes asks the
+    // counter whether the chunk is all constant.
+    const int raw_index = base + (chunk_size / 2) + 3;
+    arr.alloc_chunk(raw_index);
+    arr(raw_index)                           = other_than(constant);
+    ref[static_cast<std::size_t>(raw_index)] = other_than(constant);
+    for (int index = base; index < base + chunk_size; ++index)
+    {
+        if (index != raw_index)
+        {
+            arr[index] = constant;
+        }
+    }
+    const bool kept = static_cast<T>(arr[raw_index]) == other_than(constant);
+    int        bad  = mismatches<T>(arr, ref);
+    // A compression pass must not fold it either.
+    arr.shrink_to_fit();
+    bad += mismatches<T>(arr, ref);
+    return report(type_name<T>(), what, kept && bad == 0, kept ? 1 : 0, bad, raw_index);
+}
+
 template <typename T>
 int all_cases()
 {
@@ -443,6 +505,11 @@ int all_cases()
         fails += case_from_constant<T>("second", second_value<T>());
     }
     fails += case_geometry<T>();
+    fails += case_mixed<T>("mixed", T{});
+    if constexpr (!chunk_config::use_zero)
+    {
+        fails += case_mixed<T>("mixed 2nd", second_value<T>());
+    }
     return fails;
 }
 

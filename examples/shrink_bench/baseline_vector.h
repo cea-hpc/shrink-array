@@ -25,7 +25,10 @@
  * creation, do not pay. BaselineVector allocates without writing
  * (DefaultInitAllocator), then zeroes the elements in a parallel loop with
  * the static schedule of the bench's loops: each page is first touched by the
- * thread that works on it.
+ * thread that works on it. std::complex is zeroed the same way: its default
+ * constructor writes (0, 0) -- one thread over the whole array, 48 GB for the
+ * 3e9 elements of a --multiply 3 run -- so the allocator leaves it unwritten
+ * too (an implicit-lifetime type: trivial copy constructor and destructor).
  *
  * The elements read T{} after construction and after a growing resize(n),
  * exactly as with std::vector: only who writes the zeros changes.
@@ -33,6 +36,7 @@
 
 #pragma once
 
+#include <complex>     // std::complex (zeroed in parallel too)
 #include <cstddef>     // std::size_t, std::ptrdiff_t
 #include <memory>      // std::allocator, std::allocator_traits
 #include <new>         // placement new
@@ -44,6 +48,21 @@
 
 namespace shrink_array
 {
+
+namespace baseline_detail
+{
+template <class T>
+inline constexpr bool is_complex_v = false;
+template <class T>
+inline constexpr bool is_complex_v<std::complex<T>> = true;
+
+/// @brief The element types BaselineVector allocates unwritten and zeroes in
+///        parallel: the trivially default-constructible ones (not bool, whose
+///        std::vector packs bits) and std::complex.
+template <class T>
+inline constexpr bool zeroed_in_parallel_v =
+    (std::is_trivially_default_constructible_v<T> && !std::is_same_v<T, bool>) || is_complex_v<T>;
+} // namespace baseline_detail
 
 /**
  * @brief std::allocator, except that a construct() without arguments
@@ -72,7 +91,14 @@ class DefaultInitAllocator : public A
     template <class U>
     void construct(U* ptr) noexcept(std::is_nothrow_default_constructible_v<U>)
     {
-        ::new (static_cast<void*>(ptr)) U;
+        if constexpr (baseline_detail::is_complex_v<U>)
+        {
+            (void)ptr; // left unwritten: BaselineVector::zero_from() writes it
+        }
+        else
+        {
+            ::new (static_cast<void*>(ptr)) U;
+        }
     }
 
     /// @brief Construct *ptr from @p args, as the underlying allocator does.
@@ -88,8 +114,8 @@ class DefaultInitAllocator : public A
  *        new elements in parallel, each page first touched by the thread of
  *        the static schedule that works on it.
  *
- * Only for a trivially default-constructible T; any other T (std::complex,
- * whose default constructor writes the zero itself) is initialised by its
+ * Only for a trivially default-constructible T and std::complex; any other T
+ * is initialised by its
  * constructor, sequentially, as std::vector does. bool keeps
  * std::vector<bool>, packed bits that it zeroes itself and that two threads
  * cannot write side by side.
@@ -130,7 +156,7 @@ class BaselineVector : public std::vector<T, DefaultInitAllocator<T>>
     /// @brief Write T{} into [first, size()).
     void zero_from(size_type first)
     {
-        if constexpr (std::is_trivially_default_constructible_v<T> && !std::is_same_v<T, bool>)
+        if constexpr (baseline_detail::zeroed_in_parallel_v<T>)
         {
             T* const             ptr       = this->data();
             const std::ptrdiff_t first_idx = static_cast<std::ptrdiff_t>(first);

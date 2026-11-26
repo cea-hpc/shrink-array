@@ -600,10 +600,51 @@ OutIt ArrayChunkBase<Derived>::read_range(IndexType first, IndexType last, OutIt
 }
 
 template <typename Derived>
+bool ArrayChunkBase<Derived>::read_range_or_constant(IndexType first, IndexType last, T* out, T& constant) const
+{
+    if constexpr (bulk_fast)
+    {
+        // One chunk: its state decides for the whole range (no writer during
+        // the call, so a compressed chunk stays so).
+        const bool one_chunk   = chunk_index_of(first) == chunk_index_of(last - 1);
+        bool       is_constant = false;
+        for_each_chunk_span(first, last,
+                            [&](const ChunkType& ch, int chunk_index, int lo, int hi)
+                            {
+                                for (int j = lo; j < hi; j += bulk_block)
+                                {
+                                    const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
+                                    if (one_chunk && j == lo)
+                                    {
+                                        if (read_chunk_block_or_constant(ch, chunk_index, j, len, out, constant))
+                                        {
+                                            check_no_write_during_bulk_read(ch, chunk_index, j);
+                                            is_constant = true;
+                                            return;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        read_chunk_block(ch, chunk_index, j, len, out);
+                                    }
+                                    check_no_write_during_bulk_read(ch, chunk_index, j);
+                                    out += len;
+                                }
+                            });
+        return is_constant;
+    }
+    else
+    {
+        read_range(first, last, out);
+        return false;
+    }
+}
+
+template <typename Derived>
 void ArrayChunkBase<Derived>::swap(this Derived& self, Derived& other) noexcept
 {
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
-    self.swap_storage_and_identity(other); // the geometry: the declaration's precondition
+    self.swap_storage_and_identity(other);
 }
 
 template <typename Derived>
