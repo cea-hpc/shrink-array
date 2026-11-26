@@ -994,10 +994,17 @@ abandonnée, la mémoire inchangée :
 | fenêtre réécrite | 529 -> 450 ms (18,2x) | 271 -> 171 ms (6,9x) |
 | 2 passes RMW | 499 -> 256 ms (2,1x) | 486 -> 240 ms (2,0x) |
 
-Les petites phases d'écriture coûtent encore environ 200 us par itération là où les vues en
-prennent 15 : à profiler sur le MI300A (noyaux contre appels de l'hôte).
+Le profil (rocprofv3, 5 x 2^26) : une phase d'écriture de fenêtre prenait environ 260 us, dont
+cinq `hipMemset` du compte des buffers frais après chaque settle (13 us de temps hôte chacun),
+cinq copies asynchrones des compteurs (5,5 us et un noyau de copie chacune), et les deux noyaux
+du banc à 27 us chacun contre 3,4 us à plat. `settle_listed` vide maintenant la liste lui-même
+et `finish_all` rassemble les compteurs de 16 tableaux au plus par un seul noyau (7381cc5ba) :
+boucle 1,77x -> 1,64x (zero_any) et 1,54x -> 1,45x (zero) ; écritures autour de la fenêtre
+354 -> 258 ms et 255 -> 193 ms, fenêtre réécrite 450 -> 380 ms et 171 -> 135 ms, RMW 256 -> 220 ms
+et 240 -> 204 ms ; sommes égales.
 
-Suite : ce profil ; rendre les arènes libres ; le GH200 ; puis Arcane.
+Suite : les noyaux d'écriture eux-mêmes (27 us contre 3,4) ; rendre les arènes libres ; le
+GH200 ; puis Arcane.
 
 ## 14. Risques et questions ouvertes
 

@@ -945,10 +945,17 @@ memory unchanged:
 | window rewritten | 529 -> 450 ms (18.2x) | 271 -> 171 ms (6.9x) |
 | 2 read-modify-write passes | 499 -> 256 ms (2.1x) | 486 -> 240 ms (2.0x) |
 
-The small write phases still cost about 200 us an iteration where the views take 15 us: to
-profile on the MI300A (kernels against the host's calls).
+The profile (rocprofv3, 5 x 2^26): a window's write phase took about 260 us, of which five
+`hipMemset` of the fresh count after each settle (13 us of host time each), five asynchronous
+copies of the counters (5.5 us and a blit kernel each), and the two bench kernels at 27 us each
+against 3.4 us flat. `settle_listed` now empties the list itself and `finish_all` gathers the
+counters of up to 16 arrays with one kernel (7381cc5ba): loop 1.77x -> 1.64x (zero_any) and
+1.54x -> 1.45x (zero); writes around the window 354 -> 258 ms and 255 -> 193 ms, window rewritten
+450 -> 380 ms and 171 -> 135 ms, read-modify-write 256 -> 220 ms and 240 -> 204 ms; checksums
+equal.
 
-Next: that profile; giving free arenas back; the GH200; then Arcane.
+Next: the write kernels themselves (27 us against 3.4); giving free arenas back; the GH200; then
+Arcane.
 
 ## 14. Risks and open questions
 
