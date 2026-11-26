@@ -271,6 +271,13 @@ __global__ void settle_listed(Writer<T, S, V> w, unsigned long long count)
     {
         settle_chunk(w, w.fresh_list[k], lane);
     }
+    if (blockIdx.x == 0 && threadIdx.x == 0)
+    {
+        // The list emptied for the next phase, here and not by a memset after the launch (a
+        // blocking call of about 13 us on the MI300A, five per phase of kokkos_shrink_bench).
+        // No note_fresh() runs in this kernel; the next phase's kernels come after it.
+        w.counters->fresh = 0;
+    }
 }
 
 /// @brief The lost list and the spare slots back to the arena (after DeviceArena::normalise()).

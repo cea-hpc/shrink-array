@@ -188,7 +188,38 @@ gather_chunks(const ChunkDesc<T, V>* desc, const std::int64_t* chunks, T* stagin
     }
 }
 
+/// Arrays whose counters one gather_counters launch copies (finish_all()).
+inline constexpr int gather_max = 16;
+
+/// @brief Where gather_counters reads and writes: n pairs.
+template <typename C>
+struct CounterGather
+{
+    const C* src[gather_max];
+    C*       dst[gather_max];
+    int      n;
+};
+
+/// @brief Copies the counters of up to gather_max arrays into pinned host memory: one launch
+///        instead of a copy per array (on the MI300A an asynchronous copy is about 5 us of host
+///        time and a blit kernel each).
+template <typename C>
+__global__ void gather_counters(CounterGather<C> g)
+{
+    for (int k = static_cast<int>(threadIdx.x); k < g.n; k += static_cast<int>(blockDim.x))
+    {
+        *g.dst[k] = *g.src[k];
+    }
+}
+
 } // namespace kernels
+
+/// @brief An array's counters on the device and their pinned host copy (finish_all()).
+struct CounterSlot
+{
+    const WriteCounters* device;
+    WriteCounters*       host;
+};
 
 /**
  * @brief A device array of @p T in chunks of @p S, every element @p constant at first.
@@ -248,11 +279,13 @@ class Array
     ///         Writer::write span failed (it needs finish(f)).
     void finish();
 
-    /// @brief The first half of finish() for several arrays at once (finish_all()): the
-    ///        copy of the counters enqueued. Then synchronize(), then finish_end().
-    void finish_begin();
+    /// @brief For finish_all(): where the counters are and where their copy goes.
+    [[nodiscard]] CounterSlot counter_slot() const noexcept
+    {
+        return {counters_, seen_};
+    }
 
-    /// @brief The second half: finish() from the counters finish_begin() copied, after a
+    /// @brief finish() from the counters finish_all() copied into counter_slot().host, after a
     ///        synchronize(). Waits only for the steps that need it (appends, failed spans,
     ///        parked buffers).
     void finish_end();
@@ -334,7 +367,7 @@ class Array
     T**              lost_       = nullptr;
     std::int64_t*    fresh_list_ = nullptr; ///< as many entries as the arena has buffers (fit_lost_list)
     WriteCounters*   counters_   = nullptr;
-    WriteCounters*   seen_       = nullptr; ///< pinned host copy of the counters (finish_begin)
+    WriteCounters*   seen_       = nullptr; ///< pinned host copy of the counters (finish_all)
     /// One counter for compress() and materialised(), allocated once instead of a device
     /// allocation and free per call.
     unsigned long long* scratch_ = nullptr;
@@ -478,12 +511,6 @@ void Array<T, S, V>::finish_impl(const F* f)
 }
 
 template <typename T, unsigned int S, Variant V>
-void Array<T, S, V>::finish_begin()
-{
-    copy_async(seen_, counters_, 1);
-}
-
-template <typename T, unsigned int S, Variant V>
 void Array<T, S, V>::finish_end()
 {
     const WriteCounters first = *seen_;
@@ -588,7 +615,6 @@ void Array<T, S, V>::settle_listed(unsigned long long count)
     const unsigned long long warps_per_block = 256 / warp_size;
     const unsigned long long blocks          = (count + warps_per_block - 1) / warps_per_block;
     kernels::settle_listed<<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(writer(), count);
-    zero(&counters_->fresh, 1);
 }
 
 template <typename T, unsigned int S, Variant V>
@@ -936,14 +962,27 @@ template <typename T, unsigned int S, Variant V>
     return out;
 }
 
-/// @brief finish() of every array of @p a with one wait for all: the copies of their counters
-///        enqueued, one synchronize(), each array finished from its copy. A phase that wrote
-///        several arrays (kokkos_shrink_bench's five) waited once per array: a synchronisation
-///        and a blocking copy each, most of such a phase's time when its kernels are small.
+/// @brief finish() of every array of @p a with one wait for all: their counters copied into
+///        pinned host memory by one kernel (per gather_max arrays), one synchronize(), each
+///        array finished from its copy. A phase that wrote several arrays (kokkos_shrink_bench's
+///        five) waited once per array, a synchronisation and a blocking copy each: most of such
+///        a phase's time when its kernels are small.
 template <typename... A>
 void finish_all(A&... a)
 {
-    (a.finish_begin(), ...);
+    const CounterSlot slots[] = {a.counter_slot()...};
+    constexpr int     n       = static_cast<int>(sizeof...(A));
+    for (int k = 0; k < n; k += kernels::gather_max)
+    {
+        kernels::CounterGather<WriteCounters> g{};
+        g.n = n - k < kernels::gather_max ? n - k : kernels::gather_max;
+        for (int j = 0; j < g.n; ++j)
+        {
+            g.src[j] = slots[k + j].device;
+            g.dst[j] = slots[k + j].host;
+        }
+        kernels::gather_counters<<<1, 32>>>(g);
+    }
     synchronize();
     (a.finish_end(), ...);
 }
