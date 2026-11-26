@@ -1157,11 +1157,16 @@ MI300A, zero_or_value à a890cb3ea (7 tests sur 7, sommes égales, aucun ajout),
 | mémoire à la fin | 11,346 Go (+ 2,080 libres) | la même | 4,972 Go (+ 0,460 libres) | la même |
 
 La réécriture des grandes fenêtres est l'écart du MI300A : 43,9x le plat contre 8,8x, avec
-2,3 x 10^7 attentes de claim (GH200 : 4,9 x 10^7). Ses atomiques à l'échelle du device sont
-lentes (plus haut dans cette section), et une grande fenêtre réserve environ 10^4 chunks par
-tableau et par phase.
+2,3 x 10^7 attentes de claim (GH200 : 4,9 x 10^7). Ce ne sont pas surtout les claims (rocprofv3,
+le même run : réécriture 540 ms) : 42 croissances des arènes, un `hipMalloc` d'environ 5 à 8 ms
+chacune, 325 ms -- les 9,4 Go dont les arènes grandissent dans la boucle, mappés à environ
+29 Go/s, comme les 43 Go des vues plates le sont à leur allocation (1,9 s, 0,08x côté
+shrink-array). Les noyaux de réécriture font 181 ms (14x la réécriture plate : les claims et
+les atomiques à l'échelle du device), le reste environ 35 ms. Les pages sont payées dans la
+boucle au lieu de l'être d'avance : une première arène dimensionnée pour le run (sixième
+argument du bench) devrait les ramener à l'allocation (à passer).
 
-Suite : les claims du MI300A sur les grandes fenêtres ; les noyaux d'écriture eux-mêmes (27 us
+Suite : les noyaux de réécriture du MI300A sur les grandes fenêtres ; les noyaux d'écriture eux-mêmes (27 us
 contre 3,4) ; `compress()` dans la boucle ; puis Arcane.
 
 ## 14. Risques et questions ouvertes

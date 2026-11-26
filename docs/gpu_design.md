@@ -1103,10 +1103,15 @@ GH200:
 | memory at the end | 11.346 GB (+ 2.080 free) | the same | 4.972 GB (+ 0.460 free) | the same |
 
 The large windows' rewrite is the MI300A's gap: 43.9x flat against 8.8x, with 2.3 x 10^7 claim
-waits (the GH200: 4.9 x 10^7). Its device-scope atomics are slow (section 13 above), and a large
-window claims about 10^4 chunks per array and phase.
+waits (the GH200: 4.9 x 10^7). Not the claims, mostly (rocprofv3, the same run: rewrite 540 ms):
+42 growths of the arenas, one `hipMalloc` of about 5 to 8 ms each, 325 ms -- the 9.4 GB the
+arenas grow by in the loop, mapped at about 29 GB/s, as the flat views' 43 GB are at their
+allocation (1.9 s, 0.08x on the shrink side). The rewrite kernels are 181 ms (14x the flat
+rewrite: the claims and the device-scope atomics), the rest about 35 ms. The pages are paid in
+the loop instead of up front: a first arena sized for the run (the bench's sixth argument)
+should move them to the allocation (to be run).
 
-Next: the MI300A's claims on large windows; the write kernels themselves (27 us against 3.4);
+Next: the MI300A's rewrite kernels on large windows; the write kernels themselves (27 us against 3.4);
 `compress()` in the loop; then Arcane.
 
 ## 14. Risks and open questions
