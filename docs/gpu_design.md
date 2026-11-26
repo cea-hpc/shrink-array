@@ -897,28 +897,32 @@ dropped, the replay then applied the older value (MI300A, wrong checksums from r
 (`bench_phase_fill.cpp`, by `parallel_for_chunks`), then per iteration a random window
 (`bench_phase_compute.cpp`: the writes before and after it, the window rewritten, 20 read passes,
 2 read-modify-write passes), a reset every iters/10, `compress()` every N. MI300A, 5 x 2^30
-doubles, 2000 iterations, windows of 10^5 (871d5a370):
+doubles, 2000 iterations, windows of 10^5 (871d5a370 -> a777dfc35, the listed settle below):
 
 | | zero_any | zero |
 |---|---|---|
 | memory held at the end / the views' 42.95 GB | 1.51 GB (3.5%) | 19.2 GB (44.6%) |
 | with the arenas' free buffers | 1.98 GB (4.6%) | 22.3 GB (52%) |
-| init (chunk-aligned) | 0.55x | 47.5x |
-| loop | 2.84x | 2.26x |
-| 20 read passes / 2 read-modify-write passes | 1.00x / 4.44x | 1.01x / 4.14x |
-| writes around the window / window rewritten | 36x / 39x | 24x / 19x |
+| init (chunk-aligned) | 0.55x -> 0.54x | 47.5x -> 46.6x |
+| loop | 2.84x -> 2.09x | 2.26x -> 1.86x |
+| 20 read passes / 2 read-modify-write passes | 1.00x / 4.44x -> 1.01x / 4.15x | 1.01x / 4.14x -> 1.01x / 4.04x |
+| writes around the window / window rewritten | 36x / 39x -> 15.2x / 21.7x | 24x / 19x -> 11.6x / 10.6x |
+| claim waits (a777dfc35) | 3.6 million | 2.0 million |
 
-Checksums equal to the views'. The init had been 23x and the arenas 20 GB until a compressed chunk
+Checksums equal to the views' in both runs, no wait given up. The init had been 23x and the arenas 20 GB until a compressed chunk
 written whole with one value took it as its constant (`Writer::fold_whole`, 7.3). The small phases
 (a window is about 100 chunks an array, 15 us flat) pay `end_write()`: a counter read, the settle,
 fences. Since that run, `finish()` decides every step from one counter read, the settle visits
 the chunks a phase published fresh only (a fresh list) without a synchronisation, and `write()`
 no longer fences: T1000, 5 x 2^24, the loop from about 2.0x to 1.24x-1.46x (zero_any) and
-1.07x-1.26x (zero), checksums equal; the MI300A to measure again. zero's init (47x) regrows the
-arena from 1/64 of the chunks in steps: to grow in one.
+1.07x-1.26x (zero), checksums equal; the MI300A from 2.84x to 2.09x and 2.26x to 1.86x (the
+table). What the loop pays now, zero_any: the reads (1.21 s of 2.88, at the views' speed), the
+writes around and in the window (about 1 s against 55 ms flat, 3.6 million claim waits: threads
+waiting for another to materialise their chunk), the read-modify-write passes (0.5 s), compress()
+(0.17 s). zero's init (47x) regrows the arena from 1/64 of the chunks in steps: to grow in one.
 
-Next: the MI300A run of the listed settle; the zero init's growth; giving free arenas back; the
-GH200; then Arcane.
+Next: the zero init's growth; the claim waits of the scattered writes; giving free arenas back;
+the GH200; then Arcane.
 
 ## 14. Risks and open questions
 

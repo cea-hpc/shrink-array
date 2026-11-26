@@ -942,29 +942,34 @@ d'initialisation (`bench_phase_fill.cpp`, par `parallel_for_chunks`), puis à ch
 fenêtre aléatoire (`bench_phase_compute.cpp` : les écritures avant et après, la fenêtre réécrite,
 20 passes de lecture, 2 passes de lecture-modification-écriture), une remise à zéro toutes les
 iters/10, `compress()` toutes les N. MI300A, 5 x 2^30 doubles, 2000 itérations, fenêtres de 10^5
-(871d5a370) :
+(871d5a370 -> a777dfc35, le settle par liste plus bas) :
 
 | | zero_any | zero |
 |---|---|---|
 | mémoire tenue à la fin / les 42,95 Go des vues | 1,51 Go (3,5 %) | 19,2 Go (44,6 %) |
 | avec les buffers libres des arènes | 1,98 Go (4,6 %) | 22,3 Go (52 %) |
-| initialisation (alignée) | 0,55x | 47,5x |
-| boucle | 2,84x | 2,26x |
-| 20 passes de lecture / 2 passes RMW | 1,00x / 4,44x | 1,01x / 4,14x |
-| écritures autour de la fenêtre / fenêtre réécrite | 36x / 39x | 24x / 19x |
+| initialisation (alignée) | 0,55x -> 0,54x | 47,5x -> 46,6x |
+| boucle | 2,84x -> 2,09x | 2,26x -> 1,86x |
+| 20 passes de lecture / 2 passes RMW | 1,00x / 4,44x -> 1,01x / 4,15x | 1,01x / 4,14x -> 1,01x / 4,04x |
+| écritures autour de la fenêtre / fenêtre réécrite | 36x / 39x -> 15,2x / 21,7x | 24x / 19x -> 11,6x / 10,6x |
+| attentes de réservation (a777dfc35) | 3,6 millions | 2,0 millions |
 
-Sommes de contrôle égales à celles des vues. L'initialisation coûtait 23x et les arènes 20 Go
+Sommes de contrôle égales à celles des vues dans les deux runs, aucune attente abandonnée. L'initialisation coûtait 23x et les arènes 20 Go
 avant qu'un chunk compressé écrit en entier avec une seule valeur ne la prenne comme constante
 (`Writer::fold_whole`, 7.3). Les petites phases (une fenêtre fait environ 100 chunks par tableau,
 15 us à plat) paient `end_write()` : une lecture des compteurs, le settle, des fences. Depuis ce
 run, `finish()` décide de chaque étape d'après une seule lecture des compteurs, le settle ne visite
 que les chunks publiés frais par la phase (une liste) sans synchronisation, et `write()` ne fait
 plus de fence : T1000, 5 x 2^24, la boucle d'environ 2,0x à 1,24x-1,46x (zero_any) et 1,07x-1,26x
-(zero), sommes égales ; le MI300A à remesurer. L'initialisation de `zero` (47x) refait grandir
-l'arène depuis 1/64 des chunks par étapes : à faire grandir d'un coup.
+(zero), sommes égales ; le MI300A de 2,84x à 2,09x et de 2,26x à 1,86x (le tableau). Ce que paie
+la boucle maintenant, zero_any : les lectures (1,21 s sur 2,88, à la vitesse des vues), les
+écritures autour et dans la fenêtre (environ 1 s contre 55 ms à plat, 3,6 millions d'attentes de
+réservation : des threads qui attendent qu'un autre matérialise leur chunk), les passes RMW
+(0,5 s), compress() (0,17 s). L'initialisation de `zero` (47x) refait grandir l'arène depuis 1/64
+des chunks par étapes : à faire grandir d'un coup.
 
-Suite : le run MI300A du settle par liste ; la croissance à l'initialisation de `zero` ; rendre
-les arènes libres ; le GH200 ; puis Arcane.
+Suite : la croissance à l'initialisation de `zero` ; les attentes de réservation des écritures
+dispersées ; rendre les arènes libres ; le GH200 ; puis Arcane.
 
 ## 14. Risques et questions ouvertes
 
