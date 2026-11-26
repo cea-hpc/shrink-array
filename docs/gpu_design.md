@@ -904,6 +904,7 @@ doubles, 2000 iterations, windows of 10^5 (871d5a370 -> a777dfc35, the listed se
 | memory held at the end / the views' 42.95 GB | 1.51 GB (3.5%) | 19.2 GB (44.6%) |
 | with the arenas' free buffers | 1.98 GB (4.6%) | 22.3 GB (52%) |
 | init (chunk-aligned) | 0.55x -> 0.54x | 47.5x -> 46.6x |
+| allocation + init (c4dad808f) | -- | 0.64x |
 | loop | 2.84x -> 2.09x | 2.26x -> 1.86x |
 | 20 read passes / 2 read-modify-write passes | 1.00x / 4.44x -> 1.01x / 4.15x | 1.01x / 4.14x -> 1.01x / 4.04x |
 | writes around the window / window rewritten | 36x / 39x -> 15.2x / 21.7x | 24x / 19x -> 11.6x / 10.6x |
@@ -919,9 +920,13 @@ no longer fences: T1000, 5 x 2^24, the loop from about 2.0x to 1.24x-1.46x (zero
 table). What the loop pays now, zero_any: the reads (1.21 s of 2.88, at the views' speed), the
 writes around and in the window (about 1 s against 55 ms flat, 3.6 million claim waits: threads
 waiting for another to materialise their chunk), the read-modify-write passes (0.5 s), compress()
-(0.17 s). zero's init (47x) regrows the arena from 1/64 of the chunks in steps: to grow in one.
+(0.17 s). zero's init (47x) is its allocation: the views' (zero-initialised, 1.84 s) was not
+timed, the arenas' growth falls in the fill (c4dad808f times both). Allocation and init together:
+1.29 s, 0.64x the views'. An arena sized from the start (1/2 of the chunks) moves it: 0.92 s of
+allocation, a fill of 0.24 s (the first touch of 18 GB of buffers), 1.16 s in all; the failed
+first pass and the second cost about 50 ms. Nothing to change in the library.
 
-Next: the zero init's growth; the claim waits of the scattered writes; giving free arenas back;
+Next: the claim waits of the scattered writes; giving free arenas back;
 the GH200; then Arcane.
 
 ## 14. Risks and open questions

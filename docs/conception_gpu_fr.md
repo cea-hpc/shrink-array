@@ -949,6 +949,7 @@ iters/10, `compress()` toutes les N. MI300A, 5 x 2^30 doubles, 2000 itérations,
 | mémoire tenue à la fin / les 42,95 Go des vues | 1,51 Go (3,5 %) | 19,2 Go (44,6 %) |
 | avec les buffers libres des arènes | 1,98 Go (4,6 %) | 22,3 Go (52 %) |
 | initialisation (alignée) | 0,55x -> 0,54x | 47,5x -> 46,6x |
+| allocation + initialisation (c4dad808f) | -- | 0,64x |
 | boucle | 2,84x -> 2,09x | 2,26x -> 1,86x |
 | 20 passes de lecture / 2 passes RMW | 1,00x / 4,44x -> 1,01x / 4,15x | 1,01x / 4,14x -> 1,01x / 4,04x |
 | écritures autour de la fenêtre / fenêtre réécrite | 36x / 39x -> 15,2x / 21,7x | 24x / 19x -> 11,6x / 10,6x |
@@ -965,10 +966,15 @@ plus de fence : T1000, 5 x 2^24, la boucle d'environ 2,0x à 1,24x-1,46x (zero_a
 la boucle maintenant, zero_any : les lectures (1,21 s sur 2,88, à la vitesse des vues), les
 écritures autour et dans la fenêtre (environ 1 s contre 55 ms à plat, 3,6 millions d'attentes de
 réservation : des threads qui attendent qu'un autre matérialise leur chunk), les passes RMW
-(0,5 s), compress() (0,17 s). L'initialisation de `zero` (47x) refait grandir l'arène depuis 1/64
-des chunks par étapes : à faire grandir d'un coup.
+(0,5 s), compress() (0,17 s). L'initialisation de `zero` (47x), c'est son allocation : celle des
+vues (mises à zéro, 1,84 s) n'était pas chronométrée, la croissance des arènes tombe dans le
+remplissage (c4dad808f chronomètre les deux). Allocation et initialisation ensemble : 1,29 s,
+0,64x celles des vues. Une arène dimensionnée dès le départ (1/2 des chunks) déplace le coût :
+0,92 s d'allocation, un remplissage de 0,24 s (le premier accès à 18 Go de buffers), 1,16 s en
+tout ; le premier passage raté et le second coûtent environ 50 ms. Rien à changer dans la
+bibliothèque.
 
-Suite : la croissance à l'initialisation de `zero` ; les attentes de réservation des écritures
+Suite : les attentes de réservation des écritures
 dispersées ; rendre les arènes libres ; le GH200 ; puis Arcane.
 
 ## 14. Risques et questions ouvertes
