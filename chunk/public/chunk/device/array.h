@@ -353,6 +353,14 @@ class Array
     ///        claim_spin; the list counters are reset by finish()).
     [[nodiscard]] WriteCounters write_counters() const;
 
+    /// @brief Entries the append-buffer received since the array was made, the replays' own
+    ///        included (the waits given up, the arena exhausted, and the constants appended
+    ///        after them).
+    [[nodiscard]] unsigned long long appended() const noexcept
+    {
+        return appended_total_;
+    }
+
     /// @brief Every element, on the host (waits).
     [[nodiscard]] std::vector<T> to_host() const;
 
@@ -401,8 +409,10 @@ class Array
     std::int64_t*       append_index_ = nullptr;
     T*                  append_value_ = nullptr;
     unsigned long long  append_capacity_;
-    unsigned long long  cas_lost_seen_ = 0; ///< cas_lost when finish() last gave the parked buffers back
-    T                   second_{};          ///< zero_or_value's second value, T{} while none
+    unsigned long long  cas_lost_seen_ = 0;        ///< cas_lost when finish() last gave the parked buffers back
+    T                   second_{};                 ///< zero_or_value's second value, T{} while none
+    unsigned*           appended_       = nullptr; ///< Writer::appended, a bit per chunk
+    unsigned long long  appended_total_ = 0;       ///< appended()
     DeviceArena<T, S>   arena_;
 };
 
@@ -441,7 +451,9 @@ Array<T, S, V>::Array(std::int64_t n, unsigned long long arena_buffers, T consta
     spare_        = allocate<T*>(spare_slots);
     append_index_ = allocate<std::int64_t>(static_cast<std::size_t>(append_capacity_));
     append_value_ = allocate<T>(static_cast<std::size_t>(append_capacity_));
+    appended_     = allocate<unsigned>((nc + 31) / 32 + 1);
     zero(written_, nc * Writer<T, S, V>::words);
+    zero(appended_, (nc + 31) / 32 + 1);
     zero(counters_, 1);
     zero(spare_, spare_slots);
     kernels::reset_append<<<256, 256>>>(append_index_, append_capacity_);
@@ -467,6 +479,7 @@ Array<T, S, V>::~Array()
     release(spare_);
     release(append_index_);
     release(append_value_);
+    release(appended_);
 }
 
 template <typename T, unsigned int S, Variant V>
@@ -490,6 +503,7 @@ template <typename T, unsigned int S, Variant V>
     w.append_value    = append_value_;
     w.append_capacity = append_capacity_;
     w.second          = second_;
+    w.appended        = appended_;
     return w;
 }
 
@@ -740,7 +754,8 @@ void Array<T, S, V>::replay_appends()
                 "shrink_array::device::Array::finish: " + std::to_string(c.n_append - append_capacity_) +
                 " writes lost (append-buffer full: a larger one, or a larger arena)");
         }
-        const auto                m = static_cast<std::size_t>(c.n_append);
+        const auto m = static_cast<std::size_t>(c.n_append);
+        appended_total_ += c.n_append;
         std::vector<std::int64_t> idx(m);
         const auto                val = std::make_unique_for_overwrite<T[]>(m);
         copy(idx.data(), append_index_, m);
@@ -778,6 +793,9 @@ void Array<T, S, V>::replay_appends()
         copy(&c, counters_, 1);
         c.n_append = 0;
         copy(counters_, &c, 1);
+        // The chunks' bits with the count: the replay's writes of a constant do not append,
+        // unless the replay appends again (then the next round).
+        zero(appended_, (static_cast<std::size_t>(n_chunks_) + 31) / 32 + 1);
         const std::size_t   u       = last_idx.size();
         std::int64_t* const d_index = allocate<std::int64_t>(u);
         T* const            d_value = allocate<T>(u);

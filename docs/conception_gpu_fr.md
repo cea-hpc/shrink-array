@@ -1095,6 +1095,32 @@ plat de Grace (environ 298 ms) est plus rapide que celui du GPU (environ 336 ms,
 table `band[6][5]` de `fill_value`, indexée à l'exécution, y est sans doute en mémoire locale
 (non vérifié).
 
+Grandes fenêtres, interval 10^7, 200 itérations (4fed30231 ; les append-buffers tiennent
+maintenant deux fenêtres : avec 2^20 entrées le run GPU perdait 911360 écritures qui leur
+étaient confiées) :
+
+| phase | Grace | GH200 | gain GPU |
+|---|---|---|---|
+| **boucle totale** | **17685 ms** | **8063 ms** | **2,2x** |
+| écritures autour de la fenêtre | 13 ms | 16 ms | 0,8x |
+| **fenêtre réécrite** | **1762 ms** | **7468 ms** | **0,24x** |
+| 20 passes de lecture | 13945 ms | 477 ms | 29x |
+| 2 passes RMW | 1732 ms | 74 ms | 23x |
+| resets | 63 ms | 4,3 ms | 15x |
+| `compress()`, 20 passes | 171 ms | 24 ms | 7,2x |
+| init : allocation + remplissage | 2055 ms | 306 ms | 6,7x |
+| boucle / plat | 1,59x | 15,1x | |
+| mémoire à la fin | 11,262 Go | 11,346 Go (+ 1,106 libres) | |
+
+Plat contre plat, la boucle fait 21x (environ 11120 contre 534 ms ; lectures 20x, RMW 20x,
+réécriture 56x) : le GPU est maintenant limité par la bande passante, et shrink-array y suit le
+plat (lectures 1,02x, RMW 1,51x) ; sans la réécriture, la boucle du GPU serait environ 27x
+celle de Grace. La réécriture fait 591x le plat sur le GPU, 93 % de sa boucle, avec 50 millions
+d'attentes de claim (22200 écritures abandonnées). Soupçonné, à mesurer : non les claims
+eux-mêmes mais ce qu'une seule attente abandonnée faisait à la phase -- chaque écriture d'une
+constante ajoutée et chaque lecture d'un élément compressé parcourant tout l'append-buffer
+(gpu_assign_fr.md 3.4) ; l'ajout et le parcours sont maintenant par chunk.
+
 Suite : l'A/B sur le MI300A ; les noyaux d'écriture eux-mêmes (27 us contre 3,4) ; `compress()`
 dans la boucle ; puis Arcane.
 

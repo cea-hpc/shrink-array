@@ -130,6 +130,10 @@ struct Writer
     unsigned long long append_capacity = 0;
     std::int64_t*      fresh_list      = nullptr; ///< the chunks of the fresh publications, in order
     unsigned long long fresh_capacity  = 0;
+    /// One bit per chunk: an element of it was appended in this phase (set before the entry,
+    /// cleared by the replay). Only those chunks append their constant and look the
+    /// append-buffer up (assign_device 1., load_device).
+    unsigned* appended = nullptr;
     /// zero_or_value: the array's second value (T{} while none is declared), the only value
     /// other than T{} a whole-chunk write folds to (fold_whole); the other variants ignore it.
     T second{};
@@ -177,16 +181,17 @@ struct Writer
     template <int BLOCK>
     __device__ void
     write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64_t hi, const T* new_vals) const noexcept;
-    __device__ T**             spare_slot() const noexcept;
-    __device__ T*              take_buffer(std::int64_t c) const noexcept;
-    __device__ void            park(T* buf) const noexcept;
-    __device__ void            fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept;
-    __device__ T*              publish(std::int64_t c, ChunkDesc<T, V>& d) const noexcept;
-    __device__ T*              wait_claim(ChunkDesc<T, V>& d, T* found) const noexcept;
-    __device__ T*              materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen) const noexcept;
-    __device__ void            append(std::int64_t i, T v) const noexcept;
-    __device__ void            note_fresh(std::int64_t c) const noexcept;
-    [[nodiscard]] __device__ T appended_or(std::int64_t i, T otherwise) const noexcept;
+    __device__ T**                spare_slot() const noexcept;
+    __device__ T*                 take_buffer(std::int64_t c) const noexcept;
+    __device__ void               park(T* buf) const noexcept;
+    __device__ void               fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept;
+    __device__ T*                 publish(std::int64_t c, ChunkDesc<T, V>& d) const noexcept;
+    __device__ T*                 wait_claim(ChunkDesc<T, V>& d, T* found) const noexcept;
+    __device__ T*                 materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen) const noexcept;
+    __device__ void               append(std::int64_t i, T v) const noexcept;
+    __device__ void               note_fresh(std::int64_t c) const noexcept;
+    [[nodiscard]] __device__ T    appended_or(std::int64_t i, T otherwise) const noexcept;
+    [[nodiscard]] __device__ bool chunk_appended(std::int64_t c) const noexcept;
 };
 
 namespace kernels
@@ -714,9 +719,14 @@ __device__ void Writer<T, S, V>::note_fresh(std::int64_t c) const noexcept
     }
 }
 
+/// @details The chunk's `appended` bit first, then the entry: this thread's later assigns and
+///          loads of the chunk see the bit (one address), and so do the other threads after a
+///          __syncthreads() or a kernel boundary, as for the entry itself.
 template <typename T, unsigned int S, Variant V>
 __device__ void Writer<T, S, V>::append(std::int64_t i, T v) const noexcept
 {
+    const std::int64_t c = i / S;
+    fetch_or(&appended[c >> 5], 1U << (c & 31));
     const unsigned long long k = fetch_add(&counters->n_append, 1ULL);
     if (k < append_capacity)
     {
@@ -760,11 +770,14 @@ __device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexce
         if (same_value(v, constant_of(d)))
         {
             // 1. The constant onto its chunk: nothing (a claimed chunk still reads it) -- unless
-            //    the phase appended: an earlier append of this element by this thread (its own
-            //    count, so seen here) would win at the replay. The constant is appended after
-            //    it, the last append wins (kokkos_shrink_bench, MI300A: `a2 = .5; a2 = 1.0` on
-            //    chunks of 1.0, the arena exhausted, wrong checksums from run to run).
-            if (device::load(&counters->n_append) != 0)
+            //    the chunk appended in this phase: an earlier append of this element by this
+            //    thread (its own bit, so seen here) would win at the replay. The constant is
+            //    appended after it, the last append wins (kokkos_shrink_bench, MI300A:
+            //    `a2 = .5; a2 = 1.0` on chunks of 1.0, the arena exhausted, wrong checksums from
+            //    run to run). Not the phase's append count: one wait given up made every write of
+            //    a constant append, millions on windows of 10^7 elements (GH200: the append-buffer
+            //    overflowed, the rewrite 591x flat).
+            if (chunk_appended(c))
             {
                 append(i, v);
             }
@@ -795,13 +808,14 @@ template <typename T, unsigned int S, Variant V>
     T* const               buf = load_ptr(&d.buf);
     if (buf == nullptr || buf == busy_mark<T>())
     {
-        return appended_or(i, constant_of(d)); // claimed: no element written yet but appends
+        // claimed: no element written yet but appends, only in a chunk that appended
+        return chunk_appended(c) ? appended_or(i, constant_of(d)) : constant_of(d);
     }
     if (is_fresh(buf))
     {
         // device::load: the member load(i) hides the atomic load inside the class.
         const bool set = ((device::load(&written[c * words + (e >> 5)]) >> (e & 31)) & 1U) != 0;
-        return set ? untag(buf)[e] : appended_or(i, constant_of(d));
+        return set ? untag(buf)[e] : chunk_appended(c) ? appended_or(i, constant_of(d)) : constant_of(d);
     }
     return buf[e]; // a buffer of an earlier kernel: no append to its chunk in this one
 }
@@ -821,6 +835,13 @@ template <typename T, unsigned int S, Variant V>
         }
     }
     return otherwise;
+}
+
+/// @brief Whether an element of chunk @p c was appended in this phase (append()).
+template <typename T, unsigned int S, Variant V>
+[[nodiscard]] __device__ bool Writer<T, S, V>::chunk_appended(std::int64_t c) const noexcept
+{
+    return ((device::load(&appended[c >> 5]) >> (c & 31)) & 1U) != 0;
 }
 
 template <typename T, unsigned int S, Variant V>

@@ -141,6 +141,17 @@ quand le bit de l'élément est mis : une écriture directe est venue après. Le
 forment une course de données de l'application, comme sur un `std::vector` ; la bibliothèque ne
 les ordonne pas.
 
+Le même raisonnement couvre l'écriture de la constante du chunk après un ajout de l'élément
+(une écriture directe qui ne fait rien) : elle est ajoutée aussi, pour être le dernier ajout. Et
+la lecture d'un élément qui lit la constante peut devoir trouver un ajout d'abord. Les deux ne
+concernent que les chunks qui ont ajouté dans la phase : `append()` met le bit du chunk dans
+`Writer::appended` avant d'écrire son entrée, et l'ajout de la constante comme la recherche dans
+l'append-buffer n'ont lieu que sous ce bit (le rejeu efface les bits avec le compteur). Les
+conditionner au compteur d'ajouts de la phase, comme d'abord, faisait qu'une seule attente
+abandonnée n'importe où transformait chaque écriture d'une constante en ajout et chaque telle
+lecture en parcours de tout le buffer : sur des fenêtres de 10^7 éléments (GH200),
+l'append-buffer débordait et la réécriture prenait 591x le plat.
+
 ### 3.5 La fin de la phase
 
 `finish()` sans fonction (le chemin aligné garde `finish(f)` pour ses plages) :

@@ -216,7 +216,7 @@ struct ShrinkStore
         return b;
     }
     /// @brief The write path's counters, summed over the five arrays (claim_wait, claim_spin,
-    ///        cas_lost are cumulative).
+    ///        cas_lost are cumulative; n_append is appended(), every entry ever appended).
     [[nodiscard]] sd::WriteCounters counters() const
     {
         sd::WriteCounters t{};
@@ -226,6 +226,7 @@ struct ShrinkStore
             t.claim_wait += c.claim_wait;
             t.claim_spin += c.claim_spin;
             t.cas_lost += c.cas_lost;
+            t.n_append += x->native().appended(); // cumulative here (appended())
         }
         return t;
     }
@@ -606,8 +607,8 @@ Result run(Int sz, Int interval, Int iters, Int compress_every, const std::vecto
     r.gb_end       = st.bytes() / 1e9;
     r.reserved_end = st.reserved() / 1e9;
     const sd::WriteCounters wc = st.counters();
-    std::printf("  write path: %llu claim waits, %llu given up (appended), %llu lost CAS\n", wc.claim_wait,
-                wc.claim_spin, wc.cas_lost);
+    std::printf("  write path: %llu claim waits, %llu given up (appended), %llu appended in all, %llu lost CAS\n",
+                wc.claim_wait, wc.claim_spin, wc.n_append, wc.cas_lost);
     std::printf("  end: %.3f GB held, %.3f GB of free arena buffers; val_sum %.12g, checksum %.12g\n", r.gb_end,
                 r.reserved_end, r.val_sum, r.check);
     return r;

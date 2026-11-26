@@ -133,6 +133,16 @@ element's bit is set: a direct write came after. The replay runs before `settle_
 clears the bits. Two threads that write one element in a kernel are a data race of the
 application, as on a `std::vector`; the library does not order them.
 
+The same reasoning covers a write of the chunk's constant after an append of the element (a
+direct write that does nothing): it is appended too, so that it is the last append. And a load of
+an element that reads the constant may have to find an append first. Both concern only the
+chunks that appended in the phase: `append()` sets the chunk's bit in `Writer::appended` before
+writing its entry, and the constant's append and the look-up of the append-buffer happen only
+under that bit (the replay clears the bits with the count). Conditioning them on the phase's
+append count instead, as first done, made one wait given up anywhere turn every write of a
+constant into an append and every such load into a scan of the whole buffer: on windows of 10^7
+elements (GH200) the append-buffer overflowed, and the rewrite took 591x flat.
+
 ### 3.5 End of the phase
 
 `finish()` without a function (the chunk-aligned path keeps `finish(f)` for its spans):
