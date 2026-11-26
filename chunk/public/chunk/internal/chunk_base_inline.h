@@ -864,7 +864,7 @@ ChunkBase<T, Derived>::operator[](int offset) const noexcept // EXPERIMENT: mode
 }
 
 template <typename T, typename Derived>
-void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexcept
+CHUNK_FORCE_INLINE void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexcept
 {
     if constexpr (has_motif_state_v<Derived>)
     {
@@ -875,8 +875,9 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexc
         }
     }
     const read_reclaim::ReadSection section;
-    const auto body = [&]() noexcept {
-        const T* const                  vals = values_load();
+    const auto                      body = [&]() noexcept
+    {
+        const T* const vals = values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
         if constexpr (is_zero_any_family_v<Derived>)
         {
@@ -910,7 +911,8 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out, const T* of
     requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
-    const auto body = [&]() noexcept {
+    const auto                      body = [&]() noexcept
+    {
         for (;;)
         {
             const T* const vals = values_load();
@@ -942,7 +944,7 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out, const T* of
             {
                 // raw-read: read_block -- under its own ReadSection
                 out[j] = load_at<false>(vals, first + j);
-            section.fold(out[j]); // EXPERIMENT mode 7
+                section.fold(out[j]); // EXPERIMENT mode 7
             }
             return;
         }
@@ -959,7 +961,8 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
     requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
-    const auto body = [&]() noexcept {
+    const auto                      body = [&]() noexcept
+    {
         for (;;)
         {
             const T* const vals = values_load();
@@ -968,7 +971,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
             {
                 // raw-read: read_block_or_constant -- the shared first-constant buffer
                 constant = load_at<false>(vals, 0);
-            section.fold(constant); // EXPERIMENT mode 7
+                section.fold(constant); // EXPERIMENT mode 7
                 return true;
             }
             if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
@@ -994,7 +997,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
             {
                 // raw-read: read_block_or_constant -- under its own ReadSection
                 out[j] = load_at<false>(vals, first + j);
-            section.fold(out[j]); // EXPERIMENT mode 7
+                section.fold(out[j]); // EXPERIMENT mode 7
             }
             return false;
         }
@@ -1019,8 +1022,9 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
         }
     }
     const read_reclaim::ReadSection section;
-    const auto body = [&]() noexcept {
-        const T* const                  vals = values_load();
+    const auto                      body = [&]() noexcept
+    {
+        const T* const vals = values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
         if (is_first_value(vals))
         {
@@ -1433,7 +1437,8 @@ template <bool Relaxed>
             }
         }
         // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
-        return internal::load_for_recheck<T, Relaxed, is_packed>(vals, offset, [](const T* v, int o) noexcept { return load_at<Relaxed>(v, o); });
+        return internal::load_for_recheck<T, Relaxed, is_packed>(vals, offset, [](const T* v, int o) noexcept
+                                                                 { return load_at<Relaxed>(v, o); });
     }
     const T* const vals = Relaxed ? values_load() : values_load_for_read(dep);
     // TEST KNOB (test_hooks.h): widens the load -> dereference window
@@ -1445,7 +1450,8 @@ template <bool Relaxed>
         test_hooks::maybe_read_delay();
     }
     // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
-    return internal::load_for_recheck<T, Relaxed, is_packed>(vals, offset, [](const T* v, int o) noexcept { return load_at<Relaxed>(v, o); });
+    return internal::load_for_recheck<T, Relaxed, is_packed>(vals, offset, [](const T* v, int o) noexcept
+                                                             { return load_at<Relaxed>(v, o); });
 }
 
 template <typename T, typename Derived>
