@@ -624,19 +624,36 @@ try
 
     // Initial fill: bench_phase_fill.cpp (see bench_phases.h).
     bench_phase_fill(bench_arrays, start, end, elapsed_seconds);
+    // EXPERIMENT exp/optimistic-read: the steps of "Initialisation to zero", timed
+    // apart (llvm zero_any at 72 threads on Grace: 0.51 s in mode 0, 1.21 s in mode 7).
+    auto       init_t   = std::chrono::steady_clock::now();
+    const auto init_lap = [&init_t]
+    {
+        const auto now = std::chrono::steady_clock::now();
+        const auto s   = std::chrono::duration<double>(now - init_t).count();
+        init_t         = now;
+        return s;
+    };
     bench_phase_struct_fill(bench_arrays);
+    const double t_struct = init_lap();
     bench_phase_mask_fill(bench_arrays);
+    const double t_mask = init_lap();
     bench_phase_conn_fill(bench_arrays);
+    const double t_conn = init_lap();
 
     // Verification pass (writing or reading back the reference files):
     // lbd_check and lbd_check_all, in bench_checks.cpp.
     const BenchIoFlags bench_io_flags{no_io, no_compress, io_res, read_trace, write_trace, checksum_only};
 
     bench_check_all(bench_arrays, -1, bench_io_flags);
+    const double t_check = init_lap();
 
     array_float.resize(sz);
     array_short.resize(sz, 0);
     array_char.resize(sz);
+    const double t_resize = init_lap();
+    std::cout << "\nElapsed time init detail : struct " << t_struct << "s, mask " << t_mask << "s, conn " << t_conn
+              << "s, check " << t_check << "s, resize " << t_resize << "s\n";
 
     // `if constexpr` rather than #ifdef: bench_config.h exposes print_mem for
     // exactly this, and memory_consumption is declared in every build. The body
