@@ -1015,6 +1015,33 @@ deterministic reductions so that a run's flat and shrink sums are the same bits.
 `loop: total` divided by the GPU's is the speed-up of the port on this workload; the sums agree
 with the GPU's to rounding only (another libm). Built with `-DCHUNK_OPENMP=ON`.
 
+Grace (72 cores, `OMP_PROC_BIND=close OMP_PLACES=cores`) against the GH200's H100, zero_or_value,
+5 x 2^30, 2000 iterations, interval 107374, `compress()` every 10 (4e7bdf811 and 7acfea509);
+the sums are the same on both to the digits printed, the CPU's equal to its flat run's:
+
+| phase | Grace | GH200 | GPU speed-up |
+|---|---|---|---|
+| **loop total** | **3894 ms** | **1248 ms** | **3.1x** |
+| writes around the window | 129 ms | 142 ms | 0.9x |
+| window rewritten | 369 ms | 143 ms | 2.6x |
+| 20 read passes | 2226 ms | 653 ms | 3.4x |
+| 2 read-modify-write passes | 267 ms | 118 ms | 2.3x |
+| `compress()`, 200 passes | 902 ms | 191 ms | 4.7x |
+| init: allocation + fill | 2042 ms | 301 ms | 6.8x |
+| loop / flat | 2.08x | 1.58x | |
+| memory at the end | 4.888 GB | 4.972 GB (+ 0.460 free) | |
+
+The flat runs (from their ratios): loop about 1872 ms on Grace against 790 ms on the GPU (2.4x):
+writes around the window 2.1x, window rewritten 4.9x, reads 2.3x, read-modify-write 2.3x. The
+port gains more than the hardware (3.1x against 2.4x) because it costs less over flat: the reads
+are flat's on the GPU (0.98x) and 1.44x on the CPU, and the CPU's `compress()` is 23 % of its
+loop. The windows are small (at most 107374 elements, 0.01 % of an array): the GPU is bound by
+the kernel launches, not by the bandwidth, which is why the writes around the window (768
+elements) are faster on Grace; a larger interval should move the speed-up towards the bandwidth
+ratio. Grace's flat fill (about 298 ms) is faster than the GPU's (about 336 ms, 128 GB/s):
+`fill_value`'s `band[6][5]`, indexed at run time, likely sits in local memory there (not
+checked).
+
 Next: the A/B on the MI300A; the write kernels themselves (27 us against 3.4); `compress()` in
 the loop; then Arcane.
 

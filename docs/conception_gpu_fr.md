@@ -1066,6 +1066,35 @@ sont les mêmes bits. Son `loop: total` divisé par celui du GPU donne le gain d
 travail ; les sommes ne s'accordent avec celles du GPU qu'à l'arrondi près (une autre libm).
 Construit avec `-DCHUNK_OPENMP=ON`.
 
+Grace (72 cœurs, `OMP_PROC_BIND=close OMP_PLACES=cores`) contre le H100 du GH200, zero_or_value,
+5 x 2^30, 2000 itérations, interval 107374, `compress()` toutes les 10 (4e7bdf811 et 7acfea509) ;
+les sommes sont les mêmes des deux côtés aux chiffres affichés, celles du CPU égales à son run
+plat :
+
+| phase | Grace | GH200 | gain GPU |
+|---|---|---|---|
+| **boucle totale** | **3894 ms** | **1248 ms** | **3,1x** |
+| écritures autour de la fenêtre | 129 ms | 142 ms | 0,9x |
+| fenêtre réécrite | 369 ms | 143 ms | 2,6x |
+| 20 passes de lecture | 2226 ms | 653 ms | 3,4x |
+| 2 passes RMW | 267 ms | 118 ms | 2,3x |
+| `compress()`, 200 passes | 902 ms | 191 ms | 4,7x |
+| init : allocation + remplissage | 2042 ms | 301 ms | 6,8x |
+| boucle / plat | 2,08x | 1,58x | |
+| mémoire à la fin | 4,888 Go | 4,972 Go (+ 0,460 libres) | |
+
+Les runs plats (d'après leurs rapports) : boucle d'environ 1872 ms sur Grace contre 790 ms sur
+le GPU (2,4x) : écritures autour de la fenêtre 2,1x, fenêtre réécrite 4,9x, lectures 2,3x, RMW
+2,3x. Le portage gagne plus que le matériel (3,1x contre 2,4x) parce qu'il coûte moins par
+rapport au plat : les lectures sont celles du plat sur le GPU (0,98x) et 1,44x sur le CPU, et le
+`compress()` du CPU fait 23 % de sa boucle. Les fenêtres sont petites (107374 éléments au plus,
+0,01 % d'un tableau) : le GPU est limité par les lancements de noyaux, pas par la bande
+passante, d'où les écritures autour de la fenêtre (768 éléments) plus rapides sur Grace ; un
+interval plus grand devrait rapprocher le gain du rapport des bandes passantes. Le remplissage
+plat de Grace (environ 298 ms) est plus rapide que celui du GPU (environ 336 ms, 128 Go/s) : la
+table `band[6][5]` de `fill_value`, indexée à l'exécution, y est sans doute en mémoire locale
+(non vérifié).
+
 Suite : l'A/B sur le MI300A ; les noyaux d'écriture eux-mêmes (27 us contre 3,4) ; `compress()`
 dans la boucle ; puis Arcane.
 
