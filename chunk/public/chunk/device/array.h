@@ -657,15 +657,18 @@ void Array<T, S, V>::finish_from(const WriteCounters& first, const F* f)
 template <typename T, unsigned int S, Variant V>
 void Array<T, S, V>::keep_headroom(unsigned long long taken, unsigned long long demand, bool exact)
 {
-    peak_demand_                  = demand > peak_demand_ ? demand : peak_demand_;
-    free_hint_                    = free_hint_ > taken ? free_hint_ - taken : 0;
-    const unsigned long long want = headroom();
-    if (free_known_ && !exact && free_hint_ >= want)
+    peak_demand_ = demand > peak_demand_ ? demand : peak_demand_;
+    free_hint_   = free_hint_ > taken ? free_hint_ - taken : 0;
+    if (free_known_ && !exact && free_hint_ >= headroom())
     {
         return;
     }
     const unsigned long long in_use = arena_.in_use();
     const unsigned long long free   = arena_.buffers() - in_use;
+    // No more than the chunks without a buffer: a roomy arena does not grow.
+    const auto               chunks = static_cast<unsigned long long>(n_chunks_);
+    const unsigned long long room   = chunks > in_use ? chunks - in_use : 0;
+    const unsigned long long want   = headroom() < room ? headroom() : room;
     if (free < want)
     {
         grow_arena(want - free);
@@ -877,8 +880,9 @@ unsigned long long Array<T, S, V>::compress()
     copy(&folded, d, 1);
     if (folded > 0)
     {
-        (void)arena_.release_free(headroom()); // the arenas the folds emptied, back to the device
-        free_known_ = false;                   // counted again at the next finish()
+        const auto chunks = static_cast<unsigned long long>(n_chunks_);
+        (void)arena_.release_free(headroom() < chunks ? headroom() : chunks); // the emptied arenas, back to the device
+        free_known_ = false;                                                  // counted again at the next finish()
     }
     return folded;
 }
