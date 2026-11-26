@@ -6,7 +6,7 @@
 #   SRC  the exp/optimistic-read checkout (default: this script's repository)
 #   WORK where the builds and the CSVs go (default: $CCCWORKDIR/optread)
 #   THREADS (default 1,72)   N (default 33554432)   JOBS (default 32)
-#   CONFIGS (default "llvm:0 llvm:7 llvm:7i")   ROUNDS (default 3)
+#   CONFIGS (default "gcc:0 gcc:7 llvm:0 llvm:7 llvm:7i")   ROUNDS (default 3)
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC=${SRC:-$(cd "$HERE/../.." && pwd)}
@@ -44,7 +44,7 @@ load_env() {
 # CONFIGS: <compiler>:<mode>[d][i], suffixes in any order:
 #   d = also -DCHUNK_READ_DEP_ORDER=1 (relaxed `values` load, AArch64)
 #   i = also -DCHUNK_RECHECK_INT_LOAD=1 (mode 7: the element loaded as an integer; gcc's default, 0 under clang)
-CONFIGS=${CONFIGS:-"llvm:0 llvm:7 llvm:7i"}
+CONFIGS=${CONFIGS:-"gcc:0 gcc:7 llvm:0 llvm:7 llvm:7i"}
 ROUNDS=${ROUNDS:-3}
 LOOP_SYM=_ZN12_GLOBAL__N_18arr_readERN12shrink_array13zero_or_value5ArrayIdiEEi._omp_fn.0
 for cfg in $CONFIGS; do
