@@ -209,6 +209,51 @@ void take_give_grow()
     expect(filled_by_owner(last), "no overlap after a full cycle");
 }
 
+void release_free()
+{
+    std::printf("[release_free] S=%u, arenas of 1000, 300 and 2000 buffers\n", S);
+    Arena arena(1000);
+    arena.grow(300);
+    arena.grow(2000);
+    const std::vector<T*> got = non_null(take(arena, 4096)); // the three arenas exhausted
+    char line[160];
+    expect(got.size() == 3300 && distinct(got), "3300 distinct buffers over three arenas");
+    expect(arena.release_free() == 0 && arena.arenas() == 3, "every arena in use: none freed");
+
+    // Every buffer back but 100 of the arena at the lowest address: the two others are free,
+    // the reserve (100 / 4) is met whichever of the three that is, both freed.
+    std::vector<T*> keep, back;
+    const T*        first_base = nullptr;
+    for (T* p : got)
+    {
+        first_base = (first_base == nullptr || p < first_base) ? p : first_base;
+    }
+    for (T* p : got)
+    {
+        (p >= first_base && p < first_base + 1000 * S && keep.size() < 100 ? keep : back).push_back(p);
+    }
+    give_back(arena, back);
+    const unsigned long long freed = arena.release_free();
+    std::snprintf(line, sizeof line, "%llu buffers freed, %d arena(s) left, %llu buffers, %llu in use", freed,
+                  arena.arenas(), arena.buffers(), arena.in_use());
+    const bool one_left = arena.arenas() == 1 && arena.buffers() + freed == 3300 && arena.in_use() == 100;
+    expect(one_left, line);
+
+    // The arena left still serves: its 900 free buffers, none of the ones kept.
+    const std::vector<T*> again = non_null(take(arena, 4096));
+    const std::set<T*>    kept(keep.begin(), keep.end());
+    const bool none_kept = std::none_of(again.begin(), again.end(), [&](T* p) { return kept.count(p) != 0; });
+    std::snprintf(line, sizeof line, "after release: %zu buffers taken again, distinct, none of the 100 kept",
+                  again.size());
+    expect(again.size() == arena.buffers() - 100 && distinct(again) && none_kept, line);
+
+    // A last arena never goes: everything back, release_free leaves one.
+    std::vector<T*> all = keep;
+    all.insert(all.end(), again.begin(), again.end());
+    give_back(arena, all);
+    expect(arena.release_free() == 0 && arena.arenas() == 1 && arena.in_use() == 0, "the last arena is kept");
+}
+
 void home_shards()
 {
     std::printf("[home shard] S=%u, %d buffers (4 per shard), one taker per shard\n", S, 4 * sd::n_shards);
@@ -244,6 +289,7 @@ int main()
     try
     {
         take_give_grow();
+        release_free();
         home_shards();
         small_arena();
     }

@@ -43,15 +43,23 @@
  *            zero and a bump past the shard's length).
  *          - Between phases the host grows (DeviceArena::grow): a new arena, the old buffers
  *            do not move, the descriptors that point into them stay valid.
+ *          - Between phases the host gives back to the device the arenas none of whose buffers
+ *            is in use (DeviceArena::release_free, after a compression pass), keeping a reserve
+ *            of free buffers in the others: the arenas only grew, and an array whose chunks
+ *            folded back held their buffers until its end (kokkos_shrink_bench, MI300A: 0.47 GB
+ *            free against 1.51 GB in use, zero_any; 3.1 GB against 19.2 GB, zero).
  *
  *          A write kernel and the compression pass never run together (one role per kernel,
  *          docs/gpu_design.md, section 3): the kernel boundary orders a push before the pop
  *          that reads it, and the atomics are relaxed (atomics.h).
  */
 
+#include <algorithm>   // std::stable_sort
 #include <cstddef>     // std::size_t
+#include <numeric>     // std::iota
 #include <stdexcept>   // std::runtime_error
 #include <type_traits> // std::is_trivially_copyable_v
+#include <utility>     // std::move
 #include <vector>      // std::vector
 
 #include "chunk/device/atomics.h"       // fetch_add, fetch_and, fetch_or, load
@@ -170,18 +178,41 @@ class DeviceArena
     /// @brief Buffers taken and not given back (normalises, waits for the device).
     [[nodiscard]] unsigned long long in_use();
 
+    /// @brief Frees the arenas none of whose buffers is in use, the largest first, while the
+    ///        others keep free buffers for a quarter of those in use (the growth step: the next
+    ///        phase does not grow again at once) and one arena is left. Between phases, after
+    ///        the give backs; the free stack is compacted. Waits. Returns the buffers freed.
+    unsigned long long release_free();
+
   private:
     std::vector<T*>              bases_;
     std::vector<Shard*>          shards_;
     std::vector<unsigned*>       masks_;
     std::vector<ArenaDesc<T, S>> descs_;
     ArenaDesc<T, S>*             d_descs_ = nullptr; ///< max_arenas slots on the device
+    unsigned long long*          d_used_  = nullptr; ///< max_arenas counts (release_free)
     unsigned long long           total_   = 0;
     ArenaRef<T, S>               ref_{};
 };
 
 namespace kernels
 {
+
+/// @brief Buffers in use in each arena into @p used (zeroed before): one thread per shard of
+///        every arena, after normalise_shards.
+template <typename T, unsigned int S>
+__global__ void count_used(ArenaRef<T, S> r, unsigned long long* used)
+{
+    for (int a = 0; a < r.n_arenas; ++a)
+    {
+        const ArenaDesc<T, S>& ar = r.arenas[a];
+        for (int s = static_cast<int>(threadIdx.x); s < n_shards; s += static_cast<int>(blockDim.x))
+        {
+            const Shard& sh = ar.shards[s];
+            (void)fetch_add(&used[a], sh.bump - static_cast<unsigned long long>(sh.top));
+        }
+    }
+}
 
 /// @brief DeviceArena::normalise(): one thread per shard of every arena.
 template <typename T, unsigned int S>
@@ -303,6 +334,7 @@ template <typename T, unsigned int S>
 DeviceArena<T, S>::DeviceArena(unsigned long long n_buffers)
 {
     d_descs_    = allocate<ArenaDesc<T, S>>(max_arenas);
+    d_used_     = allocate<unsigned long long>(max_arenas);
     ref_.arenas = d_descs_;
     grow(n_buffers);
 }
@@ -323,6 +355,7 @@ DeviceArena<T, S>::~DeviceArena()
         release(m);
     }
     release(d_descs_);
+    release(d_used_);
     release(ref_.free_stack);
 }
 
@@ -395,6 +428,90 @@ template <typename T, unsigned int S>
         }
     }
     return used;
+}
+
+/// @details The use of each arena counted on the device (one kernel, one copy of n_arenas
+///          counts). An arena of no buffer in use has every buffer in its free stack or never
+///          bumped: no descriptor, lost list or spare slot points into it (they are given back
+///          before: Array::finish, Array::compress). The kept arenas' free-stack segments move
+///          to new offsets: entries are buffer addresses, which do not move.
+template <typename T, unsigned int S>
+unsigned long long DeviceArena<T, S>::release_free()
+{
+    const int n = ref_.n_arenas;
+    if (n <= 1)
+    {
+        return 0;
+    }
+    normalise();
+    zero(d_used_, static_cast<std::size_t>(n));
+    kernels::count_used<<<1, n_shards>>>(ref_, d_used_);
+    synchronize();
+    std::vector<unsigned long long> used(static_cast<std::size_t>(n));
+    copy(used.data(), d_used_, used.size());
+    unsigned long long in_use = 0;
+    for (const unsigned long long u : used)
+    {
+        in_use += u;
+    }
+    const unsigned long long reserve   = in_use / 4;
+    unsigned long long       free_left = total_ - in_use;
+    std::vector<int>         order(static_cast<std::size_t>(n));
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](int x, int y)
+                     { return descs_[static_cast<std::size_t>(x)].n > descs_[static_cast<std::size_t>(y)].n; });
+    std::vector<bool>  drop(static_cast<std::size_t>(n), false);
+    int                kept  = n;
+    unsigned long long freed = 0;
+    for (const int a : order)
+    {
+        const unsigned long long len = descs_[static_cast<std::size_t>(a)].n;
+        if (used[static_cast<std::size_t>(a)] == 0 && kept > 1 && free_left - len >= reserve)
+        {
+            drop[static_cast<std::size_t>(a)] = true;
+            --kept;
+            free_left -= len;
+            freed += len;
+        }
+    }
+    if (freed == 0)
+    {
+        return 0;
+    }
+    T**                          stack  = allocate<T*>(static_cast<std::size_t>(total_ - freed));
+    unsigned long long           offset = 0;
+    std::vector<T*>              bases;
+    std::vector<Shard*>          shards;
+    std::vector<unsigned*>       masks;
+    std::vector<ArenaDesc<T, S>> descs;
+    for (std::size_t a = 0; a < static_cast<std::size_t>(n); ++a)
+    {
+        if (drop[a])
+        {
+            release(bases_[a]);
+            release(shards_[a]);
+            release(masks_[a]);
+            continue;
+        }
+        ArenaDesc<T, S> d = descs_[a];
+        copy(stack + offset, ref_.free_stack + d.stack_offset, static_cast<std::size_t>(d.n));
+        d.stack_offset = offset;
+        offset += d.n;
+        bases.push_back(bases_[a]);
+        shards.push_back(shards_[a]);
+        masks.push_back(masks_[a]);
+        descs.push_back(d);
+    }
+    release(ref_.free_stack);
+    bases_  = std::move(bases);
+    shards_ = std::move(shards);
+    masks_  = std::move(masks);
+    descs_  = std::move(descs);
+    total_ -= freed;
+    copy(d_descs_, descs_.data(), descs_.size());
+    ref_.free_stack = stack;
+    ref_.n_arenas   = static_cast<int>(descs_.size());
+    return freed;
 }
 
 } // namespace shrink_array::device

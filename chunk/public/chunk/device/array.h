@@ -292,7 +292,8 @@ class Array
 
     /// @brief The compression pass (section 7), between phases: every materialised chunk
     ///        whose elements below size() are one value folds back to it, its buffer back to
-    ///        the arena. Returns the chunks folded back. Waits.
+    ///        the arena; the arenas left with no buffer in use go back to the device
+    ///        (DeviceArena::release_free). Returns the chunks folded back. Waits.
     unsigned long long compress();
 
     /// @brief Makes this array the one @p state describes (export_array() of a host array
@@ -778,6 +779,10 @@ unsigned long long Array<T, S, V>::compress()
     synchronize();
     unsigned long long folded = 0;
     copy(&folded, d, 1);
+    if (folded > 0)
+    {
+        (void)arena_.release_free(); // the arenas the folds emptied, back to the device
+    }
     return folded;
 }
 
