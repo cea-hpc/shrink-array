@@ -55,6 +55,7 @@
 #include <cstdlib>     // std::atoi, std::atoll
 #include <cstring>     // std::strcmp
 #include <exception>   // std::exception
+#include <optional>    // std::optional
 #include <random>      // std::mt19937_64
 #include <type_traits> // std::type_identity
 #include <vector>      // std::vector
@@ -258,7 +259,7 @@ std::vector<Window> make_windows(Int sz, Int interval, Int iters)
 /// @brief Wall-clock seconds of the phases, summed over the iterations.
 struct Times
 {
-    double fill = 0, init_compress = 0, around = 0, rewrite = 0, reads = 0, rmw = 0, reset = 0, compress = 0;
+    double alloc = 0, fill = 0, init_compress = 0, around = 0, rewrite = 0, reads = 0, rmw = 0, reset = 0, compress = 0;
 };
 
 /**
@@ -552,8 +553,12 @@ template <typename Store>
 Result run(Int sz, Int interval, Int iters, Int compress_every, const std::vector<Window>& windows)
 {
     std::printf("\n== %s ==\n", Store::name());
-    Result r{};
-    Store  st(sz);
+    Result               r{};
+    std::optional<Store> held;
+    // The allocation timed too: the views' (and their zero-initialisation) against the arenas'
+    // first buffers, while the growth of the arenas falls in the fill.
+    r.t.alloc         = timed([&] { held.emplace(sz); });
+    Store& st         = *held;
     r.t.fill          = timed([&] { fill(st, sz, interval); });
     r.t.init_compress = timed([&] { (void)st.compress(); });
     r.gb_after_init   = st.bytes() / 1e9;
@@ -598,7 +603,9 @@ void line(const char* what, double t, double flat)
 
 void report(const Result& s, const Result& f)
 {
+    line("init: allocation", s.t.alloc, f.t.alloc);
     line("init: fill (chunk-aligned)", s.t.fill, f.t.fill);
+    line("init: allocation + fill", s.t.alloc + s.t.fill, f.t.alloc + f.t.fill);
     line("init: compress()", s.t.init_compress, f.t.init_compress);
     line("loop: writes around the window", s.t.around, f.t.around);
     line("loop: window rewritten", s.t.rewrite, f.t.rewrite);
