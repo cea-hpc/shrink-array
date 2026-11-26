@@ -56,6 +56,11 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `pyproject.toml`: the Python tools' dependencies, declared as extras of a distribution that
+  installs no module -- `pip install ".[gui]"` (PySide6, and tomli before Python 3.11),
+  `".[plot]"` (matplotlib), `".[test]"` (pytest, PySide6); the tools still run from the tree.
+  `python/constraints-ci.txt` pins the versions the CI's Python job installs (pytest 9.1.1,
+  PySide6 6.9.3), which `ci.yml` named itself before.
 - `scripts/compile_all.sh --pgo=generate|use` (and `compile_all_gnu.sh`), CMake option `CHUNK_PGO`
   (`OFF`, `GENERATE`, `USE`) and `CHUNK_PGO_DIR`: profile-guided optimisation of the C++ code, in two
   passes on the same build directories (the optimised ones, as `--lto`). GCC, Clang and IntelLLVM
