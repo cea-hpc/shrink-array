@@ -1058,6 +1058,14 @@ La mémoire est la même à l'octet près (1,514 + 0,318 Go et 19,166 + 1,233 Go
 sur les deux devices ; `compress()` fait 13 % (zero_any) et 18 % (zero) de la boucle du GH200,
 environ 0,9 ms par passe, le coût suivant après les écritures.
 
+Le CPU contre le GPU sur le même travail : `examples/host_twin_bench` est `kokkos_shrink_bench`
+écrit en boucles OpenMP sur les tableaux hôte (`host_twin_bench_<variante>_1024` : mêmes
+bandes, fenêtres et graine, noyaux, phases et lignes de rapport, face à cinq tableaux plats de
+doubles), avec des réductions déterministes, si bien que les sommes plates et shrink d'un run
+sont les mêmes bits. Son `loop: total` divisé par celui du GPU donne le gain du portage sur ce
+travail ; les sommes ne s'accordent avec celles du GPU qu'à l'arrondi près (une autre libm).
+Construit avec `-DCHUNK_OPENMP=ON`.
+
 Suite : l'A/B sur le MI300A ; les noyaux d'écriture eux-mêmes (27 us contre 3,4) ; `compress()`
 dans la boucle ; puis Arcane.
 

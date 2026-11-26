@@ -1008,6 +1008,13 @@ against 3.7 M and 2.0 M) and still writes faster. The loop's ratio is the same o
 `compress()` is 13 % (zero_any) and 18 % (zero) of the GH200's loop, about 0.9 ms a pass, the
 next cost after the writes.
 
+The CPU against the GPU on the same work: `examples/host_twin_bench` is `kokkos_shrink_bench`
+written as OpenMP loops on the host arrays (`host_twin_bench_<variant>_1024`: the same bands,
+windows and seed, kernels, phases and report lines, against five flat double arrays), with
+deterministic reductions so that a run's flat and shrink sums are the same bits. Its
+`loop: total` divided by the GPU's is the speed-up of the port on this workload; the sums agree
+with the GPU's to rounding only (another libm). Built with `-DCHUNK_OPENMP=ON`.
+
 Next: the A/B on the MI300A; the write kernels themselves (27 us against 3.4); `compress()` in
 the loop; then Arcane.
 

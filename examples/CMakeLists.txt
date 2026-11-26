@@ -160,6 +160,9 @@ endif()
 # zero_or_value against zero_any on one workload (per-operation cost, compression)
 add_subdirectory(variant_compare)
 
+# kokkos_shrink_bench's workload on the host arrays (the CPU against the GPU)
+add_subdirectory(host_twin_bench)
+
 # The cost of an element access against a std::vector, in the same binary
 add_subdirectory(access_cost)
 
