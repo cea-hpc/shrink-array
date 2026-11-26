@@ -71,7 +71,7 @@
 #include "chunk/internal/type_state_registry.h"     // TypeStateRegistry::ready_block_size
 
 // Defined by every executable of the library (the fast allocator reads it).
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, variant_name, maybe_set_second_value
 
 namespace validation::pool_accounting_validation

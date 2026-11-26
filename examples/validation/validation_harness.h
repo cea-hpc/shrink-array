@@ -34,18 +34,27 @@
 
 #pragma once
 
-#include <string> // std::string (self_command)
+#include <string> // std::string (run_self, temp_path)
+#include <vector> // std::vector (run_self's arguments)
+
+#include "validation_process.h" // ProcessOptions, ProcessResult (run_self)
 
 namespace validation
 {
 
-/// @brief The shell words that run this harness again: the executable, quoted,
-///        then the harness name. For the harnesses that check a failure in a
-///        child process (thread_growth, nested_region, stale_proxy,
-///        second_value_registry).
+/// @brief Run this harness again as a child process and wait for it: the
+///        executable, the harness name, then @p args -- no shell, each element
+///        one argument -- with CHUNK_VALIDATION_CHILD=1 (main() makes the child
+///        non-dumpable: most of them abort on purpose) besides @p opt's
+///        variables. For the harnesses that check a failure in a child process
+///        (thread_growth, nested_region, stale_proxy, second_value_registry...).
 /// @param argv0 the run()'s argv[0]
-/// @return e.g. `"/path/validation_zero_any_256" stale_proxy_validation`
-std::string self_command(const char* argv0);
+/// @param args  the child's own arguments, e.g. {"--case", "2"}
+/// @param opt   ProcessOptions; its output file, when empty, is a fresh
+///              temp_path(): the child's stdout and stderr land in
+///              ProcessResult::output either way
+/// @return how the child ended, and what it printed
+ProcessResult run_self(const char* argv0, const std::vector<std::string>& args, ProcessOptions opt = {});
 
 /// @brief A path in this process's own temporary directory, for the logs of
 ///        the children a harness runs: the directory is made once, by

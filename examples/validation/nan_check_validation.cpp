@@ -31,17 +31,14 @@
 // infinities included, which must not be reported.
 // ============================================================================
 
-#include <cstdio>     // std::fopen, std::fread, std::fclose, std::remove
-#include <cstdlib>    // std::system
-#include <format>     // std::format
-#include <limits>     // std::numeric_limits
-#include <string>     // std::string
-#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
+#include <format> // std::format
+#include <limits> // std::numeric_limits
+#include <string> // std::string
 
 #include "chunk/config.h"       // build_config::do_check
 #include "chunk/runtime.h"      // Runtime::init
 #include "chunk/print.h"        // shrink_array::println
-#include "validation_harness.h" // self_command, temp_path; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run_self; run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, variant_name
 
 namespace validation::nan_check_validation
@@ -107,22 +104,11 @@ int run_case(const std::string& name)
 /// naming element @p k of the array.
 int check_case(const char* self, const std::string& name, long k)
 {
-    const std::string log    = validation::temp_path("nan_check_" + name + ".log");
-    const std::string cmd    = validation::self_command(self) + " --case " + name + " > \"" + log + "\" 2>&1";
-    const int         status = std::system(cmd.c_str());
-    std::string       out;
-    if (FILE* file = std::fopen(log.c_str(), "r"))
-    {
-        char buf[4096];
-        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, file)) > 0;)
-        {
-            out.append(buf, n);
-        }
-        std::fclose(file);
-    }
-    std::remove(log.c_str());
+    // The child: this harness again, no shell (validation_process.h).
+    const validation::ProcessResult child = validation::run_self(self, {"--case", name});
+    const std::string&              out   = child.output;
 
-    const bool        stopped  = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
+    const bool        stopped  = child.stopped();
     const std::string expected = std::format("element {} of the array is NaN", k);
     const bool        message  = out.find(expected) != std::string::npos;
     println("[{}] {:6}: {}, {}", variant_name(), name, stopped ? "stopped" : "RAN ON",
