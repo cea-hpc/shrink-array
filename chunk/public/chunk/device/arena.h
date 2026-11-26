@@ -76,7 +76,7 @@ inline constexpr int n_shards = 128;
 inline constexpr int mask_words = n_shards / 32;
 
 /// Most arenas a DeviceArena may have (grow() adds one).
-inline constexpr int max_arenas = 32;
+inline constexpr int max_arenas = 64;
 
 /// @brief One shard's counters, alone on a 128-byte line.
 struct alignas(128) Shard
@@ -179,7 +179,7 @@ class DeviceArena
     [[nodiscard]] unsigned long long in_use();
 
     /// @brief Frees the arenas none of whose buffers is in use, the largest first, while the
-    ///        others keep free buffers for a quarter of those in use (the growth step: the next
+    ///        others keep free buffers for an eighth of those in use (the growth step: the next
     ///        phase does not grow again at once) and one arena is left. Between phases, after
     ///        the give backs; the free stack is compacted. Waits. Returns the buffers freed.
     unsigned long long release_free();
@@ -454,7 +454,7 @@ unsigned long long DeviceArena<T, S>::release_free()
     {
         in_use += u;
     }
-    const unsigned long long reserve   = in_use / 4;
+    const unsigned long long reserve   = in_use / 8;
     unsigned long long       free_left = total_ - in_use;
     std::vector<int>         order(static_cast<std::size_t>(n));
     std::iota(order.begin(), order.end(), 0);

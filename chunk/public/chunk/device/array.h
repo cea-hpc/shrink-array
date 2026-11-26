@@ -478,7 +478,7 @@ void Array<T, S, V>::parallel_for_chunks(std::int64_t lo, std::int64_t hi, const
 }
 
 /// @details A failed span's chunk was compressed and needed a buffer: at most one buffer per
-///          failed span, plus a quarter for the CAS the second pass may lose. The spans are
+///          failed span, plus an eighth for the CAS the second pass may lose (more: one more round). The spans are
 ///          read from a copy: the second pass may fail again into the emptied list.
 template <typename T, unsigned int S, Variant V>
 template <int BLOCK, typename F>
@@ -564,7 +564,7 @@ void Array<T, S, V>::finish_from(const WriteCounters& first, const F* f)
                                      " Writer::write spans to write again: call finish(f)");
         }
         reclaim_lost();
-        grow_arena(n_spans + n_spans / 4 + 1);
+        grow_arena(n_spans + n_spans / 8 + 1);
         Span* spans = allocate<Span>(static_cast<std::size_t>(n_spans));
         copy(spans, failed_, static_cast<std::size_t>(n_spans));
         copy(&c, counters_, 1);
@@ -638,16 +638,19 @@ void Array<T, S, V>::reclaim_lost()
     }
 }
 
-/// @details By @p more buffers, or a quarter of the arena if that is more: a phase that misses a
+/// @details By @p more buffers, or an eighth of the arena if that is more: a phase that misses a
 ///          few buffers would otherwise add an arena each time, and an array whose chunks stay
 ///          materialised (the zero variant under constants other than T{}) reached max_arenas
 ///          after about 200 small phases (kokkos_shrink_bench). Geometric, the arenas stay
-///          O(log) of the growth. Between phases.
+///          O(log) of the growth. The step is the free memory an array may hold at its end,
+///          its newest arena's unused tail: a quarter held 0.47 GB free against 1.51 GB in use
+///          (zero_any) and 3.1 against 19.2 (zero) on the MI300A, an eighth halves the bound for
+///          twice the arenas (max_arenas 64). Between phases.
 template <typename T, unsigned int S, Variant V>
 void Array<T, S, V>::grow_arena(unsigned long long more)
 {
-    const unsigned long long quarter = arena_.buffers() / 4;
-    arena_.grow(more > quarter ? more : quarter);
+    const unsigned long long step = arena_.buffers() / 8;
+    arena_.grow(more > step ? more : step);
     fit_lost_list();
 }
 
@@ -741,7 +744,7 @@ void Array<T, S, V>::replay_appends()
         const unsigned long long free   = arena_.buffers() - arena_.in_use();
         if (needed > free)
         {
-            grow_arena(needed - free + needed / 4 + 1);
+            grow_arena(needed - free + needed / 8 + 1);
         }
         copy(&c, counters_, 1);
         c.n_append = 0;

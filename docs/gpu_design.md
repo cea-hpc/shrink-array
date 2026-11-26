@@ -887,7 +887,7 @@ Plugging Kokkos in found four faults of the library, now fixed: `Writer::assign`
 `__device__` only (now `CHUNK_HD`, a host call aborts; a `KOKKOS_IF_ON_DEVICE` branch in the
 caller's lambda failed to launch); `lane_id()` was `threadIdx.x % warp_size`, 0 for every lane of a
 Kokkos `RangePolicy` block (its threads on y), and the warp aggregation never ended (now the
-hardware lane); the arena grew by small steps until `max_arenas` (now by a quarter at least); and
+hardware lane); the arena grew by small steps until `max_arenas` (now by an eighth at least); and
 a write of the chunk's constant after an append of the same element by the same thread was
 dropped, the replay then applied the older value (MI300A, wrong checksums from run to run;
 `device_assign_validation` step 0 reproduces it on the T1000).
@@ -954,8 +954,17 @@ counters of up to 16 arrays with one kernel (7381cc5ba): loop 1.77x -> 1.64x (ze
 450 -> 380 ms and 171 -> 135 ms, read-modify-write 256 -> 220 ms and 240 -> 204 ms; checksums
 equal.
 
-Next: the write kernels themselves (27 us against 3.4); giving free arenas back; the GH200; then
-Arcane.
+The free arena buffers at the end are not whole free arenas: the old arenas are full, the free
+buffers are the newest arena's never-used tail, the growth step (T1000, per arena, in use of its
+buffers: `320/320 4734/4734 101/1263` for an array of the zero variant). `release_free` gives
+back the arenas left with no buffer in use after a compression pass (none in this benchmark);
+the growth step went from a quarter to an eighth of the arena (`max_arenas` 32 -> 64), and the
+padding of the failed spans and of the replay's needs likewise. T1000, 5 x 2^24: free buffers at
+the end 0.009 -> 0.006 GB (zero_any) and 0.055 -> 0.021 GB (zero), the times unchanged. Mapping
+physical pages on demand (virtual memory) would take the tail's cost to nothing: not done.
+
+Next: the MI300A run of the growth step; the write kernels themselves (27 us against 3.4); the
+GH200; then Arcane.
 
 ## 14. Risks and open questions
 

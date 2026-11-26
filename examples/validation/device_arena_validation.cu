@@ -221,7 +221,7 @@ void release_free()
     expect(arena.release_free() == 0 && arena.arenas() == 3, "every arena in use: none freed");
 
     // Every buffer back but 100 of the arena at the lowest address: the two others are free,
-    // the reserve (100 / 4) is met whichever of the three that is, both freed.
+    // the reserve (100 / 8) is met whichever of the three that is, both freed.
     std::vector<T*> keep, back;
     const T*        first_base = nullptr;
     for (T* p : got)

@@ -931,7 +931,7 @@ n'étaient que `__device__` (désormais `CHUNK_HD`, un appel hôte avorte ; une 
 `KOKKOS_IF_ON_DEVICE` dans la lambda de l'appelant ne se lançait pas) ; `lane_id()` valait
 `threadIdx.x % warp_size`, 0 pour toutes les lanes d'un bloc de `RangePolicy` Kokkos (ses threads
 sur y), et l'agrégation par warp ne finissait jamais (désormais la lane matérielle) ; l'arène
-grandissait par petits pas jusqu'à `max_arenas` (désormais d'un quart au moins) ; et l'écriture de
+grandissait par petits pas jusqu'à `max_arenas` (désormais d'un huitième au moins) ; et l'écriture de
 la constante du chunk après un ajout du même élément par le même thread était perdue, le rejeu
 appliquait la valeur antérieure (MI300A, sommes de contrôle fausses et variables d'un run à
 l'autre ; l'étape 0 de `device_assign_validation` le reproduit sur la T1000).
@@ -1003,8 +1003,18 @@ boucle 1,77x -> 1,64x (zero_any) et 1,54x -> 1,45x (zero) ; écritures autour de
 354 -> 258 ms et 255 -> 193 ms, fenêtre réécrite 450 -> 380 ms et 171 -> 135 ms, RMW 256 -> 220 ms
 et 240 -> 204 ms ; sommes égales.
 
-Suite : les noyaux d'écriture eux-mêmes (27 us contre 3,4) ; rendre les arènes libres ; le
-GH200 ; puis Arcane.
+Les buffers libres des arènes à la fin ne sont pas des arènes entières : les anciennes sont
+pleines, les buffers libres sont la queue jamais utilisée de la plus récente, le pas de
+croissance (T1000, par arène, utilisés sur ses buffers : `320/320 4734/4734 101/1263` pour un
+tableau de la variante zero). `release_free` rend les arènes sans buffer utilisé après une
+compression (aucune dans ce banc) ; le pas de croissance passe d'un quart à un huitième de
+l'arène (`max_arenas` 32 -> 64), et la marge des spans ratés et des besoins du replay de même.
+T1000, 5 x 2^24 : buffers libres à la fin 0,009 -> 0,006 Go (zero_any) et 0,055 -> 0,021 Go
+(zero), les temps inchangés. Mapper les pages physiques à la demande (mémoire virtuelle)
+ramènerait le coût de la queue à rien : pas fait.
+
+Suite : le run MI300A du pas de croissance ; les noyaux d'écriture eux-mêmes (27 us contre 3,4) ;
+le GH200 ; puis Arcane.
 
 ## 14. Risques et questions ouvertes
 
