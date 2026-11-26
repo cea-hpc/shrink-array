@@ -147,10 +147,13 @@ inline constexpr bool optimistic_retry = enabled && CHUNK_READ_SECTION_MODE == 7
 ///        re-check's dependency is taken on the integer register the load wrote: no FP ->
 ///        integer move (fmov / vmovq) on the chain from the missed element to the re-check
 ///        (Grace, random reads: 90 % of the loop's samples on that fmov). -DCHUNK_RECHECK_INT_LOAD=0: off.
-// Default: gcc only. Under clang it flipped inlining elsewhere (x86: zero_any rmw 7.7 ->
-// 14.1 ns, read-bulk +11..22 %), and clang's dependency entry left it +5 % on random reads.
+// Default: gcc, and clang on AArch64. Under clang on x86 it flipped inlining elsewhere
+// (zero_any rmw 7.7 -> 14.1 ns, read-bulk +11..22 %). On Grace (optread12, llvm 22, 1 and
+// 72 threads) llvm:7i against llvm:7: element reads 2 to 6 points faster (zero_any
+// read-varied -40 -> -44 % against mode 0), read-bulk / rmw / write unchanged, read-random
+// +1 point on zero / zero_or_value (+5 -> +6 %), -1 on zero_any.
 #ifndef CHUNK_RECHECK_INT_LOAD
-    #if defined(__clang__)
+    #if defined(__clang__) && !defined(__aarch64__)
         #define CHUNK_RECHECK_INT_LOAD 0
     #else
         #define CHUNK_RECHECK_INT_LOAD 1

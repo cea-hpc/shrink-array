@@ -43,7 +43,7 @@ load_env() {
 
 # CONFIGS: <compiler>:<mode>[d][i], suffixes in any order:
 #   d = also -DCHUNK_READ_DEP_ORDER=1 (relaxed `values` load, AArch64)
-#   i = also -DCHUNK_RECHECK_INT_LOAD=1 (mode 7: the element loaded as an integer; gcc's default, 0 under clang)
+#   i = also -DCHUNK_RECHECK_INT_LOAD=1 (mode 7: the element loaded as an integer; the default but under clang on x86)
 CONFIGS=${CONFIGS:-"gcc:0 gcc:7 llvm:0 llvm:7 llvm:7i"}
 ROUNDS=${ROUNDS:-3}
 LOOP_SYM=_ZN12_GLOBAL__N_18arr_readERN12shrink_array13zero_or_value5ArrayIdiEEi._omp_fn.0
