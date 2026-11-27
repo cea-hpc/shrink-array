@@ -187,6 +187,9 @@ run error "MUT_FOLD_FIRST_ONLY --arm8 (block: element 0 only)"   --arm8 -- -DNEL
 echo "-- TSO keeps load order: the ordering mutations are harmless on x86 --"
 run ok    "MUT_RECHECK_UNORDERED --tso"                          --tso -- -DMUT_RECHECK_UNORDERED $M7
 run ok    "MUT_ENTER_RELAXED --tso"                              --tso -- -DMUT_ENTER_RELAXED $M7
+echo "-- x86's block reads (read_reclaim::fold_block false): an acquire fence before the re-check --"
+run ok    "SHAPE_FENCE --tso (block of 2)"                       --tso -- -DSHAPE_FENCE -DNELEMS=2 $M7
+run ok    "SHAPE_FENCE --tso, the block reused by another thread" --tso -- -DSHAPE_FENCE -DNELEMS=2 -DRECYCLER_THREAD $M7
 echo "-- the limits: not a C11 (RC11) nor an IMM guarantee --"
 run error "source --rc11 (a dependency orders nothing in C11)"   --rc11 -- -DNELEMS=2 $M7
 run error "source --imm (nor in IMM, pass fence or not)"         --imm -- -DNELEMS=2 -DPASS_RELEASE_FENCE $M7

@@ -37,7 +37,10 @@ cmake --build build -j && export PATH=$PWD/build/bin:/usr/lib/llvm-19/bin:$PATH
 ```
 
 Without root, Spack provides the same (`spack install llvm@19 +clang`, then the `cmake` lines above
-against its prefix). Then, from the repository:
+against its prefix), or a container of that Ubuntu (podman, the lines above inside it). Check the
+build against `run_genmc.sh` before believing a verdict: one built against LLVM 21 (an install of
+per-component libraries, without RTTI) got 38 of its 110 verdicts wrong, mutations accepted and the
+C11 seqlock refused, in every model. Then, from the repository:
 
 ```shell
 formal/run_genmc.sh            # every configuration and mutation, RC11; exit 1 on a verdict not expected
@@ -201,12 +204,13 @@ difference. GenMC 0.20, 2026-11-25 (on branch exp/optimistic-read, the same prot
 | `MUT_NO_RECHECK`; `MUT_BUMP_AFTER_RELEASE` | fail | fail | -- | -- |
 | `MUT_RECHECK_UNORDERED`; `MUT_ENTER_RELAXED` | fail | pass (TSO) | -- | -- |
 | `MUT_FOLD_FIRST_ONLY`: the block's dependency on element 0 only | fail | -- | -- | -- |
-| `SHAPE_FENCE` (an acquire fence before the re-check) alone; with `PASS_RELEASE_FENCE` (the C11 seqlock) | -- | -- | fail; pass | --; pass |
+| `SHAPE_FENCE` (an acquire fence before the re-check) alone; with `PASS_RELEASE_FENCE` (the C11 seqlock) | -- | pass, the block reused by another thread too | fail; pass | --; pass |
 | the C11 seqlock, the block reused by another thread | -- | -- | fail (its stores need a release too) | -- |
 
-Not run yet: `SHAPE_FENCE` under TSO, the block reads' own shape on x86 (`read_reclaim::fold_block`
-is false there). TSO keeps loads in order, so it should pass; the case belongs in `run_genmc.sh`
-the next time GenMC runs. Its native build (`formal/CMakeLists.txt`) runs on every push, on x86
+`SHAPE_FENCE` under TSO is the block reads' own shape on x86 (`read_reclaim::fold_block` is false
+there): it passes, with the block reused by the pass's thread (8 executions) or by another one (13),
+GenMC 0.20 against LLVM 19, 2026-11-27, every other verdict of `run_genmc.sh` as expected (110
+cases). Its native build (`formal/CMakeLists.txt`) runs on every push, on x86
 and AArch64 (`ctest -L formal`, ci.yml).
 
 ## 7. The model of handshake 4: motif readers against the rewrites of the offset slot

@@ -41,7 +41,10 @@ cmake --build build -j && export PATH=$PWD/build/bin:/usr/lib/llvm-19/bin:$PATH
 ```
 
 Sans root, Spack fournit la même chose (`spack install llvm@19 +clang`, puis les lignes `cmake`
-ci-dessus contre son préfixe). Ensuite, depuis le dépôt :
+ci-dessus contre son préfixe), ou un conteneur de cet Ubuntu (podman, les lignes ci-dessus dedans).
+Vérifier le build avec `run_genmc.sh` avant de croire un verdict : un GenMC construit contre LLVM 21
+(une installation en bibliothèques par composant, sans RTTI) s'est trompé sur 38 de ses 110
+verdicts, mutations acceptées et seqlock C11 refusé, dans tous les modèles. Ensuite, depuis le dépôt :
 
 ```shell
 formal/run_genmc.sh            # toutes les configurations et mutations, RC11 ; sortie 1 sur un verdict inattendu
@@ -212,13 +215,13 @@ protocole) :
 | `MUT_NO_RECHECK` ; `MUT_BUMP_AFTER_RELEASE` | échoue | échoue | -- | -- |
 | `MUT_RECHECK_UNORDERED` ; `MUT_ENTER_RELAXED` | échoue | passe (TSO) | -- | -- |
 | `MUT_FOLD_FIRST_ONLY` : la dépendance du bloc sur l'élément 0 seul | échoue | -- | -- | -- |
-| `SHAPE_FENCE` (une barrière acquire avant la revérification) seule ; avec `PASS_RELEASE_FENCE` (le seqlock C11) | -- | -- | échoue ; passe | -- ; passe |
+| `SHAPE_FENCE` (une barrière acquire avant la revérification) seule ; avec `PASS_RELEASE_FENCE` (le seqlock C11) | -- | passe, le bloc réemployé par un autre thread aussi | échoue ; passe | -- ; passe |
 | le seqlock C11, le bloc réemployé par un autre thread | -- | -- | échoue (ses stores ont aussi besoin d'un release) | -- |
 
-Pas encore exécuté : `SHAPE_FENCE` sous TSO, la forme des lectures de bloc sur x86
-(`read_reclaim::fold_block` y est faux). TSO garde les chargements dans l'ordre, il devrait passer ;
-le cas a sa place dans `run_genmc.sh` la prochaine fois que GenMC tourne.
-Son build natif (`formal/CMakeLists.txt`) tourne à chaque push, sur x86 et AArch64
+`SHAPE_FENCE` sous TSO est la forme des lectures de bloc sur x86 (`read_reclaim::fold_block` y est
+faux) : il passe, le bloc réemployé par le thread de la passe (8 exécutions) ou par un autre (13),
+GenMC 0.20 construit contre LLVM 19, 2026-11-27, tous les autres verdicts de `run_genmc.sh` conformes
+(110 cas). Son build natif (`formal/CMakeLists.txt`) tourne à chaque push, sur x86 et AArch64
 (`ctest -L formal`, ci.yml).
 
 ## 7. Le modèle du protocole 4 : lecteurs d'un motif contre réécritures de la case d'offset
