@@ -72,7 +72,8 @@ the tag's checksum to the recipe.
   creation to reads. `ArcaneArray` (`chunk/device/arcane_adaptor.h`, experimental), the same
   facade for Arcane's accelerator API (`RUNCOMMAND_LOOP1`, the `RunQueue` waited for by every
   call that runs the library's kernels), and `examples/arcane/arcane_getting_started.cc`
-  (CMake option `CHUNK_DEVICE_ARCANE`, an installed Arcane with CUDA or HIP).
+  (CMake option `CHUNK_DEVICE_ARCANE`, an installed Arcane with CUDA or HIP), and `arcane_validation`
+  (kokkos_validation's checks through the Arcane facade).
 - Optimistic pure reads (`CHUNK_OPTIMISTIC_READS`, `ON` by default): on x86-64 and AArch64, with
   the fast allocator and outside ThreadSanitizer, a pure read inside a parallel region no longer
   announces itself to the compression passes (a store and a fence per read). It re-checks a

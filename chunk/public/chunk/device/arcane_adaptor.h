@@ -367,6 +367,16 @@ void barrier(Q&& queue)
     detail::queue_of(static_cast<Q&&>(queue)).barrier();
 }
 
+/// @brief end_write() of every array of @p a after one wait for @p queue: one wait for all
+///        (device::finish_all), for a write phase over several arrays.
+template <typename Q, typename... A>
+void end_write(Q&& queue, A&... a)
+{
+    detail::barrier(static_cast<Q&&>(queue), "end_write");
+    device::finish_all(a.native()...);
+    device::synchronize();
+}
+
 /// @brief compress() of every array of @p a after one wait for @p queue: two waits for all
 ///        (device::compress_all). Returns the chunks folded back.
 template <typename Q, typename... A>

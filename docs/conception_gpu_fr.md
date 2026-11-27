@@ -592,8 +592,9 @@ arm64 (le générateur de code d'Arcane en a besoin), les sources clonées avec 
 `-DARCANEFRAMEWORK_BUILD_COMPONENTS=Arcane -DARCANE_ACCELERATOR_MODE=CUDA -DCMAKE_CUDA_ARCHITECTURES=90
 -DARCCORE_ENABLE_MPI=OFF -DARCANE_WANT_NOMPI=TRUE -DARCANE_ENABLE_DOTNET_WRAPPER=OFF
 -DARCANE_ENABLE_ALEPH=OFF -DARCCORE_ENABLE_TBB=OFF -DARCANE_ENABLE_TESTS=OFF -DARCCORE_ENABLE_TESTS=OFF`.
-Reste à faire : une validation contre un miroir hôte comme kokkos_validation, et un Arcane compilé
-avec HIP pour le MI300A.
+`examples/arcane/arcane_validation.cc` vérifie la façade contre un miroir hôte comme
+kokkos_validation (son passage sur le GH200 reste à faire) ; reste aussi un Arcane compilé avec HIP
+pour le MI300A.
 
 **Étape 0, faite sur le GPU du portable (RTX A1000, sm_86, novembre 2026)**, 1 Gio de
 doubles, rapports au tableau plat (détails et bench dans [gpu/proto](../gpu/proto/README.md)) :

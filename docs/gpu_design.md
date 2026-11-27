@@ -574,8 +574,9 @@ code generator needs it), the sources cloned with their submodules, and
 `-DARCANEFRAMEWORK_BUILD_COMPONENTS=Arcane -DARCANE_ACCELERATOR_MODE=CUDA -DCMAKE_CUDA_ARCHITECTURES=90
 -DARCCORE_ENABLE_MPI=OFF -DARCANE_WANT_NOMPI=TRUE -DARCANE_ENABLE_DOTNET_WRAPPER=OFF
 -DARCANE_ENABLE_ALEPH=OFF -DARCCORE_ENABLE_TBB=OFF -DARCANE_ENABLE_TESTS=OFF -DARCCORE_ENABLE_TESTS=OFF`.
-Still to do: a validation against a host mirror as kokkos_validation, and an Arcane built with
-HIP for the MI300A.
+`examples/arcane/arcane_validation.cc` checks the facade against a host mirror as
+kokkos_validation does (its run on the GH200 pending); still to do: an Arcane built with HIP for
+the MI300A.
 
 **Stage 0, done on a laptop GPU (RTX A1000, sm_86, November 2026)**, 1 GiB of doubles, ratios
 against a flat array (details and the bench in [gpu/proto](../gpu/proto/README.md)):
