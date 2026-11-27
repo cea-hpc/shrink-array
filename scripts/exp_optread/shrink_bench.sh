@@ -23,6 +23,11 @@
 #            -DSHRINK_BENCH_INT64=ON. Use a WORK of its own: the CMake cache differs.
 #   KMP_BLOCKTIME and the other runtime variables exported before the job reach the
 #            runs (printed in the header below so that the log shows it).
+#   ENVS     (default "default"): run-time settings interleaved like the CONFIGS, on the
+#            same node and builds. One entry per setting, separated by spaces: "default"
+#            (nothing added) or VAR=VALUE[,VAR=VALUE...], e.g.
+#            ENVS="default KMP_BLOCKTIME=0". The table compares each mode against m0
+#            of the same setting, and each setting against "default" of the same mode.
 #   SEED     (default 20261126): every run draws the same intervals. shrink_bench
 #            takes its seed from seed<iter_max>.txt in its working directory and,
 #            without one, draws a new seed from std::random_device.
@@ -38,6 +43,14 @@ JOBS=${JOBS:-32}
 ARGS=${ARGS:-"--mode perf"}
 SEED=${SEED:-20261126}
 TARGET_SUFFIX=${TARGET_SUFFIX:-_256}
+ENVS=${ENVS:-default}
+for e in $ENVS; do
+  if [ "$e" != default ]; then
+    for a in ${e//,/ }; do
+      case $a in [A-Za-z_]*=*) ;; *) echo "[sbench] ENVS: '$a' is not VAR=VALUE"; exit 1 ;; esac
+    done
+  fi
+done
 bench_opts=(-DCHUNK_BUILD_DYN=OFF)
 case $TARGET_SUFFIX in *dyn*) bench_opts=(-DCHUNK_BUILD_DYN=ON) ;; esac
 case $TARGET_SUFFIX in *int64*) bench_opts+=(-DSHRINK_BENCH_INT64=ON) ;; esac
@@ -49,10 +62,10 @@ mkdir -p "$WORK/logs"
 CSV=$WORK/shrink_bench.csv
 # A fresh CSV: the table is built from this one file.
 [ -f "$CSV" ] && mv "$CSV" "$CSV.$(date +%Y%m%d-%H%M%S)"
-echo "comp,mode,variant,threads,round,status,compute_s,wall_s,peak_mo,kernel_peak_mo,retries" > "$CSV"
+echo "comp,mode,variant,threads,round,status,compute_s,wall_s,peak_mo,kernel_peak_mo,retries,env" > "$CSV"
 echo "[sbench] $(hostname) $(uname -m) SRC=$SRC WORK=$WORK commit $(git -C "$SRC" log --oneline -1)"
 echo "[sbench] CONFIGS=$CONFIGS VARIANTS=$VARIANTS THREADS=$THREADS ROUNDS=$ROUNDS ARGS=$ARGS SEED=$SEED (seed$ITER.txt)"
-echo "[sbench] TARGET_SUFFIX=$TARGET_SUFFIX (${bench_opts[*]}) KMP_BLOCKTIME=${KMP_BLOCKTIME-<unset>}"
+echo "[sbench] TARGET_SUFFIX=$TARGET_SUFFIX (${bench_opts[*]}) KMP_BLOCKTIME=${KMP_BLOCKTIME-<unset>} ENVS=$ENVS"
 [ "$(uname -m)" = aarch64 ] || echo "[sbench] WARNING: not an aarch64 node"
 source "$SRC/scripts/site_env.sh"
 
@@ -115,23 +128,30 @@ for r in $(seq 1 "$ROUNDS"); do
   for v in $VARIANTS; do
     for t in $THREADS; do
       for cfg in $CONFIGS; do
+       for envset in $ENVS; do
         (
           comp=${cfg%%:*}; mode=${cfg#*:}
           load_env "$comp" >/dev/null 2>&1
           bin="$(build_dir "$cfg")/examples/shrink_bench/shrink_bench_omp_${v}${TARGET_SUFFIX}"
+          env_args=()
           tag=${comp}_m${mode}_${v}_t${t}_r${r}
+          if [ "$envset" != default ]; then
+              read -r -a env_args <<< "${envset//,/ }"
+              # The setting in the log name: VAR=VALUE,... -> VAR-VALUE_...
+              etag=${envset//=/-}; tag=${tag}_${etag//,/_}
+          fi
           log=$WORK/logs/$tag.log
           # Its own working directory: shrink_bench writes memory_mo.txt (and the
           # reference files in check mode) where it runs.
           run=$WORK/run.$tag; rm -rf "$run"; mkdir -p "$run"; cd "$run" || exit 1
           printf '%s' "$SEED" > "seed$ITER.txt"
-          echo "[sbench] round $r $v $t thr $cfg $(date +%T)"
+          echo "[sbench] round $r $v $t thr $cfg $envset $(date +%T)"
           t0=$(date +%s.%N)
           # shellcheck disable=SC2086  # ARGS: several arguments
           if [ -n "$TIME_BIN" ]; then
-              OMP_NUM_THREADS=$t "$TIME_BIN" -f '[time] maxrss_kib %M' "$bin" $ARGS > "$log" 2>&1
+              env "${env_args[@]}" OMP_NUM_THREADS=$t "$TIME_BIN" -f '[time] maxrss_kib %M' "$bin" $ARGS > "$log" 2>&1
           else
-              OMP_NUM_THREADS=$t "$bin" $ARGS > "$log" 2>&1
+              env "${env_args[@]}" OMP_NUM_THREADS=$t "$bin" $ARGS > "$log" 2>&1
           fi
           rc=$?
           t1=$(date +%s.%N)
@@ -142,8 +162,9 @@ for r in $(seq 1 "$ROUNDS"); do
           kpeak=$(grep -oE '\[time\] maxrss_kib [0-9]+' "$log" | awk '{printf "%.1f", $3 / 1024}')
           retries=$(grep -oE '\[optimistic\] reads retried [0-9]+' "$log" | awk '{print $NF}')
           wall=$(awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.2f", b - a }')
-          echo "$comp,$mode,$v,$t,$r,$status,${compute:-},$wall,${peak:-},${kpeak:-},${retries:-}" >> "$CSV"
+          echo "$comp,$mode,$v,$t,$r,$status,${compute:-},$wall,${peak:-},${kpeak:-},${retries:-},$envset" >> "$CSV"
         )
+       done
       done
     done
   done
