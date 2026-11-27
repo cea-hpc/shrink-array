@@ -898,7 +898,11 @@ HOPPER90 | AMD_GFX942_APU` fetches Kokkos 5.3.0 (SHA-256 pinned; `CHUNK_KOKKOS_U
 tarball where CMake's curl cannot reach GitHub), built for CUDA or HIP as a CMake language, without
 rocThrust. On the MI300A the HIP compiler must not be pointed at GCC 14.1, whose `<format>` it
 rejects (`++this` in `bits/unicode.h`; Kokkos includes `<chrono>`): GCC 15 or 16.
-`kokkos_validation` passes on the T1000 and the MI300A.
+`kokkos_validation` passes on the T1000 and the MI300A. It passes on the GH200 (nvcc 13.3, `HOPPER90`) and on the MI300A with
+ROCm 10.2 too (`e926f8f4b`), with the per-variant names (`zero::KokkosArray`, ...). ROCm 10.2's
+clang compiles Kokkos 5.3.0; in a step that does not hold the whole node its compilations were
+killed for memory at 48 at once and went through at 4 (`scripts/device_check.sh --kokkos <tarball>
+--jobs N`: 8 by default; the tarball because the compute nodes do not reach GitHub).
 
 Plugging Kokkos in found four faults of the library, now fixed: `Writer::assign` / `load` were
 `__device__` only (now `CHUNK_HD`, a host call aborts; a `KOKKOS_IF_ON_DEVICE` branch in the

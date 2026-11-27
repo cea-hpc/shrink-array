@@ -942,7 +942,12 @@ Kokkos 5.3.0 (SHA-256 épinglé ; `CHUNK_KOKKOS_URL` accepte une archive locale 
 CMake n'atteint pas GitHub), compilé pour CUDA ou HIP comme langage CMake, sans rocThrust. Sur le
 MI300A, le compilateur HIP ne doit pas viser GCC 14.1, dont il refuse le `<format>` (`++this` dans
 `bits/unicode.h` ; Kokkos inclut `<chrono>`) : GCC 15 ou 16. `kokkos_validation` passe sur la
-T1000 et le MI300A.
+T1000 et le MI300A. Il passe aussi sur le GH200 (nvcc 13.3, `HOPPER90`) et sur le MI300A
+avec ROCm 10.2 (`e926f8f4b`), avec les noms par variante (`zero::KokkosArray`, ...). Le clang de
+ROCm 10.2 compile Kokkos 5.3.0 ; dans un step qui n'a pas tout le nœud, ses compilations ont été
+tuées faute de mémoire à 48 en parallèle et sont passées à 4 (`scripts/device_check.sh --kokkos
+<archive> --jobs N` : 8 par défaut ; l'archive parce que les nœuds de calcul n'atteignent pas
+GitHub).
 
 Brancher Kokkos a trouvé quatre défauts de la bibliothèque, corrigés : `Writer::assign` / `load`
 n'étaient que `__device__` (désormais `CHUNK_HD`, un appel hôte avorte ; une branche

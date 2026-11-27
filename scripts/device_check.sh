@@ -6,7 +6,15 @@
 # the GPU node it runs on: the commands of a GH200 or MI300A check in one file,
 # instead of a script pasted into a terminal.
 #
-#   scripts/device_check.sh cuda|hip [--no-bench] [--repeat N]
+#   scripts/device_check.sh cuda|hip [--no-bench] [--repeat N] [--jobs N]
+#                           [--kokkos <kokkos-5.3.0.tar.gz>]
+#
+# --kokkos also builds the Kokkos facade (-DCHUNK_DEVICE_KOKKOS=ON, Kokkos from the
+# tarball given: the compute nodes do not reach GitHub) in build-kokkos-<lang>-<arch>
+# and runs kokkos_validation. KOKKOS_ARCH overrides the Kokkos architecture
+# (default: HOPPER90, AMPERE86 or TURING75 from CUDA_ARCH; AMD_GFX942_APU for hip).
+# --jobs: compilations at once, 8 by default -- a step that does not hold the whole
+# node has little memory, and 48 HIP compilations of Kokkos were killed (MI300A).
 #
 # Run it ON the GPU node (the GH200's host is aarch64: a build made on an x86
 # login node does not run there): the build tree is build-device-<lang>-<arch>
@@ -34,18 +42,26 @@ lang=${1:-}
 shift || true
 bench=1
 repeat=10
+jobs=8
+kokkos=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-bench) bench=0 ;;
         --repeat) repeat=$2; shift ;;
+        --jobs) jobs=$2; shift ;;
+        --kokkos) kokkos=$(readlink -f "$2"); shift ;;
         *) echo "device_check.sh: unknown option $1" >&2; exit 2 ;;
     esac
     shift
 done
 case "$lang" in
     cuda | hip) ;;
-    *) echo "usage: scripts/device_check.sh cuda|hip [--no-bench] [--repeat N]" >&2; exit 2 ;;
+    *) echo "usage: scripts/device_check.sh cuda|hip [--no-bench] [--repeat N] [--jobs N] [--kokkos <tarball>]" >&2; exit 2 ;;
 esac
+if [ -n "$kokkos" ] && [ ! -f "$kokkos" ]; then
+    echo "device_check.sh: --kokkos: no file $kokkos" >&2
+    exit 2
+fi
 
 src=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 cd "$src" || exit 1
@@ -90,7 +106,7 @@ if [ ! -f "$build/CMakeCache.txt" ]; then
     fi
 fi
 # shellcheck disable=SC2086 # the target list splits on purpose
-if ! cmake --build "$build" -j "$(nproc)" --target $targets device_bench > "$logs/build.log" 2>&1; then
+if ! cmake --build "$build" -j "$jobs" --target $targets device_bench > "$logs/build.log" 2>&1; then
     tail -30 "$logs/build.log"
     echo "device_check: build failed ($logs/build.log)"
     exit 1
@@ -118,6 +134,44 @@ if [ $bench = 1 ]; then
     "$bin/device_bench/device_bench" 30 10 > "$logs/device_bench.log" 2>&1
     echo "device_bench rc=$?"
     grep -E "^== S|assign\(\)|claim waits" "$logs/device_bench.log"
+fi
+if [ -n "$kokkos" ]; then
+    kbuild=build-kokkos-$lang-$(uname -m)
+    if [ "$lang" = cuda ]; then
+        case "${CUDA_ARCH:-90}" in
+            90) karch=HOPPER90 ;;
+            86) karch=AMPERE86 ;;
+            80) karch=AMPERE80 ;;
+            75) karch=TURING75 ;;
+            *) karch="" ;;
+        esac
+    else
+        karch=AMD_GFX942_APU
+    fi
+    karch=${KOKKOS_ARCH:-$karch}
+    if [ -z "$karch" ]; then
+        echo "device_check: --kokkos: set KOKKOS_ARCH for CUDA_ARCH=${CUDA_ARCH}"
+        exit 1
+    fi
+    if [ ! -f "$kbuild/CMakeCache.txt" ]; then
+        if ! cmake -S . -B "$kbuild" "${gen[@]}" "${cmake_args[@]}" -DCHUNK_DEVICE_KOKKOS=ON \
+            -DCHUNK_KOKKOS_ARCH="$karch" -DCHUNK_KOKKOS_URL="$kokkos" -DCHUNK_STATIC_SIZES=256 \
+            -DCHUNK_BUILD_DYN=OFF > "$logs/cmake_kokkos.log" 2>&1; then
+            tail -30 "$logs/cmake_kokkos.log"
+            rm -rf "$kbuild"
+            echo "device_check: Kokkos configure failed ($logs/cmake_kokkos.log)"
+            exit 1
+        fi
+    fi
+    if ! cmake --build "$kbuild" -j "$jobs" --target kokkos_validation > "$logs/build_kokkos.log" 2>&1; then
+        tail -30 "$logs/build_kokkos.log"
+        echo "device_check: Kokkos build failed ($logs/build_kokkos.log; 'Killed': fewer --jobs)"
+        exit 1
+    fi
+    timeout 900 "$kbuild/examples/kokkos/kokkos_validation" > "$logs/kokkos_validation.log" 2>&1
+    rc=$?
+    echo "kokkos_validation ($karch) rc=$rc $(tail -1 "$logs/kokkos_validation.log")"
+    [ $rc -eq 0 ] || status=1
 fi
 echo "device_check: logs in $src/$logs"
 exit $status
