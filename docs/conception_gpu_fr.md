@@ -1229,6 +1229,15 @@ Ce qui reste dans une passe (environ 0,6 ms pour les cinq tableaux) : `compress_
 regarde toujours chaque chunk, matérialisé ou non, écrit depuis la dernière passe ou non (le bit
 « touché » de 7.1 le restreindrait), et `release_free` quand des chunks se replient.
 
+Le bit « touché » de 7.1, mesuré (5b7026175, annulé) : un octet par chunk écrit par chaque
+écrivain, la passe qui saute les chunks non touchés, les octets remis à zéro par un memset après
+elle. 200 passes, compress() 130 -> 118 ms sur le GH200 mais 122 -> 147 ms sur le MI300A (grandes
+fenêtres : 16,3 -> 15,6 et 25,6 -> 28,7 ms), la boucle inchangée. La passe lisait toujours chaque
+descripteur (un chunk touché attend alors un load, pas deux à la suite), elle n'économisait donc
+que les débuts de tampon des chunks matérialisés non touchés (environ un dixième des chunks), et
+le memset du MI300A coûtait environ 25 us par tableau ; l'écriture de l'octet à chaque écriture
+coûtait 5 à 8 % aux écritures dispersées à S = 256 (RTX A1000). Tranché : pas de bit « touché ».
+
 Suite : les noyaux de réécriture du MI300A sur les grandes fenêtres ; les noyaux d'écriture eux-mêmes (27 us
 contre 3,4) ; `compress()` dans la boucle ; puis Arcane.
 

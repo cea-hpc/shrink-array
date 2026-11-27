@@ -1170,6 +1170,15 @@ Left in a pass (about 0.6 ms for the five arrays): `compress_chunks`, which stil
 every chunk, materialised or not, written since the last pass or not (7.1's "touched" bit would
 restrict it), and `release_free` when chunks fold.
 
+7.1's "touched" bit, measured (5b7026175, reverted): a byte per chunk stored by every writer,
+the pass skipping the untouched chunks, the bytes cleared by a memset after it. 200 passes,
+compress() 130 -> 118 ms on the GH200 but 122 -> 147 ms on the MI300A (large windows: 16.3 ->
+15.6 and 25.6 -> 28.7 ms), the loop unchanged. The pass still read every descriptor (a touched
+chunk then waits for one load, not two in a row), so it saved only the buffer heads of the
+untouched materialised chunks (about a tenth of the chunks), and the MI300A's memset cost about
+25 us an array; the store per write cost scattered writes 5-8 % at S = 256 (RTX A1000). Settled:
+no touched bit.
+
 Next: the MI300A's rewrite kernels on large windows; the write kernels themselves (27 us against 3.4);
 `compress()` in the loop; then Arcane.
 
