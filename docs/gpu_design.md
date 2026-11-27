@@ -1140,6 +1140,16 @@ On HIP the lanes of a wavefront that set bits of one word now OR them in one ato
 (1.13x), validations green, no wait given up. Left: the growth's page mapping, and the kernels
 at twice the GH200's ratio.
 
+Kernel by kernel (20 iterations, 1/2; rocprofv3 on the MI300A, Nsight Systems on the GH200), a
+call in us, shrink / flat: `rewrite` 454 / 49 (9.2x) on the MI300A against 259 / 51 (5.1x) on the
+GH200, `reset` 438 / 58 against 256 / 79, `rmw` 212 / 212 against 148 / 103, `reads` 184 / 189
+against 102 / 98: the MI300A's rewrite kernel at 1.75x the GH200's (2.5x before the wavefront's
+fetch_or). A plain load of the descriptor on HIP's fast path instead of the agent-scope one
+(07622485e, reverted): 469 -> 465 ms and 133 -> 129 ms, the kernel 454 -> 490 us, within the
+noise. The growth cost is the arenas' page mapping, moved rather than lost; `DeviceArray(n)`
+now starts with a buffer per chunk (e926f8f4b), so only an array given a smaller first arena
+pays it in its phases. What is left in the rewrite kernel needs the hardware counters.
+
 Next: the MI300A's rewrite kernels on large windows; the write kernels themselves (27 us against 3.4);
 `compress()` in the loop; then Arcane.
 

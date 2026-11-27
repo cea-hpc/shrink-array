@@ -1197,6 +1197,17 @@ réécriture passe de 524 à 469 ms à 1/64 et de 197 à 133 ms (11,0x) à 1/2, 
 1465 ms et de 1201 à 1114 ms (1,13x), validations vertes, aucune attente abandonnée. Reste : le
 mappage des pages de la croissance, et les noyaux au double du rapport du GH200.
 
+Noyau par noyau (20 itérations, 1/2 ; rocprofv3 sur le MI300A, Nsight Systems sur le GH200), un
+appel en us, shrink / plat : `rewrite` 454 / 49 (9,2x) sur le MI300A contre 259 / 51 (5,1x) sur
+le GH200, `reset` 438 / 58 contre 256 / 79, `rmw` 212 / 212 contre 148 / 103, `reads` 184 / 189
+contre 102 / 98 : le noyau de réécriture du MI300A à 1,75x celui du GH200 (2,5x avant le fetch_or
+par wavefront). Un load simple du descripteur sur le chemin rapide de HIP au lieu de celui à
+l'échelle de l'agent (07622485e, annulé) : 469 -> 465 ms et 133 -> 129 ms, le noyau 454 -> 490 us,
+dans le bruit. Le coût de la croissance est le mappage des pages des arènes, déplacé plutôt que
+perdu ; `DeviceArray(n)` part maintenant d'un tampon par chunk (e926f8f4b), seul un tableau à qui
+l'on donne une première arène plus petite le paie dans ses phases. Ce qui reste dans le noyau de
+réécriture demande les compteurs matériels.
+
 Suite : les noyaux de réécriture du MI300A sur les grandes fenêtres ; les noyaux d'écriture eux-mêmes (27 us
 contre 3,4) ; `compress()` dans la boucle ; puis Arcane.
 
