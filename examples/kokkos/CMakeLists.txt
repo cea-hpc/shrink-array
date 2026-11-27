@@ -48,3 +48,13 @@ foreach (_t IN ITEMS kokkos_validation kokkos_shrink_bench)
 endforeach()
 add_test(NAME kokkos_validation COMMAND kokkos_validation)
 set_property(TEST kokkos_validation PROPERTY LABELS validation)
+
+# kokkos_getting_started: the facade as a program uses it, linked to the installable target
+# shrink_array::device (chunk_device: the include path and C++20) and to Kokkos only.
+add_executable(kokkos_getting_started kokkos_getting_started.cu)
+set_source_files_properties(kokkos_getting_started.cu PROPERTIES LANGUAGE ${CHUNK_DEVICE_LANGUAGE})
+set_target_properties(kokkos_getting_started PROPERTIES ${CHUNK_DEVICE_LANGUAGE}_STANDARD 20
+                      ${CHUNK_DEVICE_LANGUAGE}_STANDARD_REQUIRED ON)
+target_link_libraries(kokkos_getting_started PRIVATE chunk_device Kokkos::kokkos)
+add_test(NAME kokkos_getting_started COMMAND kokkos_getting_started)
+set_property(TEST kokkos_getting_started PROPERTY LABELS validation)

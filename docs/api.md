@@ -274,7 +274,8 @@ kernel takes `view()` (`v(i)`), between write phases. To and from a host array, 
 decompressing: `DeviceArray(export_array(host))` or `assign(state)`, and `image()`, whose
 `state` `import_array()` takes (`chunk/chunk_exchange.h`, in a host translation unit: the device
 headers do not include the host arrays'). Not on the device: `resize`, `push_back`, iterators,
-element access from the host (`to_host()` copies every element).
+element access from the host (`to_host()` copies every element). A Kokkos program from creation
+to reads: [examples/kokkos/kokkos_getting_started.cu](../examples/kokkos/kokkos_getting_started.cu).
 
 ## Names changed in 0.3
 
