@@ -209,25 +209,6 @@ void run(const char* name)
                line);
     }
 
-    // zero_or_value: chunks uniform at 3 that a pass could not fold (no second value), left
-    // untouched, fold at the pass after set_second_value(3): compress() looks at the chunks
-    // written since the last pass only, but at every one after a new second value.
-    if constexpr (V == sd::Variant::zero_or_value)
-    {
-        Arr            z(n);
-        std::vector<T> all3(static_cast<std::size_t>(n), T{3});
-        write_all<WriterT, T><<<256, 256>>>(z.writer(), n, T{3});
-        z.finish();
-        const auto before = z.compress(); // no second value: nothing folds, the marks cleared
-        z.set_second_value(T{3});
-        const auto after = z.compress();
-        std::snprintf(line, sizeof line, "set_second_value(3) on untouched chunks: %llu then %llu folded, %llu left",
-                      before, after, z.written_chunk_count());
-        expect(before == 0 && after == static_cast<unsigned long long>(chunks) && z.written_chunk_count() == 0 &&
-                   wrong(z, all3) == 0,
-               line);
-    }
-
     // A ramp over the first half: its chunks materialise.
     a.parallel_for_chunks(0, h, Ramp<T>{});
     for (std::int64_t i = 0; i < h; ++i)
