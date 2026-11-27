@@ -581,6 +581,20 @@ façade de la création aux lectures, liée à `shrink_array::device` et à Kokk
 `kokkos_validation` (les phases, les alias des variantes, la conversion depuis et vers l'hôte)
 passent sur le GH200, le MI300A et une RTX A1000, à a464e0949 (Kokkos 5.3.0).
 
+**La façade Arcane (novembre 2026) :** `chunk/device/arcane_adaptor.h` (`ArcaneArray`, les mêmes
+phases sur la `RunQueue` et le `RUNCOMMAND_LOOP1` d'Arcane) et
+[examples/arcane/arcane_getting_started.cc](../examples/arcane/arcane_getting_started.cc) passent
+sur le GH200 à a78a47b28, contre un Arcane 4.2.4.0 compilé pour lui (aarch64, CUDA 13.3, `sm_90`,
+sans MPI : le mode accélérateur autonome n'en a pas besoin), avec les chiffres de
+kokkos_getting_started. Compiler cet Arcane : les modules `flavor/buildcuda/cuda/13 cuda/13.3
+gcc/15.2.0` dans cet ordre (un module `mpi/openmpi` ramène CUDA 12.4 et gcc 12), un SDK .NET 8
+arm64 (le générateur de code d'Arcane en a besoin), les sources clonées avec leurs sous-modules, et
+`-DARCANEFRAMEWORK_BUILD_COMPONENTS=Arcane -DARCANE_ACCELERATOR_MODE=CUDA -DCMAKE_CUDA_ARCHITECTURES=90
+-DARCCORE_ENABLE_MPI=OFF -DARCANE_WANT_NOMPI=TRUE -DARCANE_ENABLE_DOTNET_WRAPPER=OFF
+-DARCANE_ENABLE_ALEPH=OFF -DARCCORE_ENABLE_TBB=OFF -DARCANE_ENABLE_TESTS=OFF -DARCCORE_ENABLE_TESTS=OFF`.
+Reste à faire : une validation contre un miroir hôte comme kokkos_validation, et un Arcane compilé
+avec HIP pour le MI300A.
+
 **Étape 0, faite sur le GPU du portable (RTX A1000, sm_86, novembre 2026)**, 1 Gio de
 doubles, rapports au tableau plat (détails et bench dans [gpu/proto](../gpu/proto/README.md)) :
 
