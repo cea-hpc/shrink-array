@@ -62,6 +62,8 @@
 #include <array>       // std::array (g_slots)
 #include <algorithm>   // std::min
 #include <atomic>      // std::atomic, std::atomic_thread_fence, std::memory_order
+#include <chrono>      // std::chrono::steady_clock (EXPERIMENT CHUNK_READ_RECLAIM_TIMING)
+#include <cstddef>     // std::size_t (EXPERIMENT CHUNK_READ_RECLAIM_TIMING)
 #include <cstdint>     // std::uint64_t
 #include <cstdio>      // std::fprintf (EXPERIMENT mode 5 report)
 #include <cstdlib>     // std::abort (EXPERIMENT mode 5)
@@ -215,6 +217,90 @@ struct RetryReport
     }
 };
 inline RetryReport g_retry_report;
+
+// EXPERIMENT CHUNK_READ_RECLAIM_TIMING=1: how long a pass holds the buffers it
+// released before it frees them -- the window a delayed reader must fall in for
+// a stale read. Per scoped pass (PassScope's release): the gap from the FIRST
+// buffer collected (the oldest CAS) and from the LAST one (the youngest) to the
+// releases, and the grace period itself; per wait_for_readers(), the
+// heavy_barrier (seq_cst fence + membarrier). A youngest gap above the reader's
+// delay (read_reclaim_validation: 50 us) means no reader can see that pass's
+// buffers reused. Printed at exit as "[grace] ...".
+#ifndef CHUNK_READ_RECLAIM_TIMING
+    #define CHUNK_READ_RECLAIM_TIMING 0
+#endif
+inline constexpr bool grace_timing = enabled && CHUNK_READ_RECLAIM_TIMING != 0;
+
+/// @brief EXPERIMENT CHUNK_READ_RECLAIM_TIMING: count, sum and max of one duration.
+struct DurationStat
+{
+    std::atomic<long> count{0};
+    std::atomic<long> sum_ns{0};
+    std::atomic<long> max_ns{0};
+    void              add(long ns) noexcept
+    {
+        count.fetch_add(1, std::memory_order_relaxed);
+        sum_ns.fetch_add(ns, std::memory_order_relaxed);
+        for (long seen = max_ns.load(std::memory_order_relaxed);
+             ns > seen && !max_ns.compare_exchange_weak(seen, ns, std::memory_order_relaxed);)
+        {
+        }
+    }
+};
+/// @brief Upper bounds (us) of the youngest-gap histogram; the last bin is open.
+inline constexpr std::array<long, 6> grace_bins_us{10, 25, 50, 100, 500, 2000};
+alignas(64) inline DurationStat g_gap_oldest;    ///< first buffer collected -> releases
+alignas(64) inline DurationStat g_gap_youngest;  ///< last buffer collected -> releases
+alignas(64) inline DurationStat g_grace_wait;    ///< PassScope's wait_for_readers()
+alignas(64) inline DurationStat g_heavy_barrier; ///< heavy_barrier(), every wait_for_readers()
+alignas(64) inline std::array<std::atomic<long>, grace_bins_us.size() + 1> g_gap_youngest_hist{};
+inline thread_local std::chrono::steady_clock::time_point t_first_defer{};
+inline thread_local std::chrono::steady_clock::time_point t_last_defer{};
+
+[[nodiscard]] inline long ns_since(std::chrono::steady_clock::time_point from,
+                                   std::chrono::steady_clock::time_point to) noexcept
+{
+    return static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(to - from).count());
+}
+
+/// @brief EXPERIMENT CHUNK_READ_RECLAIM_TIMING: the report, at exit.
+struct GraceReport
+{
+    GraceReport()                              = default;
+    GraceReport(const GraceReport&)            = delete;
+    GraceReport& operator=(const GraceReport&) = delete;
+    ~GraceReport()
+    {
+        if constexpr (grace_timing)
+        {
+            const auto line = [](const char* name, const DurationStat& d)
+            {
+                const long n = d.count.load();
+                std::fprintf(stderr, "[grace] %-14s n %ld  mean %.1f us  max %.1f us\n", name, n,
+                             n ? static_cast<double>(d.sum_ns.load()) / static_cast<double>(n) / 1e3 : 0.0,
+                             static_cast<double>(d.max_ns.load()) / 1e3);
+            };
+            line("gap_oldest", g_gap_oldest);
+            line("gap_youngest", g_gap_youngest);
+            line("grace_wait", g_grace_wait);
+            line("heavy_barrier", g_heavy_barrier);
+            std::fprintf(stderr, "[grace] gap_youngest_hist");
+            for (std::size_t b = 0; b < g_gap_youngest_hist.size(); ++b)
+            {
+                if (b < grace_bins_us.size())
+                {
+                    std::fprintf(stderr, "  <%ldus %ld", grace_bins_us[b], g_gap_youngest_hist[b].load());
+                }
+                else
+                {
+                    std::fprintf(stderr, "  >=%ldus %ld", grace_bins_us.back(), g_gap_youngest_hist[b].load());
+                }
+            }
+            std::fprintf(stderr, "\n");
+        }
+    }
+};
+inline GraceReport g_grace_report;
 
 /// @brief First read of this thread: claim a slot (or join the overflow).
 inline ReaderSlot* claim_slot() noexcept
@@ -386,7 +472,16 @@ using ScanSection = ReadSection;
 inline void wait_for_readers() noexcept
 {
     g_reclaim_epoch.fetch_add(1, std::memory_order_seq_cst); // EXPERIMENT mode 2
-    dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
+    if constexpr (grace_timing)
+    {
+        const auto t0 = std::chrono::steady_clock::now();
+        dekker::heavy_barrier();
+        g_heavy_barrier.add(ns_since(t0, std::chrono::steady_clock::now()));
+    }
+    else
+    {
+        dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
+    }
     const int         nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
     const ReaderSlot* mine   = t_slot;
     for (int i = 0; i < nslots; ++i)
@@ -476,6 +571,14 @@ inline bool defer_release(void (*release)(void*, int, void*) noexcept, void* chu
     {
         if (std::vector<Deferred>* batch = t_batch; batch != nullptr) [[unlikely]]
         {
+            if constexpr (grace_timing)
+            {
+                t_last_defer = std::chrono::steady_clock::now();
+                if (batch->empty())
+                {
+                    t_first_defer = t_last_defer;
+                }
+            }
             batch->push_back(Deferred{.release    = release,
                                       .chunk      = chunk,
                                       .block      = block,

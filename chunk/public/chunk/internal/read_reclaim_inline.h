@@ -15,7 +15,9 @@
  */
 
 #pragma once
-#include <atomic> // std::memory_order_relaxed, std::memory_order_release, std::memory_order_seq_cst
+#include <atomic>  // std::memory_order_relaxed, std::memory_order_release, std::memory_order_seq_cst
+#include <chrono>  // std::chrono::steady_clock (EXPERIMENT CHUNK_READ_RECLAIM_TIMING)
+#include <cstddef> // std::size_t (EXPERIMENT CHUNK_READ_RECLAIM_TIMING)
 
 #include "chunk/internal/read_reclaim.h" // the class these bodies belong to
 
@@ -264,7 +266,26 @@ inline read_reclaim::PassScope::~PassScope()
         {
             return;
         }
-        wait_for_readers();
+        if constexpr (grace_timing)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            wait_for_readers();
+            const auto t1 = std::chrono::steady_clock::now();
+            g_grace_wait.add(ns_since(t0, t1));
+            g_gap_oldest.add(ns_since(t_first_defer, t1));
+            const long young = ns_since(t_last_defer, t1);
+            g_gap_youngest.add(young);
+            std::size_t bin = 0;
+            while (bin < grace_bins_us.size() && young >= grace_bins_us[bin] * 1000)
+            {
+                ++bin;
+            }
+            g_gap_youngest_hist[bin].fetch_add(1, std::memory_order_relaxed);
+        }
+        else
+        {
+            wait_for_readers();
+        }
         const unsigned int saved_size = t_active_chunk_size;
         const unsigned int saved_key  = t_alloc_key;
         for (const Deferred& deferred : batch)

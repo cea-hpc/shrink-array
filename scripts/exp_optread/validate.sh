@@ -18,6 +18,9 @@
 #   THREADS (default "8 72")   CASES (default "plain bulk compound")
 #   SECONDS_PER_RUN (default 20: READ_RECLAIM_SECONDS; on x86 the mode 3 plain control caught
 #                    7 stale reads in 10 s, 1 in 2 s -- too few to trust less)
+#   TIMING (default 0; 1: part B built with -DCHUNK_READ_RECLAIM_TIMING=1 -- each run's
+#           "[grace]" lines, how long a pass holds its released buffers, follow its row)
+#   READ_RECLAIM_DELAY_US (unset: the build's 50 us), passed through to the runs
 set -u
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC=${SRC:-$(cd "$HERE/../.." && pwd)}
@@ -31,6 +34,7 @@ VARIANTS=${VARIANTS:-"zero zero_or_value zero_any"}
 THREADS=${THREADS:-"8 72"}
 CASES=${CASES:-"plain bulk compound"}
 SECONDS_PER_RUN=${SECONDS_PER_RUN:-20}
+TIMING=${TIMING:-0}
 mkdir -p "$WORK/logs"
 SUMMARY=$WORK/summary.txt
 [ -f "$SUMMARY" ] && mv "$SUMMARY" "$SUMMARY.$(date +%Y%m%d-%H%M%S)"
@@ -105,7 +109,8 @@ for comp in $COMPS; do
       load_env "$comp"
       B=$WORK/stress-$comp-mode$m
       # Release (bulk needs bulk_fast: no stats, no CHUNK_CHECK), the hooks compiled in.
-      configure "$comp" "$B" "-DCHUNK_READ_SECTION_MODE=$m -DCHUNK_TEST_READ_DELAY_EVERY=16" \
+      timing_flag=; [ "$TIMING" = 1 ] && timing_flag=" -DCHUNK_READ_RECLAIM_TIMING=1"
+      configure "$comp" "$B" "-DCHUNK_READ_SECTION_MODE=$m -DCHUNK_TEST_READ_DELAY_EVERY=16$timing_flag" \
           -DCMAKE_BUILD_TYPE=Release -DCHUNK_BUILD_VALIDATION=ON -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF || exit 1
       tg=(); for v in $VARIANTS; do tg+=("validation_${v}_256"); done
       ninja -C "$B" -j "$JOBS" "${tg[@]}" > "$B.build.log" 2>&1 \
@@ -116,7 +121,8 @@ done
 
 {
     echo
-    echo "== B read_reclaim_validation, CHUNK_TEST_READ_DELAY_EVERY=16, ${SECONDS_PER_RUN} s per run"
+    echo "== B read_reclaim_validation, CHUNK_TEST_READ_DELAY_EVERY=16, ${SECONDS_PER_RUN} s per run," \
+         "read delay ${READ_RECLAIM_DELAY_US:-build default} us, TIMING=$TIMING"
     echo "   expected: mode 7 -> 0 (pass); mode 3 plain / bulk -> 1 WITH stale reads (the control must"
     echo "   catch them: a FAIL premise -- no pass inside the region -- does not count); 77 = skipped"
     printf '%-5s %-4s %-14s %4s %-9s %4s %-14s %10s  %s\n' comp mode variant thr case rc verdict retries detail
@@ -152,6 +158,7 @@ for comp in $COMPS; do
           retries=$(grep -oE '\[optimistic\] reads retried [0-9]+' "$log" | awk '{print $NF}')
           printf '%-5s %-4s %-14s %4s %-9s %4s %-14s %10s  %s\n' "$comp" "$m" "$v" "$t" "$c" "$rc" "$verdict" \
               "${retries:--}" "$detail" | tee -a "$SUMMARY"
+          [ "$TIMING" = 1 ] && grep -E '^\[grace\]' "$log" | sed 's/^/      /' | tee -a "$SUMMARY"
         done
       done
     done
