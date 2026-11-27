@@ -373,7 +373,8 @@ void TypeStateParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]] in
             // are long-lived, so the retained memory is modest.
             auto& allocator = ChunkT<T>::get_chunk_allocator(thr_rank);
             allocator.set_rank(thr_rank); // stamped into every slab as owner_rank
-            allocator.init(ChunkT<T>::storage_units(shrink_array::alloc_chunk_count()), slab_bytes, -1);
+            allocator.init(ChunkT<T>::storage_units(shrink_array::alloc_chunk_count()), slab_bytes,
+                           chunk_config::value_slab_reserve);
         }
     }
 }
@@ -392,7 +393,8 @@ void TypeStateParallelImpl<ChunkT, T, false>::init_allocator(int block_size) con
     // (see register_chunk_size_serial in chunk_base.h; this is the static /
     // unregistered-size fallback allocator).
     ChunkT<T>::allocator_data->set_arena(fast_alloc::ArenaKind::value);
-    ChunkT<T>::allocator_data->init(ChunkT<T>::storage_units(shrink_array::alloc_chunk_count()), block_size, -1);
+    ChunkT<T>::allocator_data->init(ChunkT<T>::storage_units(shrink_array::alloc_chunk_count()), block_size,
+                                    chunk_config::value_slab_reserve);
 }
 
 /**

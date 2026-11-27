@@ -527,7 +527,7 @@ void ChunkDynamicAllocPolicy<T, Derived, true>::register_chunk_size(unsigned int
         auto& allocator = arr[static_cast<std::size_t>(thr)];
         allocator.set_rank(thr); // stamped into every slab as owner_rank
         allocator.set_key(key);  // ... and owner_key
-        allocator.init(static_cast<int>(Derived::storage_units(size)), slab_bytes, -1);
+        allocator.init(static_cast<int>(Derived::storage_units(size)), slab_bytes, chunk_config::value_slab_reserve);
     }
     allocator_pool_->emplace(pool_key(key, size), std::move(arr));
 }
@@ -544,7 +544,8 @@ void ChunkDynamicAllocPolicy<T, Derived, true>::register_chunk_size_serial(unsig
     // value pool sharing it with the deferred-op pool lets a freed slab of
     // one be reobtained by the other, corrupting both pools' slab lists.
     allocator->set_arena(fast_alloc::ArenaKind::value);
-    allocator->init(static_cast<size_t>(Derived::storage_units(size)), static_cast<uintptr_t>(block_size), -1);
+    allocator->init(static_cast<size_t>(Derived::storage_units(size)), static_cast<uintptr_t>(block_size),
+                    chunk_config::value_slab_reserve);
     allocator_pool_serial_->emplace(size, std::move(allocator));
 }
 

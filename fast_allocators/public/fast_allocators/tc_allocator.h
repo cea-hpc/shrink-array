@@ -606,8 +606,10 @@ void sl_insert(Node*& list, Node* node) noexcept
  * @note Shared by every slab family; the two callables are the only divergence.
  *
  * @warning A slab that empties is not thereby reclaimed. With
- *          @p n_max_block_empty negative (what the chunk layer passes, so a
- *          freed value slab's address is never reobtained by the op pool) its
+ *          @p n_max_block_empty negative (what the chunk layer passes,
+ *          chunk_config::value_slab_reserve: a freed value slab's address is
+ *          never reobtained by the op pool, and an optimistic read that lost
+ *          the race to a pass still reads mapped memory) its
  *          pages stay resident unless @p on_kept releases them, or a sweep
  *          (fast_alloc::EmptySlabSweep) gives them back.
  */
@@ -629,7 +631,8 @@ void sl_manage_full_empty(Node*&  block,
 
     if (slab->is_empty()) [[unlikely]]
     {
-        // n_max_block_empty < 0  ==  never munmap (op/value slab aliasing).
+        // n_max_block_empty < 0  ==  never munmap (op/value slab aliasing; the
+        // chunk layer's optimistic reads, chunk_config::value_slab_reserve).
         if (n_max_block_empty < 0)
         {
             on_kept(slab); // value: MADV_DONTNEED the slab; op/ctx: no-op

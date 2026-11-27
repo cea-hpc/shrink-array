@@ -373,11 +373,26 @@ inline constexpr bool tsan_build = false;
  *          - x86-64 or AArch64: the re-check is ordered after the element load by an
  *            address dependency, which the hardware honours and C++ does not
  *            (formal/optimistic_read.c: correct under ARMv8 and TSO, not under RC11 / IMM);
- *          - the fast allocator: a released value buffer stays mapped, so a read that
- *            loses the race returns garbage the re-check discards, never a fault;
+ *          - the fast allocator: a released value buffer stays mapped
+ *            (value_slab_reserve), so a read that loses the race returns garbage the
+ *            re-check discards, never a fault;
  *          - no ThreadSanitizer: the losing read is a data race, which TSan reports.
  *          Elsewhere every pure read announces itself (a store and a fence each).
  */
+/**
+ * @brief The emptied-slab reserve every value allocator is initialised with
+ *        (TCSlabPool::init): negative, so a value slab is never unmapped while the
+ *        library runs. An emptied one stays mapped (on_kept: MADV_DONTNEED, which
+ *        reads back zeros), as does one an EmptySlabSweep gives back.
+ * @details Two things depend on it: the optimistic reads (optimistic_reads, below),
+ *          whose losing read loads from a buffer a pass has just released, and must
+ *          not fault there; and the deferred-op pool, which shares the arena and
+ *          must never reobtain a freed value slab's address. A positive reserve
+ *          would munmap the slabs past it (sl_manage_full_empty).
+ */
+inline constexpr int value_slab_reserve = -1;
+static_assert(value_slab_reserve < 0, "optimistic_reads and the op pool need value slabs that are never unmapped");
+
 #if CHUNK_OPT_OPTIMISTIC_READS && CHUNK_OPT_FAST_ALLOC && (defined(__x86_64__) || defined(__aarch64__)) && \
     !defined(CHUNK_TSAN_BUILD)
 inline constexpr bool optimistic_reads = true;

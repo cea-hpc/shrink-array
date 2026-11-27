@@ -499,10 +499,10 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
 
     /// @brief Register (create + init) the single allocator for `size`, once.
     /// @details Mirrors the serial init_allocator() convention:
-    ///          init(storage_units(size), block_size, -1), where size is the
+    ///          init(storage_units(size), block_size, value_slab_reserve), where size is the
     ///          chunk's element count (alloc_chunk_count() in a dynamic build)
-    ///          and -1 = never munmap a value slab (as init_allocator() /
-    ///          init_allocators()).
+    ///          and chunk_config::value_slab_reserve (-1) = never munmap a value
+    ///          slab (as init_allocator() / init_allocators()).
     /// @param size Chunk element count this allocator serves.
     /// @param block_size Slab byte budget.
     static void register_chunk_size_serial(unsigned int size, int block_size);
