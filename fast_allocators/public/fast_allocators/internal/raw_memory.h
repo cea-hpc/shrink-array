@@ -53,7 +53,7 @@ template <typename T>
 /// @brief The T stored in the bytes at @p ptr (see the file comment).
 template <typename T>
     requires std::is_trivially_copyable_v<T>
-[[nodiscard]] inline T load_from_bytes(const void* ptr) noexcept
+[[nodiscard]] T load_from_bytes(const void* ptr) noexcept
 {
     T value;
     std::memcpy(&value, ptr, sizeof(T));
@@ -63,7 +63,7 @@ template <typename T>
 /// @brief Store @p value in the bytes at @p ptr (see the file comment).
 template <typename T>
     requires std::is_trivially_copyable_v<T>
-inline void store_to_bytes(void* ptr, const T& value) noexcept
+void store_to_bytes(void* ptr, const T& value) noexcept
 {
     std::memcpy(ptr, &value, sizeof(T));
 }

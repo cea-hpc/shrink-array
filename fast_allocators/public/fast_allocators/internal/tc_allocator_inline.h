@@ -739,7 +739,7 @@ void* TCAllocatorEB<ElementBytes, BlockBytes>::alloc() noexcept
     if (first_free != -1)
     {
         elem_ptr += first_free * element_size;
-        first_free = *(T*)elem_ptr;
+        first_free = load_from_bytes<T>(elem_ptr);
     }
     else
     {
@@ -754,13 +754,13 @@ void TCAllocatorEB<ElementBytes, BlockBytes>::free_block(int elem) noexcept
 {
     if (elem == (used_size - 1))
     {
-        *(T*)(data + (elem * element_size)) = -1;
+        store_to_bytes(data + (elem * element_size), T{-1});
         --used_size;
     }
     else
     {
-        *(T*)(data + (elem * element_size)) = first_free;
-        first_free                          = elem;
+        store_to_bytes(data + (elem * element_size), static_cast<T>(first_free));
+        first_free = elem;
     }
     --nn_ref;
 }
