@@ -2,9 +2,10 @@
 
 > French version: [variantes_fr.md](variantes_fr.md).
 
-> Status: end of September 2026. The figures come from `shrink_bench` on Grace (64 threads,
-> `OMP_PROC_BIND=close`, `OMP_PLACES=cores`), with memory measured exactly (see
-> [performance_measurement.md](performance_measurement.md)). When in doubt, the code is the
+> Status: end of September 2026 for the host (sections 1 to 4: `shrink_bench` on Grace, 64
+> threads, `OMP_PROC_BIND=close`, `OMP_PLACES=cores`, memory measured exactly, see
+> [performance_measurement.md](performance_measurement.md)); end of November 2026 for the GPU
+> (section 5: `kokkos_shrink_bench` on a GH200 and an MI300A). When in doubt, the code is the
 > reference.
 
 > Names in the code: each variant is named after its namespace, `zero::Array`, `zero_or_value::Array`,
@@ -115,10 +116,54 @@ The dynamic geometry gives a clear gain for `zero_or_value` and `zero_any`. For 
 mostly data, it breaks even with static 256: see the known limits
 in [adaptive_rechunk.md](adaptive_rechunk.md).
 
-## 5. Where to read next
+## 5. On the GPU
+
+The same three variants run on the GPU (CUDA or HIP, header-only, the CMake target
+`shrink_array::device`): `zero::DeviceArray<T, S = 1024>`, `zero_or_value::DeviceArray`,
+`zero_any::DeviceArray` (`chunk/device/zero_array.h`, ...), and their Kokkos facades
+`zero::KokkosArray`, ... ([api.md](api.md) section 11). A chunk folds back by the same rule as on
+the host; what differs is the machinery: a descriptor per chunk that carries its constant, writes
+that materialise a chunk once, and the compression pass at the end of a write phase
+(`finish()`, `compress()`) instead of during it ([gpu_design.md](gpu_design.md)). S = 1024 is
+the GPU geometry.
+
+`kokkos_shrink_bench` (`examples/kokkos`): shrink_bench's access pattern on five arrays of
+2^30 `double`, written by Kokkos kernels through the facade, against five `Kokkos::View<double*>`;
+2000 iterations of windows of up to 107374 elements (small windows) or 200 of up to 10^7 (large
+windows), `compress()` every 10. GH200 (H100, nvcc 13.3) and MI300A (ROCm 10.2), November 2026
+(675d0d701); the checksums equal the flat run's everywhere.
+
+| | `zero_any` | `zero_or_value` | `zero` |
+|---|---|---|---|
+| memory at the end, small windows (flat: 42.95 GB) | **1.51 GB (3.5 %)** | 4.97 GB (11.6 %) | 19.17 GB (44.6 %) |
+| memory at the end, large windows | **8.08 GB (18.8 %)** | 11.35 GB (26.4 %) | 25.89 GB (60.3 %) |
+| loop / flat, small windows, GH200 / MI300A | 1.49x / 1.50x | 1.47x / 1.49x | **1.36x / 1.38x** |
+| loop / flat, large windows, GH200 / MI300A | 1.42x / 1.57x | 1.30x / 1.49x | **1.24x / 1.40x** |
+| allocation + fill / flat, GH200 / MI300A | 0.65x / 0.05x | 0.74x / 0.13x | 1.06x / 0.52x |
+
+The memory held is the same to the byte on both devices: it depends on what the benchmark writes,
+not on the device (the arenas also keep 0.3 to 2.3 GB of free buffers for the next phases). The
+loop's ratio is that of flat arrays that are already allocated and filled; the allocation and fill
+of the compressed arrays cost less than the flat views' (on the MI300A, 20 times less for
+`zero_any`, the views' 43 GB being mapped at their allocation). The 20 read passes of each
+iteration run at flat's speed (0.93x to 1.02x); what the loop pays is the writes into the window
+and around it, and `compress()` (about 0.6 ms a pass for the five arrays).
+
+The same work on Grace's 72 cores (`host_twin_bench`, the host arrays, OpenMP), `zero_or_value`:
+the GH200's loop is 3.1x faster on the small windows and 25x on the large ones (the GPU is
+bandwidth-bound there and the reads are flat's), [gpu_design.md](gpu_design.md) section 13.
+
+Which one on the GPU: the same rule as on the host (section 4). `zero_any` holds the least
+memory for 9 to 15 % more time in the loop than `zero`; `zero` is the fastest and holds the most;
+`zero_or_value` sits between them when one value besides zero dominates. Write regular loops
+with the chunk-aligned path (`parallel_for_chunks`) where you can; `Writer::assign` (Kokkos's
+`w(i) = v`) is the general path ([gpu_assign.md](gpu_assign.md)).
+
+## 6. Where to read next
 
 | topic | document |
 |---|---|
+| the GPU arrays: design, write path, measurements | [gpu_design.md](gpu_design.md), [gpu_assign.md](gpu_assign.md) |
 | read, write, parallelism, in-flight compression, range operations | [algo_zero_or_value.md](algo_zero_or_value.md): describes `zero_or_value`, but the machinery of its §5 to §8 and §10 is common to all three variants |
 | what `zero` and `zero_any` do differently | [algo_zero.md](algo_zero.md), [algo_zero_any.md](algo_zero_any.md) |
 | dynamic geometry and rechunk, for all three variants | [adaptive_rechunk.md](adaptive_rechunk.md) |

@@ -571,6 +571,10 @@ l'est côté CPU (`docs/getting_started_fr.md` §5).
 | 5. Géométrie dynamique | 9.3 | `rechunk_validation` device |
 | 6. Hybride | mémoire cohérente (GH200, MI300A), mode phase de la version CPU | un tableau lu et écrit alternativement par CPU et GPU sans copie |
 
+**Critère de l'étape 2 atteint (novembre 2026) :** les chiffres des trois variantes sur le GH200
+et le MI300A (`kokkos_shrink_bench`, petites et grandes fenêtres, à 675d0d701) sont dans
+[variantes_fr.md](variantes_fr.md) section 5.
+
 **Étape 0, faite sur le GPU du portable (RTX A1000, sm_86, novembre 2026)**, 1 Gio de
 doubles, rapports au tableau plat (détails et bench dans [gpu/proto](../gpu/proto/README.md)) :
 

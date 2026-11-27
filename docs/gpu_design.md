@@ -553,6 +553,10 @@ the only usage trap, and it is documented the way the thread rule is on the CPU 
 | 5. Dynamic geometry | 9.3 | device `rechunk_validation` |
 | 6. Hybrid | coherent memory (GH200, MI300A), phase mode of the CPU version | an array read and written alternately by CPU and GPU with no copy |
 
+**Stage 2's criterion met (November 2026):** the figures of the three variants on the GH200 and
+the MI300A (`kokkos_shrink_bench`, small and large windows, at 675d0d701) are in
+[variants.md](variants.md) section 5.
+
 **Stage 0, done on a laptop GPU (RTX A1000, sm_86, November 2026)**, 1 GiB of doubles, ratios
 against a flat array (details and the bench in [gpu/proto](../gpu/proto/README.md)):
 

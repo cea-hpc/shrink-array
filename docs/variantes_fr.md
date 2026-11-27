@@ -2,10 +2,11 @@
 
 > English version: [variants.md](variants.md).
 
-> État : fin septembre 2026. Les chiffres viennent de `shrink_bench` sur Grace (64 threads,
-> `OMP_PROC_BIND=close`, `OMP_PLACES=cores`), mémoire mesurée exactement (voir
-> [mesures_performance_fr.md](mesures_performance_fr.md)). En cas de doute, c'est le code qui
-> fait foi.
+> État : fin septembre 2026 pour l'hôte (sections 1 à 4 : `shrink_bench` sur Grace, 64 threads,
+> `OMP_PROC_BIND=close`, `OMP_PLACES=cores`, mémoire mesurée exactement, voir
+> [mesures_performance_fr.md](mesures_performance_fr.md)) ; fin novembre 2026 pour le GPU
+> (section 5 : `kokkos_shrink_bench` sur un GH200 et un MI300A). En cas de doute, c'est le code
+> qui fait foi.
 
 > Noms dans le code : chaque variante porte le nom de son namespace, `zero::Array`, `zero_or_value::Array`,
 > `zero_any::Array`. Les documents plus anciens les appellent Chunk (ou v1), Chunk2 et Chunk2A (les anciens
@@ -117,10 +118,56 @@ La géométrie dynamique fait gagner nettement `zero_or_value` et `zero_any`. Po
 surtout faite de données, elle fait jeu égal avec le statique 256 : voir les limites connues
 dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
-## 5. Où lire la suite
+## 5. Sur GPU
+
+Les trois mêmes variantes tournent sur GPU (CUDA ou HIP, en-têtes seuls, la cible CMake
+`shrink_array::device`) : `zero::DeviceArray<T, S = 1024>`, `zero_or_value::DeviceArray`,
+`zero_any::DeviceArray` (`chunk/device/zero_array.h`, ...), et leurs façades Kokkos
+`zero::KokkosArray`, ... ([api_fr.md](api_fr.md) section 11). Un chunk se replie selon la même
+règle que sur l'hôte ; c'est la machinerie qui change : un descripteur par chunk qui porte sa
+constante, des écritures qui matérialisent un chunk une fois, et la passe de compression à la fin
+d'une phase d'écriture (`finish()`, `compress()`) au lieu de pendant ([conception_gpu_fr.md](conception_gpu_fr.md)).
+S = 1024 est la géométrie GPU.
+
+`kokkos_shrink_bench` (`examples/kokkos`) : le motif d'accès de shrink_bench sur cinq tableaux de
+2^30 `double`, écrits par des noyaux Kokkos à travers la façade, contre cinq `Kokkos::View<double*>` ;
+2000 itérations de fenêtres d'au plus 107374 éléments (petites fenêtres) ou 200 d'au plus 10^7
+(grandes fenêtres), `compress()` toutes les 10. GH200 (H100, nvcc 13.3) et MI300A (ROCm 10.2),
+novembre 2026 (675d0d701) ; les sommes de contrôle égalent partout celles du run plat.
+
+| | `zero_any` | `zero_or_value` | `zero` |
+|---|---|---|---|
+| mémoire à la fin, petites fenêtres (plat : 42,95 Go) | **1,51 Go (3,5 %)** | 4,97 Go (11,6 %) | 19,17 Go (44,6 %) |
+| mémoire à la fin, grandes fenêtres | **8,08 Go (18,8 %)** | 11,35 Go (26,4 %) | 25,89 Go (60,3 %) |
+| boucle / plat, petites fenêtres, GH200 / MI300A | 1,49x / 1,50x | 1,47x / 1,49x | **1,36x / 1,38x** |
+| boucle / plat, grandes fenêtres, GH200 / MI300A | 1,42x / 1,57x | 1,30x / 1,49x | **1,24x / 1,40x** |
+| allocation + remplissage / plat, GH200 / MI300A | 0,65x / 0,05x | 0,74x / 0,13x | 1,06x / 0,52x |
+
+La mémoire tenue est la même à l'octet sur les deux devices : elle dépend de ce qu'écrit le banc,
+pas du device (les arènes gardent en plus 0,3 à 2,3 Go de tampons libres pour les phases
+suivantes). Le rapport de la boucle est pris contre des tableaux plats déjà alloués et remplis ;
+l'allocation et le remplissage des tableaux compressés coûtent moins que ceux des vues plates (sur
+le MI300A, 20 fois moins pour `zero_any`, les 43 Go des vues étant mappés à leur allocation). Les
+20 passes de lecture de chaque itération vont à la vitesse du plat (0,93x à 1,02x) ; ce que paie la
+boucle, ce sont les écritures dans la fenêtre et autour, et `compress()` (environ 0,6 ms par passe
+pour les cinq tableaux).
+
+Le même travail sur les 72 cœurs de Grace (`host_twin_bench`, les tableaux de l'hôte, OpenMP),
+`zero_or_value` : la boucle du GH200 est 3,1x plus rapide sur les petites fenêtres et 25x sur les
+grandes (le GPU y est limité par la bande passante, et les lectures y sont celles du plat),
+[conception_gpu_fr.md](conception_gpu_fr.md) section 13.
+
+Laquelle sur GPU : la même règle que sur l'hôte (section 4). `zero_any` tient le moins de mémoire
+pour 9 à 15 % de temps de boucle en plus que `zero` ; `zero` est la plus rapide et tient le plus ;
+`zero_or_value` est entre les deux quand une valeur domine en plus de zéro. Écrivez les boucles
+régulières par le chemin aligné sur les chunks (`parallel_for_chunks`) quand c'est possible ;
+`Writer::assign` (le `w(i) = v` de Kokkos) est le chemin général ([gpu_assign_fr.md](gpu_assign_fr.md)).
+
+## 6. Où lire la suite
 
 | sujet | document |
 |---|---|
+| les tableaux GPU : conception, chemin d'écriture, mesures | [conception_gpu_fr.md](conception_gpu_fr.md), [gpu_assign_fr.md](gpu_assign_fr.md) |
 | lecture, écriture, parallélisme, compression en vol, opérations sur plages | [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) : décrit `zero_or_value`, mais la machinerie de ses §5 à §8 et §10 est commune aux trois variantes |
 | ce que `zero` et `zero_any` font autrement | [algo_zero_fr.md](algo_zero_fr.md), [algo_zero_any_fr.md](algo_zero_any_fr.md) |
 | géométrie dynamique et rechunk, pour les trois variantes | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) |
