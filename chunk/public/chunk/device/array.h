@@ -143,7 +143,8 @@ __global__ void upload_chunks(ChunkDesc<T, V>*    desc,
                               const std::int64_t* chunks,
                               const T*            staging,
                               unsigned long long  count,
-                              unsigned long long* fail)
+                              unsigned long long* fail,
+                              unsigned char*      touched)
 {
     __shared__ T* buf;
     for (unsigned long long k = blockIdx.x; k < count; k += gridDim.x)
@@ -169,6 +170,7 @@ __global__ void upload_chunks(ChunkDesc<T, V>*    desc,
         if (threadIdx.x == 0)
         {
             desc[chunks[k]].buf = buf;
+            touched[chunks[k]] = 1; // the next compress() looks at it
         }
     }
 }
@@ -357,7 +359,8 @@ class Array
     void set_second_value(T second) noexcept
         requires(V == Variant::zero_or_value)
     {
-        second_ = second;
+        second_   = second;
+        scan_all_ = true; // a chunk untouched since the last pass may fold to it now
     }
 
     /// @brief zero_or_value: the second value, T{} while none is declared.
@@ -489,6 +492,8 @@ class Array
     unsigned long long  cas_lost_seen_ = 0;        ///< cas_lost when finish() last gave the parked buffers back
     T                   second_{};                 ///< zero_or_value's second value, T{} while none
     unsigned*           appended_       = nullptr; ///< Writer::appended, a bit per chunk
+    unsigned char*      touched_        = nullptr; ///< Writer::touched, a byte per chunk
+    bool                scan_all_       = false;   ///< the next compress() looks at every chunk (set_second_value)
     unsigned long long  appended_total_ = 0;       ///< appended()
     unsigned long long  peak_demand_    = 0;       ///< most buffers one phase needed (keep_headroom)
     unsigned long long  free_hint_      = 0;       ///< free buffers at most, while free_known_
@@ -533,8 +538,10 @@ Array<T, S, V>::Array(std::int64_t n, unsigned long long arena_buffers, T consta
     append_index_ = allocate<std::int64_t>(static_cast<std::size_t>(append_capacity_));
     append_value_ = allocate<T>(static_cast<std::size_t>(append_capacity_));
     appended_     = allocate<unsigned>((nc + 31) / 32 + 1);
+    touched_      = allocate<unsigned char>(nc + 1);
     zero(written_, nc * Writer<T, S, V>::words);
     zero(appended_, (nc + 31) / 32 + 1);
+    zero(touched_, nc + 1);
     zero(counters_, 1);
     zero(spare_, spare_slots);
     kernels::reset_append<<<256, 256>>>(append_index_, append_capacity_);
@@ -562,6 +569,7 @@ Array<T, S, V>::~Array()
     release(append_index_);
     release(append_value_);
     release(appended_);
+    release(touched_);
 }
 
 template <typename T, unsigned int S, Variant V>
@@ -586,6 +594,7 @@ template <typename T, unsigned int S, Variant V>
     w.append_capacity = append_capacity_;
     w.second          = second_;
     w.appended        = appended_;
+    w.touched         = touched_;
     return w;
 }
 
@@ -966,8 +975,11 @@ void Array<T, S, V>::compress_begin()
     {
         const std::int64_t warps_per_block = 256 / warp_size;
         const std::int64_t blocks          = (n_chunks_ + warps_per_block - 1) / warps_per_block;
-        kernels::compress_chunks<T, S, V>
-            <<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(desc_, n_, arena_.ref(), second_, d);
+        // The touched chunks only, but after set_second_value(): every one may fold now.
+        kernels::compress_chunks<T, S, V><<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(
+            desc_, n_, arena_.ref(), second_, d, touched_, scan_all_);
+        scan_all_ = false;
+        zero(touched_, static_cast<std::size_t>(n_chunks_) + 1); // after the pass, in stream order
     }
 }
 
@@ -1065,7 +1077,7 @@ void Array<T, S, V>::assign(const ArrayState<T>& state)
         copy(d_stage, staging.get(), count * S);
         copy(d_idx, mats.data() + first, count);
         kernels::upload_chunks<T, S, V><<<static_cast<unsigned int>(count < 65535 ? count : 65535), 256>>>(
-            desc_, arena_.ref(), d_idx, d_stage, count, d_fail);
+            desc_, arena_.ref(), d_idx, d_stage, count, d_fail, touched_);
         synchronize();
     }
     unsigned long long failed = 0;

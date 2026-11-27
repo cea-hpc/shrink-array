@@ -134,6 +134,11 @@ struct Writer
     /// cleared by the replay). Only those chunks append their constant and look the
     /// append-buffer up (assign_device 1., load_device).
     unsigned* appended = nullptr;
+    /// One byte per chunk: its buffer took new elements or was published since the last
+    /// compress() (docs/gpu_design.md 7.1's "touched" bit), which looks at those chunks only. A
+    /// plain store of 1 by every writer: the lanes of a warp store one byte, no atomic, and
+    /// nothing reads it in a write kernel.
+    unsigned char* touched = nullptr;
     /// zero_or_value: the array's second value (T{} while none is declared), the only value
     /// other than T{} a whole-chunk write folds to (fold_whole); the other variants ignore it.
     T second{};
@@ -251,6 +256,7 @@ __device__ void settle_chunk(const Writer<T, S, V>& w, std::int64_t c, int lane)
     if (lane == 0)
     {
         d.buf = p;
+        w.touched[c] = 1; // its elements are new since the last compress()
     }
 }
 
@@ -452,7 +458,11 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
         }
         else if (!whole)
         {
-            note_fresh(c);
+            note_fresh(c); // touched when settled
+        }
+        else
+        {
+            touched[c] = 1; // whole: published written, never settled
         }
         s_buf = found != nullptr ? found : published;
     }
@@ -586,6 +596,10 @@ Writer<T, S, V>::write_plain(T* buf, std::int64_t c, std::int64_t lo, std::int64
         {
             buf[e] = new_vals[j];
         }
+    }
+    if (threadIdx.x == 0)
+    {
+        touched[c] = 1;
     }
 }
 
@@ -920,6 +934,9 @@ __device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexce
         return;
     }
     buf[e] = v; // 4. a buffer of an earlier kernel
+    // A plain store: `if (touched[c] == 0)` before it made the contiguous writes 12 % slower
+    // (a load each, waited for) for 3 % back on the scattered ones (RTX A1000, device_bench).
+    touched[c] = 1;
 }
 
 template <typename T, unsigned int S, Variant V>

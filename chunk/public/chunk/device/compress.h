@@ -53,9 +53,19 @@ namespace shrink_array::device::kernels
 /// @brief The pass: @p folded receives the number of chunks folded back. Blocks of a
 ///        multiple of warp_size threads: every lane of a warp takes the same chunks.
 ///        @p second: zero_or_value's second value (folds_to), ignored by the other variants.
+///        @p touched: a byte per chunk, set by the writers since the last pass (Writer::touched);
+///        an untouched chunk is skipped -- not uniform at the last pass (it would have folded)
+///        and unchanged since -- unless @p all. Read only: the caller clears the bytes after
+///        the pass, one memset (a clear per chunk here, a warp barrier and a store each, made
+///        the pass 20 % slower where every chunk was touched: device_bench, RTX A1000).
 template <typename T, unsigned int S, Variant V>
-__global__ void
-compress_chunks(ChunkDesc<T, V>* desc, std::int64_t n, ArenaRef<T, S> arena, T second, unsigned long long* folded)
+__global__ void compress_chunks(ChunkDesc<T, V>*    desc,
+                                std::int64_t        n,
+                                ArenaRef<T, S>      arena,
+                                T                   second,
+                                unsigned long long* folded,
+                                const unsigned char* touched,
+                                bool                all)
 {
     const std::int64_t n_chunks = (n + S - 1) / S;
     const int          lane     = lane_id();
@@ -64,11 +74,14 @@ compress_chunks(ChunkDesc<T, V>* desc, std::int64_t n, ArenaRef<T, S> arena, T s
     unsigned long long mine     = 0;
     for (std::int64_t c = first; c < n_chunks; c += warps)
     {
-        ChunkDesc<T, V>& d   = desc[c];
-        T* const         buf = d.buf;
-        if (buf == nullptr)
+        // The byte and the descriptor loaded together: a chunk every writer touched (the
+        // common case of a pass after a full write) waits for one load, not two in a row.
+        ChunkDesc<T, V>&    d   = desc[c];
+        const unsigned char tc  = all ? 1 : touched[c];
+        T* const            buf = d.buf;
+        if (buf == nullptr || tc == 0)
         {
-            continue; // uniform per warp
+            continue; // uniform per warp; untouched: not uniform at the last pass, unchanged since
         }
         const std::int64_t valid = (c + 1) * S <= n ? S : n - c * S;
         // zero: the chunk folds only to T{}, so every element is compared with it.
