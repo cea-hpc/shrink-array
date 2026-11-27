@@ -45,15 +45,13 @@
 // OpenMP without OMPT only (the protocol is manual there); 77 = skipped.
 // ============================================================================
 
-#include <cstdio>   // std::fopen, std::fclose, std::fread, FILE, std::remove
-#include <cstdlib>  // std::system, std::atoi
+#include <cstdlib>  // std::atoi
 #include <cstring>  // std::strcmp
 #include <iterator> // std::size
 #include <string>   // std::string
 #include <utility>  // std::as_const
 #include <vector>   // std::vector, the reference
 
-#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools
 #include "chunk/config.h"              // chunk_config::use_zero*, build_config::needs_explicit_phases, any_check
@@ -63,7 +61,7 @@
 #include "chunk/runtime.h"             // Runtime::init
 #include "chunk/print.h"               // shrink_array::println
 
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run_self; run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, variant_name
 
 namespace validation::phase_protocol_validation
@@ -285,24 +283,12 @@ int child(int case_idx)
 /// The parent: run case @p case_idx in a child, check what happened.
 int check_case(const char* self, int case_idx)
 {
-    const Case&       test_case = case_table[case_idx];
-    const std::string log       = validation::temp_path("phase_protocol_" + std::to_string(case_idx) + ".log");
-    const std::string cmd =
-        validation::self_command(self) + " --case " + std::to_string(case_idx) + " > \"" + log + "\" 2>&1";
-    const int   status = std::system(cmd.c_str());
-    std::string out;
-    if (FILE* file = std::fopen(log.c_str(), "r"))
-    {
-        char buf[4096];
-        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, file)) > 0;)
-        {
-            out.append(buf, n);
-        }
-        std::fclose(file);
-    }
-    std::remove(log.c_str());
+    const Case& test_case = case_table[case_idx];
+    // The child: this harness again, no shell (validation_process.h).
+    const validation::ProcessResult child = validation::run_self(self, {"--case", std::to_string(case_idx)});
+    const std::string&              out   = child.output;
 
-    const bool ran_ok   = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    const bool ran_ok   = child.ok();
     const bool must_run = test_case.must_print == nullptr;
     const bool pass     = must_run ? (ran_ok && out.find("[PHASE PROTOCOL]") == std::string::npos)
                                    : (!ran_ok && out.find(test_case.must_print) != std::string::npos);

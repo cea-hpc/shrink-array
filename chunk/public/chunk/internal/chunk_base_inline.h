@@ -18,11 +18,13 @@
 
 #include <exception>   // std::exception (deferred enqueue)
 #include <memory>      // std::make_unique
-#include <type_traits> // std::remove_reference_t
+#include <type_traits> // std::remove_reference_t, std::is_trivially_copyable_v
 #include <algorithm>   // std::min
 #include <atomic> // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
+#include <bit>     // std::bit_cast (load_element)
 #include <cstddef> // std::size_t
-#include <cstring> // std::memset, std::strerror
+#include <cstdint> // std::uint64_t, std::uintptr_t (load_element, values_load_for_read)
+#include <cstring> // std::memset, std::strerror, std::memcpy (load_element)
 #include <vector>  // std::vector
 
 #include "chunk/internal/chunk_base.h"                 // the declarations these bodies belong to
@@ -601,16 +603,29 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
-[[nodiscard]] CHUNK_FORCE_INLINE const T* ChunkBase<T, Derived>::values_load_for_read() const noexcept
+[[nodiscard]] CHUNK_FORCE_INLINE const T*
+ChunkBase<T, Derived>::values_load_for_read([[maybe_unused]] std::uintptr_t dep) const noexcept
 {
-    if constexpr (build_config::threaded && chunk_config::read_dep_order)
+    if constexpr (build_config::threaded && chunk_config::optimistic_dep_entry)
+    {
+        // Relaxed, at an address offset by dep (0 at run time): ordered after the
+        // epoch's load by the address dependency, the element's load after this one
+        // likewise. The asm keeps the value opaque, as below.
+        const auto* slot = reinterpret_cast<const std::atomic<T*>*>(reinterpret_cast<std::uintptr_t>(&values_) + dep);
+        const T*    vals = slot->load(std::memory_order_relaxed);
+        __asm__("" : "+r"(vals));
+        return vals;
+    }
+    else if constexpr (build_config::threaded && chunk_config::read_dep_order)
     {
         // Relaxed: the loads that need to follow it go through the pointer (address
         // dependency, chunk_config::read_dep_order). The empty asm makes the value
         // opaque, so the compiler cannot substitute a value it compared equal to
-        // (region bounds, the constant marker) and lose the dependency.
+        // (region bounds, the constant marker) and lose the dependency. Not volatile:
+        // its output is used, so it stays; a volatile asm is, for clang, a possible
+        // write that keeps the caller's escaped locals in memory.
         const T* vals = values_.load(std::memory_order_relaxed);
-        __asm__ volatile("" : "+r"(vals));
+        __asm__("" : "+r"(vals));
         return vals;
     }
     else
@@ -780,6 +795,24 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
+[[nodiscard]] CHUNK_FORCE_INLINE T ChunkBase<T, Derived>::read_value_in_session(int offset) const noexcept
+{
+    if constexpr (chunk_config::stats)
+    {
+        if (is_first_value()) // the same split as read_value()
+        {
+            inc_chunk_read_const<Derived>();
+        }
+        else
+        {
+            inc_chunk_read<Derived>();
+        }
+    }
+    // raw-read: read_value_in_session -- the caller holds the write session
+    return element_at_unguarded<false>(offset);
+}
+
+template <typename T, typename Derived>
 T ChunkBase<T, Derived>::operator[](int offset) const noexcept
 {
     if constexpr (chunk_config::stats)
@@ -807,7 +840,7 @@ T ChunkBase<T, Derived>::operator[](int offset) const noexcept
 }
 
 template <typename T, typename Derived>
-void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexcept
+CHUNK_FORCE_INLINE void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexcept
 {
     if constexpr (has_motif_state_v<Derived>)
     {
@@ -818,27 +851,35 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexc
         }
     }
     const read_reclaim::ReadSection section;
-    const T* const                  vals = values_load();
-    test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-    if constexpr (is_zero_any_family_v<Derived>)
+    const auto                      body = [&]() noexcept
     {
-        // Same single load as element_at_unguarded: a chunk compressed to a
-        // second constant points at an identifier, not at values.
-        if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+        const T* const vals = values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if constexpr (is_zero_any_family_v<Derived>)
         {
-            const T value = derived().second_value_from_ptr(vals);
-            for (int j = 0; j < count; ++j)
+            // Same single load as element_at_unguarded: a chunk compressed to a
+            // second constant points at an identifier, not at values.
+            if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
             {
-                out[j] = value;
+                const T value = derived().second_value_from_ptr(vals);
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = value;
+                }
+                return;
             }
-            return;
         }
-    }
-    for (int j = 0; j < count; ++j)
+        for (int j = 0; j < count; ++j)
+        {
+            // raw-read: read_block -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
+            section.fold(out[j]);
+        }
+    };
+    do // optimistic reads: read again if a grace period began meanwhile
     {
-        // raw-read: read_block -- under its own ReadSection
-        out[j] = load_at<false>(vals, first + j);
-    }
+        body();
+    } while (section.retry());
 }
 
 template <typename T, typename Derived>
@@ -846,39 +887,48 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out, const T* of
     requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
-    for (;;)
+    const auto                      body = [&]() noexcept
     {
-        const T* const vals = values_load();
-        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+        for (;;)
         {
-            const T value = derived().second_value_from_ptr(vals);
+            const T* const vals = values_load();
+            test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+            if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+            {
+                const T value = derived().second_value_from_ptr(vals);
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = value;
+                }
+                return;
+            }
+            if (Derived::is_motif_ptr(vals)) [[unlikely]]
+            {
+                T off{};
+                if (!derived().motif_offset(vals, offset_slot, off)) [[unlikely]]
+                {
+                    continue; // the pointer moved: the slot may hold another state's value (F5)
+                }
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = Derived::motif_value(vals, first + j, off);
+                    section.fold(out[j]);
+                }
+                return;
+            }
             for (int j = 0; j < count; ++j)
             {
-                out[j] = value;
+                // raw-read: read_block -- under its own ReadSection
+                out[j] = load_at<false>(vals, first + j);
+                section.fold(out[j]);
             }
             return;
         }
-        if (Derived::is_motif_ptr(vals)) [[unlikely]]
-        {
-            T off{};
-            if (!derived().motif_offset(vals, offset_slot, off)) [[unlikely]]
-            {
-                continue; // the pointer moved: the slot may hold another state's value (F5)
-            }
-            for (int j = 0; j < count; ++j)
-            {
-                out[j] = Derived::motif_value(vals, first + j, off);
-            }
-            return;
-        }
-        for (int j = 0; j < count; ++j)
-        {
-            // raw-read: read_block -- under its own ReadSection
-            out[j] = load_at<false>(vals, first + j);
-        }
-        return;
-    }
+    };
+    do // optimistic reads: read again if a grace period began meanwhile
+    {
+        body();
+    } while (section.retry());
 }
 
 template <typename T, typename Derived>
@@ -887,41 +937,53 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
     requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
-    for (;;)
+    const auto                      body = [&]() noexcept
     {
-        const T* const vals = values_load();
-        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (is_first_value(vals))
+        for (;;)
         {
-            // raw-read: read_block_or_constant -- the shared first-constant buffer
-            constant = load_at<false>(vals, 0);
-            return true;
-        }
-        if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
-        {
-            constant = derived().second_value_from_ptr(vals);
-            return true;
-        }
-        if (Derived::is_motif_ptr(vals)) [[unlikely]]
-        {
-            T off{};
-            if (!derived().motif_offset(vals, offset_slot, off)) [[unlikely]]
+            const T* const vals = values_load();
+            test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+            if (is_first_value(vals))
             {
-                continue; // the pointer moved: the slot may hold another state's value (F5)
+                // raw-read: read_block_or_constant -- the shared first-constant buffer
+                constant = load_at<false>(vals, 0);
+                section.fold(constant);
+                return true;
+            }
+            if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+            {
+                constant = derived().second_value_from_ptr(vals);
+                return true;
+            }
+            if (Derived::is_motif_ptr(vals)) [[unlikely]]
+            {
+                T off{};
+                if (!derived().motif_offset(vals, offset_slot, off)) [[unlikely]]
+                {
+                    continue; // the pointer moved: the slot may hold another state's value (F5)
+                }
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = Derived::motif_value(vals, first + j, off);
+                    section.fold(out[j]);
+                }
+                return false;
             }
             for (int j = 0; j < count; ++j)
             {
-                out[j] = Derived::motif_value(vals, first + j, off);
+                // raw-read: read_block_or_constant -- under its own ReadSection
+                out[j] = load_at<false>(vals, first + j);
+                section.fold(out[j]);
             }
             return false;
         }
-        for (int j = 0; j < count; ++j)
-        {
-            // raw-read: read_block_or_constant -- under its own ReadSection
-            out[j] = load_at<false>(vals, first + j);
-        }
-        return false;
-    }
+    };
+    bool result = false;
+    do // optimistic reads: read again if a grace period began meanwhile
+    {
+        result = body();
+    } while (section.retry());
+    return result;
 }
 
 template <typename T, typename Derived>
@@ -936,28 +998,39 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
         }
     }
     const read_reclaim::ReadSection section;
-    const T* const                  vals = values_load();
-    test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-    if (is_first_value(vals))
+    const auto                      body = [&]() noexcept
     {
-        // raw-read: read_block_or_constant -- the shared first-constant buffer
-        constant = load_at<false>(vals, 0);
-        return true;
-    }
-    if constexpr (is_zero_any_family_v<Derived>)
-    {
-        if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+        const T* const vals = values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if (is_first_value(vals))
         {
-            constant = derived().second_value_from_ptr(vals);
+            // raw-read: read_block_or_constant -- the shared first-constant buffer
+            constant = load_at<false>(vals, 0);
+            section.fold(constant);
             return true;
         }
-    }
-    for (int j = 0; j < count; ++j)
+        if constexpr (is_zero_any_family_v<Derived>)
+        {
+            if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+            {
+                constant = derived().second_value_from_ptr(vals);
+                return true;
+            }
+        }
+        for (int j = 0; j < count; ++j)
+        {
+            // raw-read: read_block_or_constant -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
+            section.fold(out[j]);
+        }
+        return false;
+    };
+    bool result = false;
+    do // optimistic reads: read again if a grace period began meanwhile
     {
-        // raw-read: read_block_or_constant -- under its own ReadSection
-        out[j] = load_at<false>(vals, first + j);
-    }
-    return false;
+        result = body();
+    } while (section.retry());
+    return result;
 }
 
 template <typename T, typename Derived>
@@ -1197,8 +1270,15 @@ template <bool Relaxed>
     }
     else
     {
-        const read_reclaim::ReadSection section;
-        return element_at_unguarded<false>(offset);
+        const read_reclaim::ReadSection section{read_reclaim::dep_entry};
+        for (;;) // optimistic reads: read again if a grace period began meanwhile
+        {
+            const T value = element_at_unguarded<false>(offset, section.dep());
+            if (!section.retry_after(value)) [[likely]]
+            {
+                return value;
+            }
+        }
     }
 }
 
@@ -1214,7 +1294,14 @@ template <bool Relaxed>
     else
     {
         const read_reclaim::ReadSection section;
-        return element_at_unguarded<false>(offset, offset_slot);
+        for (;;) // optimistic reads: read again if a grace period began meanwhile
+        {
+            const T value = element_at_unguarded<false>(offset, offset_slot);
+            if (!section.retry_after(value)) [[likely]]
+            {
+                return value;
+            }
+        }
     }
 }
 
@@ -1249,7 +1336,8 @@ template <bool Relaxed>
 
 template <typename T, typename Derived>
 template <bool Relaxed>
-[[nodiscard]] T ChunkBase<T, Derived>::element_at_unguarded(int offset) const noexcept
+[[nodiscard]] T ChunkBase<T, Derived>::element_at_unguarded(int                             offset,
+                                                            [[maybe_unused]] std::uintptr_t dep) const noexcept
 {
     // The one branch identifiers cost: a compressed-to-second-constant
     // chunk points into a region that was never written, so the
@@ -1284,7 +1372,7 @@ template <bool Relaxed>
             }, "a chunk of the zero_any family must provide is_second_value_ptr_of() and second_value_from_ptr(), "
                "or its own branch of the reads: its compressed chunks point at registry entries, not at "
                "their values");
-        const T* const vals = Relaxed ? values_load() : values_load_for_read();
+        const T* const vals = Relaxed ? values_load() : values_load_for_read(dep);
         if constexpr (!Relaxed)
         {
             test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
@@ -1311,9 +1399,9 @@ template <bool Relaxed>
             }
         }
         // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
-        return load_at<Relaxed>(vals, offset);
+        return load_element<Relaxed>(vals, offset);
     }
-    const T* const vals = Relaxed ? values_load() : values_load_for_read();
+    const T* const vals = Relaxed ? values_load() : values_load_for_read(dep);
     // TEST KNOB (test_hooks.h): widens the load -> dereference window
     // a concurrent compressor's CAS + free can fall into. Compiled out
     // unless CHUNK_TEST_READ_DELAY_EVERY > 0, and then only on threads
@@ -1323,7 +1411,7 @@ template <bool Relaxed>
         test_hooks::maybe_read_delay();
     }
     // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
-    return load_at<Relaxed>(vals, offset);
+    return load_element<Relaxed>(vals, offset);
 }
 
 template <typename T, typename Derived>
@@ -1376,6 +1464,27 @@ template <bool Relaxed>
     {
         // raw-read: load_at, called by element_at_unguarded only
         return vals[offset];
+    }
+}
+
+template <typename T, typename Derived>
+template <bool Relaxed>
+[[nodiscard]] CHUNK_FORCE_INLINE T ChunkBase<T, Derived>::load_element(const T* vals, int offset) noexcept
+{
+    if constexpr (!Relaxed && !is_packed && chunk_config::optimistic_int_load && sizeof(T) == sizeof(std::uint64_t) &&
+                  std::is_trivially_copyable_v<T>)
+    {
+        // The 8 bytes into an integer: one integer load (ldr x / mov r64), well
+        // defined whatever T is, then bit_cast back.
+        std::uint64_t bits = 0;
+        // raw-read: load_element -- element_at's element, under its ReadSection
+        std::memcpy(&bits, vals + offset, sizeof(bits));
+        return std::bit_cast<T>(bits);
+    }
+    else
+    {
+        // raw-read: load_element -- element_at's element through load_at, under its ReadSection
+        return load_at<Relaxed>(vals, offset);
     }
 }
 

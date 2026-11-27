@@ -24,6 +24,7 @@
 #include <string>      // std::string (check_length's message)
 #include <type_traits> // std::is_signed_v (check_length)
 #include <array>       // std::array (the bulk-read buffer)
+#include <atomic>      // std::atomic_thread_fence (sync_chunk_dirty)
 #include <concepts>    // std::invocable (for_each_span's run overload)
 #include <cstddef>     // std::size_t
 #include <span>        // std::span
@@ -872,21 +873,31 @@ ArrayChunkBase<Derived>::sync_chunk(const ChunkType& chunk_t, int chunk_index, i
         // deferred op was ever queued for this chunk: skip the gate. This
         // keeps the hot read path cheap. The bit is sticky until
         // clear_dirty_bitset(); the authoritative gate is the chunk's own
-        // pending counter, below.
-        if (derived().is_chunk_dirty(chunk_index)) [[unlikely]]
+        // pending counter, in sync_chunk_dirty(). The test is the relaxed
+        // hint: no ordered operation in the caller's loop.
+        if (derived().is_chunk_dirty_hint(chunk_index)) [[unlikely]]
         {
-            // precise per-chunk gate (DeferredReadGate, chunk_base.h).
-            const bool should_wait = chunk_t.read_gate_should_wait(offset);
-            // CHUNK_STATS: dirty_open / dirty_gate is the share the sticky bit costs for nothing.
-            if constexpr (chunk_config::stats)
-            {
-                inc_chunk_dirty_gate<ChunkType>(!should_wait);
-            }
-            if (should_wait) [[unlikely]]
-            {
-                chunk_t.wait_for_availability(offset);
-            }
+            sync_chunk_dirty(chunk_t, offset);
         }
+    }
+}
+
+template <typename Derived>
+void ArrayChunkBase<Derived>::sync_chunk_dirty(const ChunkType& chunk_t, int offset) const noexcept
+{
+    // Pairs with the acq_rel fetch_or of mark_chunk_dirty(), as an acquire load of
+    // the bit would (is_chunk_dirty()).
+    std::atomic_thread_fence(std::memory_order_acquire);
+    // precise per-chunk gate (DeferredReadGate, chunk_base.h).
+    const bool should_wait = chunk_t.read_gate_should_wait(offset);
+    // CHUNK_STATS: dirty_open / dirty_gate is the share the sticky bit costs for nothing.
+    if constexpr (chunk_config::stats)
+    {
+        inc_chunk_dirty_gate<ChunkType>(!should_wait);
+    }
+    if (should_wait) [[unlikely]]
+    {
+        chunk_t.wait_for_availability(offset);
     }
 }
 

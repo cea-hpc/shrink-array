@@ -29,4 +29,5 @@ namespace shrink_array
  */
 template <typename...>
 inline constexpr bool dependent_false_v = false;
+
 } // namespace shrink_array

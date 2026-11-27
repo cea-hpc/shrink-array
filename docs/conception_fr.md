@@ -306,7 +306,7 @@ et un vidage, tous deux rares, les deux côtés paient :
 |---|---|---|---|
 | écrivains ↔ compresseur | écrivain : `announce_write`, revérifie le `steal_mark_` du chunk, écrit, `end_write` | passe : marque, `hard_inflight_`, `membarrier`, attente bornée des écrivains des chunks marqués | un écrivain qui stocke dans un buffer que la passe est en train de rendre |
 | compresseur ↔ vidage | vidage : `announce_flush`, puis attend tant que `stealing_inflight_` est levé ; ne recule jamais | passe : après `stealing_inflight_`, un second regard sur les vidages ; recule si elle en voit un | un rejeu dans un chunk que la passe ramène à sa constante |
-| lecteurs ↔ récupération | lecteur : `ReadSection` (numéro de séquence impair pendant une lecture) | passe dans une région : `PassScope`, `heavy_barrier()`, attente des lecteurs impairs | un lecteur qui charge dans un buffer déjà réemployé |
+| lecteurs ↔ récupération | lecteur : `ReadSection` -- optimiste sur x86-64 et AArch64 (revérifie l'époque de récupération après ses chargements, relit si elle a bougé), sinon un numéro de séquence impair pendant une lecture | passe dans une région : `PassScope`, incrémente l'époque, une barrière `seq_cst` (`heavy_barrier()` quand les lectures s'annoncent), attente des lecteurs impairs (annoncés) | un lecteur qui charge dans un buffer déjà réemployé |
 
 Sans `membarrier` (noyau trop ancien, seccomp, TSan), les deux côtés se replient sur des barrières
 `seq_cst`. Toute attente est bornée et chaque côté a une issue -- un écrivain diffère, une passe
@@ -322,7 +322,8 @@ manifeste une fois sur des milliers d'exécutions. La conception s'appuie donc s
 de preuve :
 
 1. des **modèles réduits** de chaque protocole (`formal/`), explorés exhaustivement par GenMC
-   sous RC11 et IMM, et calibrés par des mutations qu'ils doivent refuser
+   sous RC11 et IMM -- sous ARMv8 et TSO pour les lectures optimistes, dont l'argument est celui du
+   matériel -- et calibrés par des mutations qu'ils doivent refuser
    ([formal_models_fr.md](formal_models_fr.md)) ;
 2. des **builds de vérification** qui affirment les invariants du protocole à l'exécution
    (`any_check`) ;
@@ -452,6 +453,7 @@ les étapes et le contrat de phase.
 | `membarrier` du côté rare | des barrières `seq_cst` des deux côtés | l'écrivain paierait une barrière complète à chaque écriture ; gardé comme repli |
 | écritures différées quand une passe tient le chunk | faire attendre l'écrivain jusqu'à la fin de la passe | attente bornée et report gardent toute attente courte et permettent à une passe d'abandonner |
 | période de grâce par passe pour les lecteurs | reporter tout réemploi de buffer à la fin de la région | une boucle qui comprime dans une région ferait tout réallouer |
+| lectures optimistes, revérifiées contre une époque (x86-64, AArch64) | l'annonce à chaque lecture (un store et une barrière) | l'annonce faisait la moitié du temps d'une lecture séquentielle sur Grace ; la revérification coûte un chargement dépendant, et une lecture qui perd la course se contente de relire |
 | compression par lots, via les listes de candidats | comprimer en ligne à chaque écriture | en ligne, il faut des compteurs par chunk, que des écritures threadées ne peuvent pas garder exacts |
 | taille de chunk par tableau, reconstruite par `rechunk_to()` | une taille de chunk globale | les tableaux d'un même programme veulent des tailles différentes, et une taille doit pouvoir changer |
 | pools de réemploi clés par géométrie | une liste libre par rang | mélanger les géométries donnait à un chunk un buffer d'une autre taille |

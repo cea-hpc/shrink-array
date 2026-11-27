@@ -39,10 +39,9 @@
  * @see chunk_size_policy.h for the geometry policies this switches between
  */
 
-#include "chunk/config.h"                   // build_config::chunk_dynamic
-#include "chunk/internal/chunk_traits.h"    // ArrayChunkTraits
-#include "chunk/internal/in_t.h"            // InT<T>: the captured state
-#include "chunk/internal/array_chunk_for.h" // ArrayKey, ArrayChunkCore -- rechunk_all_to's registry keys
+#include "chunk/config.h"                // build_config::chunk_dynamic
+#include "chunk/internal/chunk_traits.h" // ArrayChunkTraits
+#include "chunk/internal/in_t.h"         // InT<T>: the captured state
 
 namespace shrink_array
 {

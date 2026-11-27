@@ -37,11 +37,9 @@
  *     invariant failure. Each in a child, which re-runs this executable.
  */
 
-#include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
-#include <cstdlib>     // std::system, std::atoi
+#include <cstdlib>     // std::atoi
 #include <limits>      // std::numeric_limits
 #include <string>      // std::string
-#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 #include <vector>      // the reference
@@ -54,7 +52,7 @@
 #include "chunk/config.h"                // chunk_config::use_zero*, build_config::any_check
 #include "chunk/print.h"                 // shrink_array::println
 
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run_self; run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, variant_name
 
 namespace validation::compound_ops_validation
@@ -248,25 +246,13 @@ int run_child(int which)
 
 int check_stops(const char* self, int which)
 {
-    const char*       what = which == 0 ? "int /= 0 stops (check build)" : "int %= 0 stops (check build)";
-    const std::string log  = validation::temp_path("compound_ops_" + std::to_string(which) + ".log");
-    const std::string cmd =
-        validation::self_command(self) + " --child " + std::to_string(which) + " > \"" + log + "\" 2>&1";
-    const int   status = std::system(cmd.c_str());
-    std::string out;
-    if (FILE* file = std::fopen(log.c_str(), "r"))
-    {
-        char buf[4096];
-        for (std::size_t m = 0; (m = std::fread(buf, 1, sizeof buf, file)) > 0;)
-        {
-            out.append(buf, m);
-        }
-        std::fclose(file);
-    }
-    std::remove(log.c_str());
-    const bool ran_ok  = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    const bool message = out.find("by zero") != std::string::npos;
-    const bool pass    = !ran_ok && message;
+    const char* what = which == 0 ? "int /= 0 stops (check build)" : "int %= 0 stops (check build)";
+    // The child: this harness again, no shell (validation_process.h).
+    const validation::ProcessResult child   = validation::run_self(self, {"--child", std::to_string(which)});
+    const std::string&              out     = child.output;
+    const bool                      ran_ok  = child.ok();
+    const bool                      message = out.find("by zero") != std::string::npos;
+    const bool                      pass    = !ran_ok && message;
     if (!pass)
     {
         println("---- child output ----\n{}----------------------", out.c_str());

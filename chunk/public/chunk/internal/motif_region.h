@@ -24,19 +24,17 @@
 
 #include <sys/mman.h> // mmap, MAP_NORESERVE
 
-#include <array>       // std::array (the probation table, the segments)
-#include <atomic>      // std::atomic (the range bounds, the index, the probation counters)
-#include <cstddef>     // std::byte, std::size_t
-#include <cstdint>     // std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t, std::uintptr_t
-#include <cstring>     // std::memcmp, std::memcpy
-#include <memory>      // std::unique_ptr (the index generations)
-#include <mutex>       // std::mutex, std::scoped_lock (the registrations, the reclaim)
-#include <type_traits> // std::make_unsigned_t (the hash)
-#include <vector>      // std::vector (free identifiers, live flags, entries, size classes, generations)
+#include <array>   // std::array (the probation table, the segments)
+#include <atomic>  // std::atomic (the range bounds, the index, the probation counters)
+#include <cstddef> // std::byte, std::size_t
+#include <cstdint> // std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t, std::uintptr_t
+#include <cstring> // std::memcmp, std::memcpy
+#include <memory>  // std::unique_ptr (the index generations)
+#include <mutex>   // std::mutex, std::scoped_lock (the registrations, the reclaim)
+#include <vector>  // std::vector (free identifiers, live flags, entries, size classes, generations)
 
 #include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/internal/immortal.h"             // Immortal: statics safe for global arrays
-#include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
 
 namespace shrink_array::pattern
 {

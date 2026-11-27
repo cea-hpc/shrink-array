@@ -30,14 +30,16 @@
 #include <cstring>      // std::strcmp
 #include <filesystem>   // std::filesystem::temp_directory_path, remove_all (temp_path)
 #include <iterator>     // std::size
-#include <string>       // std::string (self_command, temp_path)
+#include <string>       // std::string, std::to_string (run_self, temp_path)
 #include <system_error> // std::error_code (temp_path's cleanup)
+#include <utility>      // std::move (run_self)
+#include <vector>       // std::vector (run_self's argv)
 
 #ifdef __linux__
     #include <sys/prctl.h> // prctl(PR_SET_DUMPABLE)
 #endif
 
-#include "validation_harness.h" // validation::self_command (defined here)
+#include "validation_harness.h" // validation::run_self, temp_path (defined here)
 
 
 #define VALIDATION_HARNESS(name)    \
@@ -68,17 +70,25 @@ const char* g_running = nullptr; // the harness name given on the command line, 
 
 } // namespace
 
-std::string validation::self_command(const char* argv0)
+validation::ProcessResult
+validation::run_self(const char* argv0, const std::vector<std::string>& args, ProcessOptions opt)
 {
+    std::vector<std::string> argv{argv0};
+    if (g_running != nullptr)
+    {
+        argv.emplace_back(g_running);
+    }
+    argv.insert(argv.end(), args.begin(), args.end());
     // CHUNK_VALIDATION_CHILD=1: the child is one this harness runs to watch it
     // fail -- most of them abort on purpose -- and main() makes it
     // non-dumpable (see there).
-    std::string cmd = std::string("CHUNK_VALIDATION_CHILD=1 \"") + argv0 + "\"";
-    if (g_running != nullptr)
+    opt.env.emplace_back("CHUNK_VALIDATION_CHILD=1");
+    if (opt.output.empty())
     {
-        cmd += std::string(" ") + g_running;
+        static int n_children = 0; // the harnesses run their children one at a time, from the main thread
+        opt.output            = temp_path("child." + std::to_string(++n_children) + ".log");
     }
-    return cmd;
+    return run_process(std::move(argv), opt);
 }
 
 namespace
@@ -110,7 +120,7 @@ std::string validation::temp_path(const std::string& name)
 int main(int argc, char** argv)
 {
 #ifdef __linux__
-    // A child run through self_command() aborts on purpose. Dumpable, every
+    // A child run through run_self() aborts on purpose. Dumpable, every
     // such abort is a core dump: under WSL each one is captured and written to
     // Windows' %TEMP%\wsl-crashes, some 300 MB apiece for an executable whose
     // arenas reserve that much address space. stale_proxy_validation's 1- and

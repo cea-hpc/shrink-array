@@ -73,7 +73,7 @@
 using namespace shrink_array;
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
-#include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h"        // run() is called by validation_driver.cpp
 #include "validation_variant.h"        // Array, variant_name
 
 namespace validation::rechunk_validation

@@ -58,7 +58,7 @@
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/print.h"                 // shrink_array::println
 
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, variant_name, begin_phase / end_phase, maybe_set_second_value
 
 namespace validation::swap_move_validation

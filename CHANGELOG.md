@@ -66,6 +66,27 @@ the tag's checksum to the recipe.
   `shrink_array::device` (`chunk::chunk_device`): the include path and C++20, header-only. These
   headers join `scripts/public_api.txt`, the other ones of chunk/device/ stay the
   implementation; `device_api_validation` checks the names and the shared API.
+- Optimistic pure reads (`CHUNK_OPTIMISTIC_READS`, `ON` by default): on x86-64 and AArch64, with
+  the fast allocator and outside ThreadSanitizer, a pure read inside a parallel region no longer
+  announces itself to the compression passes (a store and a fence per read). It re-checks a
+  reclaim epoch after its loads, ordered there by an address dependency on the value, and reads
+  again if a pass began meanwhile. The passes release their buffers as before: no memory held
+  longer. Grace, against the announce, 1 and 72 threads: element reads 27 to 53 % faster,
+  read-bulk, read-modify-write and writes unchanged, random reads 1 to 7 % slower; shrink_bench:
+  the same peak memory within 1 %. `OFF`, and on other architectures, the announce as before.
+  The ordering is the hardware's, not C++'s: `formal/optimistic_read.c` checks it with GenMC under
+  ARMv8 and TSO, and shows it fails under RC11 and IMM, as it must. With them, the passes'
+  grace period takes no `membarrier()` (only the compressor's rare scans still announce, with a
+  `seq_cst` fence): at 72 threads on Grace a pass released its buffers after 1 to 6 µs instead of
+  25 to 630, and the writers completed up to twice as many passes in the same time. `read_reclaim_validation` gains
+  a `bulk` mode (whole blocks through `for_each_value`); the nightly CI runs it with the read-delay
+  hook on AArch64 and x86, and the check build with the option `OFF`.
+
+- `pyproject.toml`: the Python tools' dependencies, declared as extras of a distribution that
+  installs no module -- `pip install ".[gui]"` (PySide6, and tomli before Python 3.11),
+  `".[plot]"` (matplotlib), `".[test]"` (pytest, PySide6); the tools still run from the tree.
+  `python/constraints-ci.txt` pins the versions the CI's Python job installs (pytest 9.1.1,
+  PySide6 6.9.3), which `ci.yml` named itself before.
 - `scripts/compile_all.sh --pgo=generate|use` (and `compile_all_gnu.sh`), CMake option `CHUNK_PGO`
   (`OFF`, `GENERATE`, `USE`) and `CHUNK_PGO_DIR`: profile-guided optimisation of the C++ code, in two
   passes on the same build directories (the optimised ones, as `--lto`). GCC, Clang and IntelLLVM
@@ -146,6 +167,16 @@ the tag's checksum to the recipe.
   and a device array of the same variant, the layouts compared chunk by chunk after each
   compression (stage 1's "same final memory" criterion). One known difference: a partial last
   chunk uniform over its valid elements folds on the device, not on the host (zero_any).
+
+### Changed
+
+- The read path keeps no ordered operation in a caller's loop: the dirty bit of `sync_chunk()` is
+  read relaxed and its acquire fence taken out of line when it is set, and the value-hiding asm
+  of the dependency-ordered load is no longer volatile. clang kept an OpenMP reduction variable in
+  memory across each of them (`sum += a[i]` at 2.2 ns per element against gcc's 0.9 on x86).
+- `ProxyBase::load_value()` -- the re-read of a read-modify-write, of a compound operation, of the
+  marking after a store -- no longer opens a read section: its callers hold the write session, so
+  no pass can release the buffer under it.
 
 ### Fixed
 

@@ -17,7 +17,6 @@
 #pragma once
 #include <vector>      // std::vector
 #include <unistd.h>    // sysconf(_SC_PAGESIZE)
-#include <algorithm>   // std::min, the constant scans
 #include <map>         // std::map
 #include <cstdint>     // uint32_t, int32_t, std::uint64_t
 #include <type_traits> // std::conditional_t, std::is_arithmetic_v
@@ -665,10 +664,12 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @return Pointer to the chunk data
     [[nodiscard]] T* values_load() const noexcept;
 
-    /// @brief values_load() for a pure read (element_at): the same acquire, or, under
-    ///        chunk_config::read_dep_order (experimental, AArch64), a relaxed load whose
-    ///        users must reach memory only THROUGH the returned pointer.
-    [[nodiscard]] const T* values_load_for_read() const noexcept;
+    /// @brief values_load() for a pure read (element_at): the same acquire, or a relaxed
+    ///        load whose users must reach memory only THROUGH the returned pointer --
+    ///        under chunk_config::optimistic_dep_entry at an address offset by @p dep
+    ///        (ReadSection::dep(): 0, ordered after the epoch's load), under
+    ///        chunk_config::read_dep_order (experimental, AArch64) plain.
+    [[nodiscard]] const T* values_load_for_read(std::uintptr_t dep = 0) const noexcept;
 
     /// @brief Store a pointer to the values with appropriate memory ordering
     /// @param new_values Pointer to store
@@ -777,6 +778,12 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @param offset Index in the chunk
     /// @return Value at index i
     [[nodiscard]] T read_value(int offset) const noexcept;
+    /// @brief read_value() for a caller inside its WRITE SESSION: no ReadSection.
+    /// @details The write/compress handshake keeps every pass off a chunk while a
+    ///          writer is in it, so the buffer cannot be released under this read:
+    ///          the caller reads the buffer it writes (a read-modify-write body,
+    ///          the marking after a store). ProxyBase::load_value().
+    [[nodiscard]] T read_value_in_session(int offset) const noexcept;
 
     // reader_sync(i) -- the read-side visibility gate of the pure-read proxy
     // entry points -- is inherited from DeferredReadGate<Derived> above
@@ -809,7 +816,9 @@ class ChunkBase : public CRTPSupport<Derived>,
      * @param count number of elements, first + count <= chunk size
      * @param out   destination, @p count elements
      */
-    void read_block(int first, int count, T* out) const noexcept;
+    // Forced: with the optimistic re-read loop gcc 16 kept it out of line, a call per
+    // bulk block -- read-bulk +9 % (zero_or_value) and +32 % (zero), x86.
+    CHUNK_FORCE_INLINE void read_block(int first, int count, T* out) const noexcept;
 
     /// @brief read_block() for a member with the motif state, given the chunk's
     ///        second-value slot @p offset_slot (a motif chunk reads motif + offset).
@@ -1179,7 +1188,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief element_at() without the read section: the load of `values` and
     ///        the element, nothing else.
     template <bool Relaxed>
-    [[nodiscard]] T element_at_unguarded(int offset) const noexcept;
+    [[nodiscard]] T element_at_unguarded(int offset, std::uintptr_t dep = 0) const noexcept;
 
     /// @brief Return @p ptr to the allocator instance that carved it, found
     ///        through its slab (TCAllocator::owner / owner_rank), never
@@ -1197,6 +1206,12 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     template <bool Relaxed>
     [[nodiscard]] static T load_at(const T* vals, int offset) noexcept;
+    /// @brief load_at() for element_at_unguarded: under chunk_config::optimistic_int_load
+    ///        a pure read's 8-byte element is loaded as an integer (memcpy into a
+    ///        std::uint64_t), then bit_cast, so that the re-check's dependency comes
+    ///        from an integer register. The block reads keep load_at() (vectorised).
+    template <bool Relaxed>
+    [[nodiscard]] static T load_element(const T* vals, int offset) noexcept;
 };
 
 } // namespace shrink_array

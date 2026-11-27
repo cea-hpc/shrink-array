@@ -34,7 +34,9 @@ Un **run** est un dossier sur le calculateur, `<dossier des runs>/<id>/` :
 
 ## 2. Prérequis et lancement
 
-- Sur le portable : Python 3.9 ou plus récent et **PySide6** 6.2 ou plus récent (`pip install PySide6`).
+- Sur le portable : Python 3.9 ou plus récent et **PySide6** 6.2 ou plus récent : `pip install ".[gui]"`
+  depuis la racine du dépôt (`pyproject.toml` déclare les dépendances des outils ; il n'installe aucun
+  module, l'interface se lance toujours depuis `python/`).
 - Sur le calculateur : Python 3.6 ou plus récent, le dépôt shrink-array cloné, et la commande de
   soumission du site pour le mode batch (`ccc_msub` sur inti ; voir §6).
 - Une connexion maître ssh ouverte, une fois par session :
@@ -372,10 +374,12 @@ se change en haut à droite (français ou anglais).
 ## 7. Tests
 
 ```sh
+pip install ".[test]"   # pytest et PySide6, depuis la racine du dépôt
 cd python && python3 -m pytest shrink_gui/tests -q
 ```
 
-Les tests tournent sans écran (`QT_QPA_PLATFORM=offscreen`) contre un faux calculateur local :
+La CI les lance aux versions que fixe `python/constraints-ci.txt`
+(`pip install -c python/constraints-ci.txt ".[test]"`). Les tests tournent sans écran (`QT_QPA_PLATFORM=offscreen`) contre un faux calculateur local :
 de faux `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun`, `ccc_mqinfo` et `ccc_mpinfo` (`tests/fakes`), avec
 le fichier de site d'inti quel que soit le contenu de `~/.config` ; `test_site.py` fait aussi
 tourner un site Slurm standard (faux `sbatch` et `scancel`).

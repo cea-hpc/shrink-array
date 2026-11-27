@@ -16,11 +16,10 @@
 
 #pragma once
 
-#include <algorithm>        // std::min (operator==)
 #include <cstddef>          // std::size_t
 #include <cstdint>          // std::uint8_t, std::uint32_t (reclaim_second_values' mark)
 #include <iostream>         // for cout, ostream
-#include <utility>          // for move
+#include <utility>          // std::swap (swap)
 #include <vector>           // for vector, swap
 #include <unordered_set>    // for the second-value GC live set
 #include <initializer_list> // the {a, b, c} constructor

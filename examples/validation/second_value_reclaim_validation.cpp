@@ -55,11 +55,8 @@
  *          Usage: second_value_reclaim_validation [chunks]
  */
 
-#include <cstdio>     // std::snprintf, std::remove, std::getline
-#include <cstdlib>    // std::system
-#include <fstream>    // the --rounds child's log
-#include <string>     // std::string, std::to_string, std::getline
-#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
+#include <cstdio> // std::snprintf
+#include <string> // std::string, std::to_string, std::getline
 
 #include "chunk/internal/chunk_traits.h"      // forward decls (zero_any::Chunk) + default IntType = int
 #include "chunk/zero_any_array.h"             // zero_any::Array, zero_any::Chunk complete (its registry types)
@@ -71,7 +68,7 @@
 #include "chunk/print.h"                      // shrink_array::println
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size (G)
 
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run_self; run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, begin_phase
 
 namespace validation::second_value_reclaim_validation
@@ -210,23 +207,13 @@ static int run_rounds_child(long nch, long rounds)
 ///        values): it must reach the end.
 static void check_rounds_under_limit(const char* self, long nch)
 {
-    const long        limit  = 3 * nch;
-    const std::string log    = validation::temp_path("second_value_reclaim.log");
-    const std::string cmd    = "CHUNK_SECOND_VALUE_ID_LIMIT=" + std::to_string(limit) + " " +
-                               validation::self_command(self) + " --rounds " + std::to_string(nch) + " 12 > \"" + log +
-                               "\" 2>&1";
-    const int         status = std::system(cmd.c_str());
-    const bool        ok     = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    bool              said   = false;
-    {
-        std::ifstream in(log);
-        std::string   line;
-        while (std::getline(in, line))
-        {
-            said = said || line.find("RAN TO THE END") != std::string::npos;
-        }
-    }
-    std::remove(log.c_str());
+    const long limit = 3 * nch;
+    // The child: this harness again, no shell (validation_process.h).
+    validation::ProcessOptions opt;
+    opt.env                               = {"CHUNK_SECOND_VALUE_ID_LIMIT=" + std::to_string(limit)};
+    const validation::ProcessResult child = validation::run_self(self, {"--rounds", std::to_string(nch), "12"}, opt);
+    const bool                      ok    = child.ok();
+    const bool                      said  = child.output.find("RAN TO THE END") != std::string::npos;
     println("F  limit {} identifiers, {} distinct values        {}{}", limit, 12 * nch,
             (ok && said) ? "ran to the end" : "STOPPED", (ok && said) ? "" : "  <-- WRONG");
     if (!ok || !said)

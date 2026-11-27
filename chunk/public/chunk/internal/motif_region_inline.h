@@ -23,7 +23,8 @@
 #include <type_traits> // std::make_unsigned_t
 #include <vector>      // std::vector
 
-#include "chunk/internal/motif_region.h" // the class these bodies belong to
+#include "chunk/internal/motif_region.h"    // the class these bodies belong to
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (reserve)
 
 namespace shrink_array
 {

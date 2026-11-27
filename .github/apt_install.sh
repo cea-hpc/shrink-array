@@ -6,11 +6,17 @@
 # runner. Through archive.ubuntu.com rather than the runner's mirror list,
 # whose Azure mirror stopped resolving for hours on 2026-11-11 ("Temporary
 # failure resolving 'azure.archive.ubuntu.com'"); three attempts, 20 s apart.
+# The image's packages.microsoft.com lists are set aside: nothing installed
+# here comes from them, and that repository's 403 failed every apt-get update
+# on 2026-11-27.
 set -u
 sources=/etc/apt/sources.list.d/ubuntu.sources
 if [ -f "$sources" ] && grep -q 'mirror+file:' "$sources"; then
     sudo sed -i 's#mirror+file:/etc/apt/apt-mirrors.txt#http://archive.ubuntu.com/ubuntu/#' "$sources"
 fi
+for list in $(grep -l 'packages\.microsoft\.com' /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null); do
+    sudo mv "$list" "$list.disabled"
+done
 for attempt in 1 2 3; do
     if sudo apt-get update -q && sudo apt-get install -y -q "$@"; then
         exit 0

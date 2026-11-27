@@ -1,0 +1,9 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# The versions the CI's Python job runs with (.github/workflows/ci.yml:
+# pip install -c python/constraints-ci.txt ".[test]"): the extras of
+# pyproject.toml say what is needed, this file which release was tested. Raise
+# a pin here, not in the workflow.
+pytest==9.1.1
+PySide6==6.9.3
