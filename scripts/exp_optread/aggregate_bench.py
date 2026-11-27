@@ -1,7 +1,8 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """shrink_bench.sh's table: per (compiler, variant, threads), the medians over the
-rounds of each mode, and each mode's change against mode 0 of the same run-time
+rounds of each mode, and each mode's change against mode 0 (with the same build
+suffix when it ran: m7t against m0t) of the same run-time
 setting (ENVS). A setting other than "default" shows as m<mode>@<setting>, with its
 change against "default" of the same mode in the env columns.
 
@@ -41,6 +42,13 @@ envs = sorted({k[4] for k in list(data) + list(failed)}, key=lambda e: (e != "de
 with_env = envs != ["default"]
 
 
+def base_of(m):
+    """The mode 0 a mode compares against: the one with the same build suffix
+    (m7t -> m0t) when it was run, else m0."""
+    same = "m0" + m[1:].lstrip("0123456789")
+    return same if same in modes else "m0"
+
+
 def pct(b, x):
     return "-" if not b or x is None else "%+.1f" % (100.0 * (x - b) / b)
 
@@ -70,7 +78,8 @@ for comp in sorted({k[0] for k in data}):
                 n_ok = len(data.get(key, {}).get("wall_s", []))
                 line += " %4s" % ("%d%s" % (n_ok, "!" if failed.get(key) else ""))
                 for c, _, _ in cols[:3]:
-                    line += " %8s" % ("" if m == "m0" else pct(med((comp, v, t, "m0", e), c), med(key, c)))
+                    b = base_of(m)
+                    line += " %8s" % ("" if m == b else pct(med((comp, v, t, b, e), c), med(key, c)))
                 if with_env and e != "default":
                     for c in ("compute_s", "wall_s"):
                         line += " %9s" % pct(med((comp, v, t, m, "default"), c), med(key, c))
