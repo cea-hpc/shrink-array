@@ -39,12 +39,10 @@
 // is compiled out and the harness only says so.
 // ============================================================================
 
-#include <cstdio>     // std::fopen, std::fclose, std::fread, FILE, std::remove
-#include <cstdlib>    // std::system, std::atoi
-#include <iterator>   // std::size
-#include <string>     // std::string, std::to_string
-#include <utility>    // std::move
-#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
+#include <cstdlib>  // std::atoi
+#include <iterator> // std::size
+#include <string>   // std::string, std::to_string
+#include <utility>  // std::move
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/runtime.h"               // Runtime::init
@@ -52,7 +50,7 @@
 #include "chunk/config.h"                // build_config::chunk_dynamic, any_check
 #include "chunk/print.h"                 // shrink_array::println
 
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run_self; run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, variant_name
 
 namespace validation::stale_proxy_validation
@@ -203,24 +201,12 @@ static int run_child(int case_idx)
 /// Re-runs this executable on case @p case_idx and checks the outcome.
 static int check_case(const char* self, int case_idx)
 {
-    const Case&       test_case = case_table[case_idx];
-    const std::string log       = validation::temp_path("stale_proxy_" + std::to_string(case_idx) + ".log");
-    const std::string cmd =
-        validation::self_command(self) + " --case " + std::to_string(case_idx) + " > \"" + log + "\" 2>&1";
-    const int   status = std::system(cmd.c_str());
-    std::string out;
-    if (FILE* file = std::fopen(log.c_str(), "r"))
-    {
-        char buf[4096];
-        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, file)) > 0;)
-        {
-            out.append(buf, n);
-        }
-        std::fclose(file);
-    }
-    std::remove(log.c_str());
+    const Case& test_case = case_table[case_idx];
+    // The child: this harness again, no shell (validation_process.h).
+    const validation::ProcessResult child = validation::run_self(self, {"--case", std::to_string(case_idx)});
+    const std::string&              out   = child.output;
 
-    const bool ran_ok  = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    const bool ran_ok  = child.ok();
     const bool message = out.find("used after the array rebuilt its storage") != std::string::npos;
     const bool pass    = test_case.must_stop ? (!ran_ok && message) : (ran_ok && !message);
     println("[{}] {:<40} {}{}", variant_name(), test_case.name,

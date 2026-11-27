@@ -414,6 +414,36 @@ flight (a few nanoseconds, barring preemption). Passes run between two regions d
 need it: no user read is running then. Beyond `CHUNK_READ_RECLAIM_SLOTS`
 (1,024) reader threads, the following ones share a `seq_cst` counter, slower but correct.
 
+**Optimistic reads** (`chunk_config::optimistic_reads`: `CHUNK_OPTIMISTIC_READS`, on by default,
+in effect on x86-64 and AArch64 with the fast allocator, outside ThreadSanitizer). A pure read
+then announces nothing -- no store, no fence -- and checks afterwards instead:
+
+- **reader** (`ReadSection`): loads the reclaim epoch (acquire), loads `values` and the element,
+  then loads the epoch again; if it moved, it reads again, taking the new epoch with acquire so
+  that it loads the swapped pointer. The second load of the epoch must come after the element's:
+  its address is made to depend on the value (`&epoch + (v ^ v)`, the xor hidden from the
+  compiler; every word of a value wider than a register), or, for a block, on the OR of its values
+  (AArch64) or it follows an acquire fence (x86, where the fence is free). Under clang,
+  `element_at` also loads the epoch relaxed and `values` at an address that depends on it
+  (`ReadSection(DepEntry)`): clang keeps an OpenMP reduction variable in memory across an acquire
+  load;
+- **reclaimer**: `wait_for_readers()` bumps the epoch (`seq_cst`) after the pass's swaps and
+  before its releases. The compressor's own scans (`ScanSection`) keep the announce above, which
+  is what the grace period still waits for -- but they are rare, so the handshake takes its
+  symmetric form (section 3): the scan a `seq_cst` fence after its odd store, the grace period a
+  `seq_cst` fence instead of `heavy_barrier()`. No `membarrier` per pass any more: at 72 threads on
+  Grace it cost 25 to 630 µs a pass (writers issuing them at once), during which every buffer the
+  pass released was held; without it, 1 to 6 µs.
+
+The ordering argument is the hardware's, not C++'s, as for `rcu_dereference()`: an address
+dependency orders a load after another on AArch64 and x86, while C++ promises nothing for it
+(`formal/optimistic_read.c`: correct under ARMv8 and TSO, refused under RC11 and IMM -- section 6.2
+of [formal_models.md](formal_models.md)). Hence the two architectures only. A read that loses the
+race reads a released buffer, maybe reused: it must not fault, and the value pools of the fast
+allocator are never unmapped (the chunk layer sets `n_max_block_empty` to -1; `MADV_DONTNEED`
+keeps the mapping). Hence the fast allocator only. In C++ terms the losing read is a data race:
+hence no ThreadSanitizer.
+
 ### 5.6 Materialisation
 
 Materialising a chunk (`create_value`) needs no handshake: the buffer is

@@ -24,7 +24,6 @@
 #include <type_traits> // std::conditional_t (DeferredByteAllocSlot)
 #include <utility>     // std::move
 #include <vector>      // std::vector
-#include <sys/mman.h>  // msync / MS_ASYNC (the block probe)
 
 #include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
@@ -33,7 +32,6 @@
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
 #include "chunk/internal/ring_log_debug.h"  // ring_log_op, dump_ring_for_addr, EventCode::op_alloc / EventCode::op_free
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::backend (the pools of exited threads)
-#include "chunk/log.h"                            // CHUNK_LOG (recycle)
 
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h"   // fast_alloc::ArenaKind

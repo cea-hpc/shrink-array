@@ -983,13 +983,13 @@ def main():
         print(f"{h}: {len(lst)} bodies -> {comp}")
         if a.verbose:
             for name, n_items, _ in lst:
-                print(f"    {nb:4d}  {name}")
+                print(f"    {n_items:4d}  {name}")
         if not a.dry_run and comp not in new_files and \
                 subprocess_untracked(root, comp):
             new_files.append(comp)
     print(f"{'would move' if a.dry_run else 'moved'}: {len(moved)}; left in class: {len(kept)}")
     for h, name, n_items, why in kept:
-        print(f"  kept  {h}: {name} ({nb} lines): {why}")
+        print(f"  kept  {h}: {name} ({n_items} lines): {why}")
     if a.dry_run:
         return
     for note in install_check(root):

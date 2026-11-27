@@ -42,7 +42,6 @@
 #include <concepts>    // std::invocable (for_each_span's run overload)
 #include <cstddef>     // std::size_t (size_type)
 #include <expected>    // std::expected (try_set_chunk_size)
-#include <span>        // std::span (for_each_span)
 #include <utility>     // std::swap, std::as_const
 #include <iterator>    // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
 #include <memory>      // std::addressof
@@ -54,7 +53,6 @@
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/chunk_size_policy.h"   // ChunkSizeError (try_set_chunk_size)
-#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
 #include "chunk/internal/element_ref.h"         // ElementRef: what operator[] returns
 #include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
@@ -1084,6 +1082,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @note Compiles to nothing in a serial build (`if constexpr (threaded)`).
      */
     void sync_chunk(this const Derived& self, const ChunkType& chunk_t, int chunk_index, int offset) noexcept;
+    /// @brief sync_chunk()'s dirty branch, out of line: its acquire fence and gate
+    ///        would otherwise sit in the caller's loop, where clang then keeps every
+    ///        escaped local (an OpenMP reduction variable) in memory.
+    [[gnu::noinline, gnu::cold]] void sync_chunk_dirty(const ChunkType& chunk_t, int offset) const noexcept;
 
     /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).
     static void rechunk_thunk(Core& core, unsigned int new_size)

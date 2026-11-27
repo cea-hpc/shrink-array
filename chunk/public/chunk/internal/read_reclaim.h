@@ -52,6 +52,34 @@
  *    Passes run between regions (the OMPT / finalize_parallel_phase drain) are
  *    not scoped: no user read runs then.
  *
+ * @par Optimistic reads (chunk_config::optimistic_reads)
+ * Where the argument below holds, a pure read does not announce itself: no store,
+ * no fence per read. It loads the reclaim epoch (acquire), loads `values` and the
+ * element, then loads the epoch again; if a grace period began in between, it reads
+ * again, taking the new epoch with acquire, so that it loads the swapped pointer.
+ * wait_for_readers() bumps the epoch (seq_cst) after the pass's swaps and before its
+ * releases; the releases stay immediate, as with the announce: no memory held longer.
+ *  - The re-check must come after the element load. It is ordered there by an address
+ *    dependency on the value (ReadSection::retry_after(): the epoch's address is
+ *    `&epoch + (v ^ v)`, the xor hidden from the compiler), or, for a block, on the OR
+ *    of its values (fold(), AArch64) or by an acquire fence (elsewhere: free on x86).
+ *    That is the hardware's ordering (AArch64, x86), not C++'s, as for
+ *    rcu_dereference(): formal/optimistic_read.c passes GenMC under ARMv8 and TSO and
+ *    fails under RC11 / IMM, as expected. Hence x86-64 and AArch64 only.
+ *  - A read that loses the race reads a buffer a pass released, maybe already reused:
+ *    it must not fault. Value buffers come from the fast allocator's pools, whose slabs
+ *    the chunk layer never unmaps (MADV_DONTNEED keeps the mapping): a stale read
+ *    returns garbage that the re-check discards. Hence the fast allocator only. No read
+ *    uses a value it loaded from a buffer as an address before its re-check.
+ *  - The compressor's own scans (ScanSection) keep the announce: an array torn down
+ *    inside a region waits for them (ArrayChunkCore::await_chunk_readers()). They are
+ *    rare, so they take a seq_cst fence (announce_fence()) and the grace period a
+ *    seq_cst fence too, without membarrier: the symmetric Dekker
+ *    (formal/reader_reclaim.c, SHAPE_SYMMETRIC).
+ *  - In C++ terms the stale read is a data race: off under ThreadSanitizer.
+ * Elsewhere (CHUNK_OPTIMISTIC_READS=OFF, CHUNK_STD_ALLOC, other architectures, TSan)
+ * every pure read announces itself as above.
+ *
  * @note OpenMP builds only; a serial build compiles all of this out.
  * @warning The ordering argument is the one of the write/compress handshake
  *          (write_compress_sync_policy.h). Re-run read_reclaim_validation (with
@@ -59,16 +87,20 @@
  *          whenever any of it is touched.
  */
 
-#include <array>     // std::array (g_slots)
-#include <algorithm> // std::min
-#include <atomic>    // std::atomic, std::atomic_thread_fence, std::memory_order
-#include <cstdint>   // std::uint64_t
-#include <thread>    // std::this_thread::yield
-#include <vector>    // std::vector
+#include <array>       // std::array (g_slots)
+#include <algorithm>   // std::min
+#include <atomic>      // std::atomic, std::atomic_thread_fence, std::memory_order
+#include <cstddef>     // std::size_t (retry_after, fold)
+#include <cstdint>     // std::uint64_t, std::uintptr_t
+#include <cstring>     // std::memcpy (retry_after, fold)
+#include <type_traits> // std::conditional_t, std::is_trivially_copyable_v
+#include <thread>      // std::this_thread::yield
+#include <vector>      // std::vector
 
 #include "chunk/config.h"                              // build_config::threaded
 #include "chunk/internal/chunk_size_policy.h"          // t_active_chunk_size / t_alloc_key, restored per released block
 #include "chunk/internal/cpu_pause.h"                  // CHUNK_CPU_PAUSE
+#include "chunk/internal/def_force_inline.h"           // CHUNK_FORCE_INLINE (retry_after, retry, fold)
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::heavy_barrier / asymmetric_active
 
 #ifndef CHUNK_READ_RECLAIM_SLOTS
@@ -80,6 +112,21 @@ namespace shrink_array::read_reclaim
 
 /// @brief The protocol is compiled in: OpenMP builds only.
 inline constexpr bool enabled = build_config::threaded;
+
+/// @brief Pure reads are optimistic (see the file comment): they announce nothing.
+inline constexpr bool optimistic = enabled && chunk_config::optimistic_reads;
+static_assert(!optimistic || build_config::use_fast_alloc,
+              "optimistic reads need the fast allocator: a free()d buffer may be unmapped");
+
+/// @brief An optimistic block read orders its re-check by the OR of its values (AArch64:
+///        an acquire fence is a dmb ishld there, read-bulk +4 % on Grace); elsewhere by an
+///        acquire fence (x86: loads are not reordered with loads, the fence is free, and
+///        the per-value OR cost read-bulk +40 % under gcc).
+#if defined(__aarch64__)
+inline constexpr bool fold_block = true;
+#else
+inline constexpr bool fold_block = false;
+#endif
 
 /// @brief Reader slots: one per thread that has ever read, a cache line each.
 inline constexpr int slot_count = CHUNK_READ_RECLAIM_SLOTS;
@@ -115,10 +162,20 @@ inline ReaderSlot* claim_slot() noexcept
     return nullptr;
 }
 
-/// @brief The light side: free with membarrier registered, a fence otherwise.
-inline void light_fence() noexcept
+/**
+ * @brief The announcer's fence, after its odd store.
+ * @details Optimistic reads: only the compressor's scans announce, and they are rare --
+ *          a seq_cst fence each, so that the grace period needs no membarrier (the
+ *          symmetric Dekker, wait_for_readers()). Otherwise every pure read announces:
+ *          the light side, free with membarrier registered, a fence otherwise.
+ */
+inline void announce_fence() noexcept
 {
-    if (dekker::asymmetric_active()) [[likely]]
+    if constexpr (optimistic)
+    {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
+    else if (dekker::asymmetric_active()) [[likely]]
     {
         std::atomic_signal_fence(std::memory_order_seq_cst);
     }
@@ -129,25 +186,108 @@ inline void light_fence() noexcept
 }
 
 /**
+ * @brief An announced read: from before the `values` load to after the element
+ *        load, the thread's slot is odd (the protocol above).
+ * @details Every pure read when reads are not optimistic (ReadSection holds one);
+ *          the compressor's scans always (ScanSection).
+ */
+class AnnouncedSection
+{
+  public:
+    /// @brief Enter: the slot's sequence goes odd, then the light fence.
+    AnnouncedSection() noexcept;
+    /// @brief Leave: the sequence goes even, released after the element load.
+    ~AnnouncedSection();
+    // A scope: neither copied nor moved.
+    AnnouncedSection(const AnnouncedSection&)            = delete;
+    AnnouncedSection& operator=(const AnnouncedSection&) = delete;
+    AnnouncedSection(AnnouncedSection&&)                 = delete;
+    AnnouncedSection& operator=(AnnouncedSection&&)      = delete;
+
+  private:
+    ReaderSlot*   slot_ = nullptr;
+    std::uint64_t seq_  = 0;
+};
+
+/// @brief A scan of the compressor (CompressionManager start()): always announced.
+using ScanSection = AnnouncedSection;
+
+/// @brief Bumped by every grace period (wait_for_readers()), after the pass's swaps
+///        and before its releases: what an optimistic read re-checks.
+alignas(64) inline std::atomic<std::uint64_t> g_reclaim_epoch{0};
+/// @brief Optimistic reads that read again, all threads (counted on the cold path).
+alignas(64) inline std::atomic<long> g_optimistic_retries{0};
+
+/// @brief The optimistic reads that read again so far, all threads (0 when reads announce).
+[[nodiscard]] inline long optimistic_retries() noexcept
+{
+    return g_optimistic_retries.load(std::memory_order_relaxed);
+}
+
+/// @brief The cold side of a retry: count it, return the new epoch (acquire).
+std::uint64_t note_retry() noexcept;
+
+/// @brief Not announced: the ReadSection of an optimistic build.
+struct NoAnnounce
+{
+};
+
+/// @brief The tag of a ReadSection whose caller loads `values` through dep()
+///        (element_at only): chunk_config::optimistic_dep_entry.
+struct DepEntry
+{
+};
+/// @brief The DepEntry tag.
+inline constexpr DepEntry dep_entry{};
+
+/**
  * @brief Brackets one pure read: from before the `values` load to after the
- *        element load.
+ *        element load(s).
+ * @details Optimistic reads: the entry loads the epoch, and the caller loops
+ *          until retry_after() (one value) or retry() (a block, its values
+ *          fold()ed) says no grace period began meanwhile. Otherwise the
+ *          section announces the read (AnnouncedSection) and both return false:
+ *          the same loop runs once.
  */
 class ReadSection
 {
   public:
-    /// @brief Enter: the slot's sequence goes odd, then the light fence.
+    /// @brief Enter: the epoch (optimistic), or the announce.
     ReadSection() noexcept;
-    /// @brief Leave: the sequence goes even, released after the element load.
-    ~ReadSection();
+    /// @brief As ReadSection(), but under chunk_config::optimistic_dep_entry the epoch is
+    ///        loaded relaxed: the caller MUST then load `values` at an address offset by
+    ///        dep(), which orders that load after this one.
+    explicit ReadSection(DepEntry) noexcept;
     // A scope: neither copied nor moved.
     ReadSection(const ReadSection&)            = delete;
     ReadSection& operator=(const ReadSection&) = delete;
     ReadSection(ReadSection&&)                 = delete;
     ReadSection& operator=(ReadSection&&)      = delete;
 
+    /// @brief True when a grace period began since the entry (or the last retry): the
+    ///        caller reads again. The re-check is ordered after the load of @p value by
+    ///        an address dependency. False when reads announce.
+    template <typename V>
+    [[nodiscard]] bool retry_after(const V& value) const noexcept;
+
+    /// @brief retry_after() for a read of several values (a block), every one of them
+    ///        fold()ed since the last check. False when reads announce.
+    [[nodiscard]] bool retry() const noexcept;
+
+    /// @brief Add @p value's bytes to the block's dependency (fold_block). Nothing otherwise.
+    template <typename V>
+    void fold(const V& value) const noexcept;
+
+    /// @brief 0 at run time; for the CPU, an address dependency on the epoch the entry
+    ///        loaded (chunk_config::optimistic_dep_entry). 0 otherwise.
+    [[nodiscard]] std::uintptr_t dep() const noexcept;
+
   private:
-    ReaderSlot*   slot_ = nullptr;
-    std::uint64_t seq_  = 0;
+    /// @brief The announce, when reads are not optimistic: held for its constructor and
+    ///        destructor only (RAII), hence maybe_unused.
+    [[no_unique_address, maybe_unused]] std::conditional_t<optimistic, NoAnnounce, AnnouncedSection> announce_;
+    mutable std::uint64_t                                                                            seq_ = 0;
+    mutable std::uintptr_t                                                                           acc_ = 0;
 };
 
 /**
@@ -157,7 +297,23 @@ class ReadSection
  */
 inline void wait_for_readers() noexcept
 {
-    dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
+    if constexpr (optimistic)
+    {
+        // After the caller's swaps, before its releases: an optimistic read whose
+        // element came from a buffer released after this point sees the new epoch.
+        g_reclaim_epoch.fetch_add(1, std::memory_order_seq_cst);
+    }
+    if constexpr (optimistic)
+    {
+        // Symmetric: the announcers (the scans alone) fence themselves (announce_fence()).
+        // A membarrier here cost 25 to 630 us per pass at 72 threads on Grace -- writers
+        // issuing them at once -- and held every released buffer that long.
+        std::atomic_thread_fence(std::memory_order_seq_cst); // orders the CASes before the slot reads
+    }
+    else
+    {
+        dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
+    }
     const int         nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
     const ReaderSlot* mine   = t_slot;
     for (int i = 0; i < nslots; ++i)

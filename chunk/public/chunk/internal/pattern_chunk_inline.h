@@ -20,7 +20,10 @@
 #include <cstdint> // std::uint64_t
 #include <utility> // std::pair
 
-#include "chunk/internal/pattern_chunk.h" // the class these bodies belong to
+#include "chunk/internal/pattern_chunk.h"   // the class these bodies belong to
+#include "chunk/internal/chunk_traits.h"    // ChunkTraits<Chunk>::ProxyType
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/config.h"                   // build_config::threaded, chunk_dynamic
 
 namespace shrink_array
 {

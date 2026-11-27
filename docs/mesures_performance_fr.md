@@ -137,6 +137,12 @@ temps que les lectures. Médiane du tableau, ns par élément :
   C'est sur eux que repose la correction (l'acquire du bit dirty, l'ordre release de la sortie
   de section) : rien de bon marché à retirer, et toute modification passe d'abord par
   formal/reader_reclaim.c.
+- **Ce qui en est sorti** : la section de lecture est désormais optimiste sur x86-64 et AArch64
+  (ni store, ni barrière : une revérification dépendante d'une époque, `CHUNK_OPTIMISTIC_READS`),
+  et le bit dirty est lu en relaxed, sa barrière acquire prise hors ligne quand il est levé. Grace,
+  contre l'annonce, 1 et 72 threads : lectures élément par élément gcc -27 à -37 %, llvm -38 à
+  -53 % ; read-bulk, rmw et write dans le bruit ; read-random gcc +1 à 2 %, llvm +5 à 7 % (le
+  chargement dépendant de la revérification après un défaut de cache).
 - **Les ordres mémoire sont déjà les moins chers** : GCC 16 émet ldapr (RCpc) pour les loads
   acquire du chemin de lecture ; ses ldar (loads seq_cst) sont tous dans les chemins de
   compression, de purge et de fin de phase.

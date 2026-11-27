@@ -34,11 +34,10 @@
  * only dynamic builds give arrays their own key.
  */
 
-#include <array>   // std::array
-#include <atomic>  // std::atomic, std::memory_order
-#include <cstddef> // std::size_t
-#include <mutex>   // std::once_flag, std::call_once
-#include <vector>  // std::vector
+#include <array>  // std::array
+#include <atomic> // std::atomic, std::memory_order
+#include <mutex>  // std::once_flag, std::call_once
+#include <vector> // std::vector
 
 #include "chunk/config.h"             // build_config::chunk_dynamic
 #include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_MAX_THREADS

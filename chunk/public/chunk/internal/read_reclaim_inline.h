@@ -23,10 +23,10 @@ namespace shrink_array
 {
 
 // ---------------------------------------------------------------------------
-// shrink_array::ReadSection
+// shrink_array::AnnouncedSection
 // ---------------------------------------------------------------------------
 
-inline read_reclaim::ReadSection::ReadSection() noexcept
+inline read_reclaim::AnnouncedSection::AnnouncedSection() noexcept
 {
     if constexpr (enabled)
     {
@@ -49,7 +49,7 @@ inline read_reclaim::ReadSection::ReadSection() noexcept
             // thread on Grace, within its spread, nothing measurable at 64
             // (formal/reader_reclaim.c, MUT_ENTER_RELAXED; docs/formal_models.md F3).
             slot->seq.store(seq_, std::memory_order_release);
-            light_fence();
+            announce_fence();
         }
         else
         {
@@ -59,12 +59,12 @@ inline read_reclaim::ReadSection::ReadSection() noexcept
             // announce in C11 (store buffering against the reclaimer's acquire
             // load of the counter), though it is on the AArch64 and x86
             // mappings (formal/reader_reclaim.c, MUT_OVERFLOW_NO_FENCE).
-            light_fence();
+            announce_fence();
         }
     }
 }
 
-inline read_reclaim::ReadSection::~ReadSection()
+inline read_reclaim::AnnouncedSection::~AnnouncedSection()
 {
     if constexpr (enabled)
     {
@@ -75,6 +75,130 @@ inline read_reclaim::ReadSection::~ReadSection()
         else
         {
             g_overflow_readers.fetch_sub(1, std::memory_order_release);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ReadSection
+// ---------------------------------------------------------------------------
+
+inline read_reclaim::ReadSection::ReadSection() noexcept
+{
+    if constexpr (optimistic)
+    {
+        // Acquire: a pass whose bump this read sees has its swaps visible to the
+        // `values` load that follows.
+        seq_ = g_reclaim_epoch.load(std::memory_order_acquire);
+    }
+}
+
+inline read_reclaim::ReadSection::ReadSection(DepEntry) noexcept
+{
+    if constexpr (optimistic && chunk_config::optimistic_dep_entry)
+    {
+        seq_ = g_reclaim_epoch.load(std::memory_order_relaxed); // ordered by dep(): the `values` load
+    }
+    else if constexpr (optimistic)
+    {
+        seq_ = g_reclaim_epoch.load(std::memory_order_acquire);
+    }
+}
+
+[[nodiscard]] CHUNK_FORCE_INLINE std::uintptr_t read_reclaim::ReadSection::dep() const noexcept
+{
+    if constexpr (optimistic && chunk_config::optimistic_dep_entry)
+    {
+        // seq_ ^ seq_, the xor hidden from the compiler: 0, but a dependency for the CPU.
+        std::uintptr_t opaque = seq_;
+        __asm__("" : "+r"(opaque));
+        return opaque ^ static_cast<std::uintptr_t>(seq_);
+    }
+    return 0;
+}
+
+/// @details Acquire: the swaps of the pass that bumped the epoch are visible to the
+///          read that follows, which therefore loads the new pointer.
+[[gnu::noinline, gnu::cold]] inline std::uint64_t read_reclaim::note_retry() noexcept
+{
+    g_optimistic_retries.fetch_add(1, std::memory_order_relaxed);
+    return g_reclaim_epoch.load(std::memory_order_acquire);
+}
+
+template <typename V>
+[[nodiscard]] CHUNK_FORCE_INLINE bool read_reclaim::ReadSection::retry_after(const V& value) const noexcept
+{
+    if constexpr (optimistic)
+    {
+        static_assert(std::is_trivially_copyable_v<V>, "retry_after: the dependency is taken on the value's bytes");
+        // Every word of the value: a value wider than a register (std::complex<double>)
+        // is two loads, and each must come before the re-check.
+        constexpr std::size_t words = (sizeof(V) + sizeof(std::uintptr_t) - 1) / sizeof(std::uintptr_t);
+        std::uintptr_t        part[words]{};
+        std::memcpy(part, &value, sizeof(V));
+        std::uintptr_t raw = 0;
+        for (std::size_t w = 0; w < words; ++w)
+        {
+            raw |= part[w];
+        }
+        // zero = raw ^ raw, hidden from the compiler: 0 at run time, an address
+        // dependency on the element for the CPU (eor on AArch64), so the epoch's
+        // load is ordered after the element's.
+        std::uintptr_t opaque = raw;
+        __asm__("" : "+r"(opaque));
+        const std::uintptr_t zero  = opaque ^ raw;
+        const auto*          epoch = reinterpret_cast<const std::atomic<std::uint64_t>*>(
+            reinterpret_cast<std::uintptr_t>(&g_reclaim_epoch) + zero);
+        if (epoch->load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        {
+            seq_ = note_retry();
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] CHUNK_FORCE_INLINE bool read_reclaim::ReadSection::retry() const noexcept
+{
+    if constexpr (optimistic && !fold_block)
+    {
+        std::atomic_thread_fence(std::memory_order_acquire); // the block's loads before the re-check
+        if (g_reclaim_epoch.load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        {
+            seq_ = note_retry();
+            return true;
+        }
+    }
+    else if constexpr (optimistic)
+    {
+        // As retry_after(), the dependency on the OR of every value loaded (fold()).
+        std::uintptr_t opaque = acc_;
+        __asm__("" : "+r"(opaque));
+        const std::uintptr_t zero  = opaque ^ acc_;
+        const auto*          epoch = reinterpret_cast<const std::atomic<std::uint64_t>*>(
+            reinterpret_cast<std::uintptr_t>(&g_reclaim_epoch) + zero);
+        acc_ = 0;
+        if (epoch->load(std::memory_order_relaxed) != seq_) [[unlikely]]
+        {
+            seq_ = note_retry();
+            return true;
+        }
+    }
+    return false;
+}
+
+template <typename V>
+CHUNK_FORCE_INLINE void read_reclaim::ReadSection::fold(const V& value) const noexcept
+{
+    if constexpr (optimistic && fold_block)
+    {
+        static_assert(std::is_trivially_copyable_v<V>, "fold: the dependency is taken on the value's bytes");
+        constexpr std::size_t words = (sizeof(V) + sizeof(std::uintptr_t) - 1) / sizeof(std::uintptr_t);
+        std::uintptr_t        raw[words]{};
+        std::memcpy(raw, &value, sizeof(V));
+        for (std::size_t w = 0; w < words; ++w)
+        {
+            acc_ |= raw[w];
         }
     }
 }

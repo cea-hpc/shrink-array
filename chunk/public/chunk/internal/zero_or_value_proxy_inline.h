@@ -482,10 +482,25 @@ T zero_or_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                     return value;
                 }
                 const read_reclaim::ReadSection section;
-                const T* const                  live = chunk_.values_load();
-                test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
-                // raw-read: inside a read_reclaim::ReadSection
-                if (live == chunk_.second_value_ptr(BaseSpec::idx_) || same_value(live[elem_offset_], second_value_))
+                bool                            same = false;
+                for (;;) // optimistic reads: read again if a grace period began meanwhile
+                {
+                    const T* const live = chunk_.values_load();
+                    test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
+                    if (live == chunk_.second_value_ptr(BaseSpec::idx_))
+                    {
+                        same = true; // no buffer read: nothing to re-check
+                        break;
+                    }
+                    // raw-read: inside a read_reclaim::ReadSection
+                    const T current = live[elem_offset_];
+                    if (!section.retry_after(current)) [[likely]]
+                    {
+                        same = same_value(current, second_value_);
+                        break;
+                    }
+                }
+                if (same)
                 {
                     return value;
                 }
@@ -502,9 +517,24 @@ T zero_or_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // elem_get: for Bit, values_loc[elem_offset] would be a whole byte of 8
                 // elements, non-zero as soon as a NEIGHBOUR is true.
                 const read_reclaim::ReadSection section;
-                const T* const                  live = chunk_.values_load();
-                // raw-read: inside a read_reclaim::ReadSection
-                if (live == chunk_.second_value_ptr() || elem_get(live, static_cast<std::size_t>(elem_offset_)))
+                bool                            set = false;
+                for (;;) // optimistic reads: read again if a grace period began meanwhile
+                {
+                    const T* const live = chunk_.values_load();
+                    if (live == chunk_.second_value_ptr())
+                    {
+                        set = true; // no buffer read: nothing to re-check
+                        break;
+                    }
+                    // raw-read: inside a read_reclaim::ReadSection
+                    const T current = elem_get(live, static_cast<std::size_t>(elem_offset_));
+                    if (!section.retry_after(current)) [[likely]]
+                    {
+                        set = static_cast<bool>(current);
+                        break;
+                    }
+                }
+                if (set)
                 {
                     return true;
                 }

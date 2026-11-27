@@ -16,8 +16,6 @@
 
 #pragma once
 
-#pragma once
-
 #include <complex>     // std::complex
 #include <concepts>    // std::convertible_to
 #include <type_traits> // std::remove_cvref_t, std::is_same_v, std::is_integral_v

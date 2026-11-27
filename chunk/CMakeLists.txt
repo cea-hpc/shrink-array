@@ -27,6 +27,10 @@ endif ()
 find_package(Threads REQUIRED)
 
 option(CHUNK_STD_ALLOC "Use standard allocator for chunk." OFF)
+# Pure reads re-checked against the reclaim epoch instead of announced (read_reclaim.h).
+# Takes effect only where the argument holds -- x86-64 / AArch64, the fast allocator,
+# no ThreadSanitizer (chunk_config::optimistic_reads); OFF: the announce everywhere.
+option(CHUNK_OPTIMISTIC_READS "Optimistic pure reads where they are safe (x86-64, AArch64, fast allocator)" ON)
 
 # --- Multi-size declinations --------------------------------------------
 # The compile-time chunk size (static_chunk_size) is frozen per library by
@@ -156,6 +160,7 @@ _chunk_opt(CHUNK_OPT_MM_PROTECT CHUNK_MM_PROTECT)
 _chunk_opt(CHUNK_OPT_SECOND_VALUE_INDEXED CHUNK_SECOND_VALUE_INDEXED)
 _chunk_opt(CHUNK_OPT_AGGRESSIVE_COMPRESSION CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT)
 _chunk_opt(CHUNK_OPT_POOL_NO_REUSE CHUNK_POOL_NO_REUSE)
+_chunk_opt(CHUNK_OPT_OPTIMISTIC_READS CHUNK_OPTIMISTIC_READS)
 _chunk_opt(CHUNK_OPT_ALIGN_CHECK CHUNK_ALIGN_CHECK)
 _chunk_opt(CHUNK_OPT_FORCE_LEDGER CHUNK_FORCE_LEDGER)
 _chunk_opt(CHUNK_OPT_TEST_HOOKS CHUNK_TEST_HOOKS)

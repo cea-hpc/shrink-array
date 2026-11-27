@@ -39,11 +39,10 @@
  * @see ArrayChunkBase::sync_chunk — the sole hot-path reader of the bits
  */
 
-#include <algorithm> // std::min
-#include <atomic>    // std::atomic, std::memory_order
-#include <cstddef>   // std::size_t
-#include <cstdint>   // uint64_t
-#include <utility>   // std::swap
+#include <atomic>  // std::atomic, std::memory_order, std::atomic_thread_fence
+#include <cstddef> // std::size_t
+#include <cstdint> // uint64_t
+#include <utility> // std::swap
 
 #include "chunk/config.h"                         // build_config::threaded
 #include "chunk/internal/array_chunk_for.h"       // ArrayKey (clear_all_dirty_bitsets)
@@ -114,14 +113,28 @@ class DirtyBitsetSupport<Derived, true>
      * @param chunk_idx The global index of the chunk (not of an element).
      * @return true if a deferred operation was queued for this chunk during the
      *         current phase (the bit is sticky until clear_dirty_bitset()).
+     * @details Relaxed, and the acquire FENCE only when the bit is set: it pairs
+     *          with the acq_rel fetch_or of mark_chunk_dirty() as an acquire load
+     *          would (a fence after a relaxed load that read the RMW's value). A
+     *          clear bit saw no writer: nothing to order. Why not the acquire
+     *          load: clang reloads every escaped local around it -- `sum` of a
+     *          `reduction(+:sum)` loop kept in memory, a store-forwarding chain
+     *          per element -- and it is an LDAPR per element on AArch64.
      */
-    [[nodiscard]] bool is_chunk_dirty(int chunk_idx) const noexcept
+    [[nodiscard]] bool is_chunk_dirty(int chunk_idx) const noexcept;
+
+    /**
+     * @brief The dirty bit alone, relaxed, with NO ordering.
+     * @details For the hot read path (ArrayChunkBase::sync_chunk()), whose dirty
+     *          branch takes the acquire fence itself, out of line: clang keeps an
+     *          escaped local in memory across a fence even on a cold branch, not
+     *          across a call. Anything else uses is_chunk_dirty().
+     */
+    [[nodiscard]] bool is_chunk_dirty_hint(int chunk_idx) const noexcept
     {
         const int      word_idx = chunk_idx >> word_shift;
         const uint64_t bit_mask = 1ULL << (chunk_idx & bit_in_word_mask);
-
-        // Acquire: pairs with the acq_rel fetch_or of mark_chunk_dirty()
-        return (bitset_[word_idx].word.load(std::memory_order_acquire) & bit_mask) != 0;
+        return (bitset_[word_idx].word.load(std::memory_order_relaxed) & bit_mask) != 0;
     }
 
     /**
@@ -229,6 +242,11 @@ class DirtyBitsetSupport<Derived, false>
     }
     /// @brief Never dirty: no deferred write can exist in this mode.
     [[nodiscard]] static bool is_chunk_dirty(int /*chunk_idx*/) noexcept
+    {
+        return false;
+    }
+    /// @brief Never dirty, as is_chunk_dirty().
+    [[nodiscard]] static bool is_chunk_dirty_hint(int /*chunk_idx*/) noexcept
     {
         return false;
     }

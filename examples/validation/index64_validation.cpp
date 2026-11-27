@@ -71,7 +71,7 @@
 #include "chunk/print.h"                      // shrink_array::println
 #include "chunk/internal/env_parse.h"         // arg_number (checked, not atoi)
 
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, variant_name, begin_phase / end_phase, maybe_set_second_value
 
 namespace validation::index64_validation

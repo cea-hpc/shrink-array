@@ -75,14 +75,16 @@
 #include <string_view>  // std::string_view
 #include <system_error> // std::error_code (private_temp_dir's cleanup)
 #include <thread>       // std::thread
+#include <utility>      // std::move (run_child)
 #include <vector>       // std::vector
 #include <stdlib.h>     // setenv, unsetenv, mkdtemp (POSIX: <cstdlib> need not declare them)
-#include <sys/wait.h>   // WIFEXITED, WEXITSTATUS
 #include <unistd.h>     // getpid (the expected expansion of CHUNK_LOG_FILE's %p)
 
 #include "chunk/log.h"                      // shrink_array::logging, CHUNK_LOG
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
 #include "chunk/print.h"                    // shrink_array::println
+
+#include "validation_process.h" // validation::run_process: the fatal children, without a shell
 
 using shrink_array::println;
 
@@ -609,27 +611,34 @@ struct FatalRun
 };
 
 /// @brief Run the child of case @p which, under @p wrapper (a debugger's
-///        command line, or nothing) and with the variables @p env in addition.
-///        CHUNK_BREAK_ON_FAILURE is auto unless @p env sets it: one the user
-///        exported does not change the outcome.
-FatalRun run_child(const char* self, int which, std::string_view env = "", std::string_view wrapper = "")
+///        argument vector, or nothing) and with the variables @p env in
+///        addition: no shell (validation_process.h), no core file, killed
+///        after 120 s. CHUNK_BREAK_ON_FAILURE is auto unless @p env sets it:
+///        one the user exported does not change the outcome.
+FatalRun
+run_child(const char* self, int which, const std::vector<std::string>& env = {}, std::vector<std::string> wrapper = {})
 {
-    const std::string base = private_temp_dir() + "/fatal." + std::to_string(which);
-    const std::string cmd  = "ulimit -c 0; CHUNK_LOG=warn CHUNK_BREAK_ON_FAILURE=auto CHUNK_LOG_FILE=\"" + base +
-                             ".log\" " + std::string(env) + " timeout 120 " + std::string(wrapper) + " \"" +
-                             std::string(self) + "\" --fatal " + std::to_string(which) + " > \"" + base + ".out\" 2>&1";
-    FatalRun          run;
-    const int         status = std::system(cmd.c_str());
-    run.status               = (status != -1 && WIFEXITED(status)) ? WEXITSTATUS(status) : -1;
-    for (const auto& line : read_lines(base + ".out"))
+    const std::string        base = private_temp_dir() + "/fatal." + std::to_string(which);
+    std::vector<std::string> argv = std::move(wrapper);
+    argv.insert(argv.end(), {self, "--fatal", std::to_string(which)});
+    validation::ProcessOptions opt;
+    opt.env = {"CHUNK_LOG=warn", "CHUNK_BREAK_ON_FAILURE=auto", "CHUNK_LOG_FILE=" + base + ".log"};
+    opt.env.insert(opt.env.end(), env.begin(), env.end()); // later entries win
+    opt.output                            = base + ".out";
+    opt.timeout_s                         = 120;
+    opt.no_core                           = true;
+    const validation::ProcessResult child = validation::run_process(std::move(argv), opt);
+    FatalRun                        run;
+    run.status = child.shell_status(); // 134 for an abort, as the shell reported it
+    run.out    = child.output;
+    if (child.timed_out)
     {
-        run.out += line + "\n";
+        run.out += "[run_child: killed after 120 s]\n";
     }
     for (const auto& line : read_lines(base + ".log"))
     {
         run.log += line + "\n";
     }
-    std::remove((base + ".out").c_str());
     std::remove((base + ".log").c_str());
     return run;
 }
@@ -688,7 +697,7 @@ void check_fatal(const char* self)
 
     // Forced on, without a debugger: the report, the line that says why, then
     // SIGTRAP, which nothing handles, kills the child (128 + SIGTRAP).
-    run = run_child(self, 0, "CHUNK_BREAK_ON_FAILURE=1");
+    run = run_child(self, 0, {"CHUNK_BREAK_ON_FAILURE=1"});
     check(run.status == 128 + SIGTRAP && run.out.find("--- Execution Backtrace ---") != std::string::npos &&
               run.out.find("CHUNK_BREAK_ON_FAILURE=1: stopping on SIGTRAP") != std::string::npos &&
               run.out.find("--- Execution Backtrace ---") < run.out.find("stopping on SIGTRAP"),
@@ -757,9 +766,16 @@ bool before(const std::string& text, std::string_view a, std::string_view b)
     return pa != std::string::npos && pb != std::string::npos && pa < pb;
 }
 
+/// @brief @p gdb starts and exits cleanly (`gdb -nx -batch -ex quit`).
+bool gdb_runs(std::string_view gdb)
+{
+    validation::ProcessOptions opt;
+    opt.output = private_temp_dir() + "/gdb_probe.out"; // read back and removed by run_process
+    return validation::run_process({std::string(gdb), "-nx", "-batch", "-ex", "quit"}, opt).ok();
+}
+
 int check_debuggers(const char* self, std::string_view gdb, std::string_view strace)
 {
-    const std::string gdb_q = "\"" + std::string(gdb) + "\"";
     // The detection is Linux's (TracerPid): elsewhere, no stop to look for.
     constexpr bool linux_proc =
 #if defined(__linux__)
@@ -768,15 +784,16 @@ int check_debuggers(const char* self, std::string_view gdb, std::string_view str
         false;
 #endif
     if (!linux_proc || gdb.empty() || // NOSONAR(cpp:S6004): linux_proc is set by #if
-        std::system((gdb_q + " -nx -batch -ex quit > /dev/null 2>&1").c_str()) != 0)
+        !gdb_runs(gdb))
     {
         println("SKIP: not Linux, or no gdb to run");
         return 77;
     }
     // run, then the frames at the stop, then continue: the abort.
-    const std::string wrapper = gdb_q + " -nx -batch -ex run -ex bt -ex continue -ex kill --args";
+    const std::vector<std::string> wrapper{std::string(gdb), "-nx", "-batch", "-ex",   "run", "-ex", "bt", "-ex",
+                                           "continue",       "-ex", "kill",   "--args"};
 
-    auto run = run_child(self, 0, "", wrapper);
+    auto run = run_child(self, 0, {}, wrapper);
     check(before(run.out, "--- Execution Backtrace ---", "debugger attached: stopping on SIGTRAP") &&
               before(run.out, "debugger attached: stopping on SIGTRAP", "received signal SIGTRAP"),
           "gdb: the report written, the line, then the stop on SIGTRAP");
@@ -791,7 +808,7 @@ int check_debuggers(const char* self, std::string_view gdb, std::string_view str
         println("---- gdb output ----\n{}--------------------", run.out);
     }
 
-    run = run_child(self, 0, "CHUNK_BREAK_ON_FAILURE=0", wrapper);
+    run = run_child(self, 0, {"CHUNK_BREAK_ON_FAILURE=0"}, wrapper);
     check(run.out.find("SIGTRAP") == std::string::npos &&
               run.out.find("received signal SIGABRT") != std::string::npos &&
               run.out.find("--- Execution Backtrace ---") != std::string::npos,
@@ -801,7 +818,7 @@ int check_debuggers(const char* self, std::string_view gdb, std::string_view str
     {
         // strace -f exits as its tracee did: 134 for the abort, 133 had it
         // been a SIGTRAP.
-        run = run_child(self, 0, "", "\"" + std::string(strace) + "\" -f -o /dev/null");
+        run = run_child(self, 0, {}, {std::string(strace), "-f", "-o", "/dev/null"});
         check(run.status == 128 + SIGABRT && run.out.find("stopping on SIGTRAP") == std::string::npos,
               "strace: traced but no debugger, the abort and no SIGTRAP");
     }
