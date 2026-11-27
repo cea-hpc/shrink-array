@@ -474,9 +474,9 @@ foreach(_geom IN LISTS _rt_geometries)
     if (CHUNK_WITH_TBB AND NOT CHUNK_THREADS_BACKEND STREQUAL "openmp")
       list(APPEND _group tbb_validation)
     endif()
-    # read_reclaim_validation: a read or a compound op against an in-region
-    # pass that releases the buffer, and a pass that must not erase another
-    # pass's claim (the harness says why). OpenMP builds only, default static
+    # read_reclaim_validation: a read (one element, or a block: bulk) or a
+    # compound op against an in-region pass that releases the buffer, and a
+    # pass that must not erase another pass's claim (the harness says why). OpenMP builds only, default static
     # size, at 8 threads (2 writers, 6 readers); 77 = skipped.
     if (CHUNK_OPENMP AND NOT _geom STREQUAL "dyn")
       list(APPEND _group read_reclaim_validation)
@@ -572,9 +572,10 @@ foreach(_geom IN LISTS _rt_geometries)
         set_property(TEST ${_base}_8thr PROPERTY SKIP_RETURN_CODE 77)
       elseif (_h STREQUAL "read_reclaim_validation")
         validation_add_test(${_base} ${_exe} ${_h} "8")
+        validation_add_test(${_base}_bulk ${_exe} ${_h} "8" bulk)
         validation_add_test(${_base}_compound ${_exe} ${_h} "8" compound)
         validation_add_test(${_base}_remark ${_exe} ${_h} "8" remark)
-        foreach(_t ${_base}_8thr ${_base}_compound_8thr ${_base}_remark_8thr)
+        foreach(_t ${_base}_8thr ${_base}_bulk_8thr ${_base}_compound_8thr ${_base}_remark_8thr)
           set_property(TEST ${_t} PROPERTY SKIP_RETURN_CODE 77)
           set_property(TEST ${_t} PROPERTY TIMEOUT 120)
         endforeach()

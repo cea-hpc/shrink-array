@@ -95,6 +95,15 @@
 //
 //   zero has no second value: the mode is skipped there (77).
 //
+// MODE `bulk` (argument): the readers read a whole victim chunk (offsets
+//   1 .. S-1) through for_each_value -- in a build with bulk_fast (no
+//   statistics, no CHUNK_CHECK), through ChunkBase::read_block and the block
+//   read's own section. Same check: every value 0. The block read re-checks
+//   once per block, after all its loads (read_reclaim.h: fold_block).
+//
+// Under optimistic reads (chunk_config::optimistic_reads) the reads retried
+// are printed: a run whose passes ran inside the region retries some.
+//
 // MODE `remark` (argument): a pass must not erase another pass's claim
 //
 //   A compression pass marks its candidates (ChunkBase::steal_mark) so that
@@ -125,6 +134,7 @@
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero_or_value*, build_config::use_openmp
 #include "chunk/internal/test_hooks.h"   // test_hooks::read_delay_* / pass_delay_*
+#include "chunk/internal/read_reclaim.h" // read_reclaim::optimistic_retries
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
@@ -485,8 +495,9 @@ int run(int argc, char** argv)
         return run_remark(team, seconds);
     }
 
-    long fails = 0;
-    int  rc    = 0;
+    const bool bulk  = argc > 1 && std::string_view(argv[1]) == "bulk";
+    long       fails = 0;
+    int        rc    = 0;
     {
         Arr        arr;
         const auto chunk_sz = static_cast<long>(arr.chunk_size());
@@ -570,6 +581,31 @@ int run(int argc, char** argv)
                 {
                     const auto writer = static_cast<long>(rng.next() % static_cast<std::uint64_t>(writers));
                     const auto victim = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_victims));
+                    if (bulk) // the block read: the whole victim chunk but its element 0
+                    {
+                        const auto first = static_cast<Index>((writer * per_writer + victim) * chunk_sz + 1);
+                        const auto last  = static_cast<Index>((writer * per_writer + victim + 1) * chunk_sz);
+                        long       k     = 1;
+                        ca.for_each_value(first, last,
+                                          [&](double value)
+                                          {
+                                              if (value != 0.0) [[unlikely]]
+                                              {
+                                                  const long slot = bad.fetch_add(1, std::memory_order_relaxed);
+                                                  if (slot < 8)
+                                                  {
+                                                      println("[{}/read-reclaim bulk] FAIL stale block read: chunk {}, "
+                                                              "offset {} = {:g}, expected 0{}",
+                                                              variant_name(), writer * per_writer + victim, k, value,
+                                                              value == pollute_value ? " (reused and overwritten)"
+                                                                                     : "");
+                                                  }
+                                              }
+                                              ++k;
+                                          });
+                        local_reads += chunk_sz - 1;
+                        continue;
+                    }
                     const long offset = 1 + static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunk_sz - 1));
                     const auto idx    = static_cast<Index>((writer * per_writer + victim) * chunk_sz + offset);
                     // Both read entries: the const operator[] and the write
@@ -599,6 +635,11 @@ int run(int argc, char** argv)
         const long seen = compressed_seen.load();
         println("[{}/read-reclaim] {} reads, {} sweeps, {} victim chunks found compressed after a sweep",
                 variant_name(), reads.load(), sweeps.load(), seen);
+        if constexpr (chunk_config::optimistic_reads)
+        {
+            println("[{}/read-reclaim] optimistic reads retried: {}", variant_name(),
+                    read_reclaim::optimistic_retries());
+        }
         if (seen == 0)
         {
             println("[{}/read-reclaim] FAIL premise: no victim chunk was compressed inside the region -- the "
@@ -620,7 +661,8 @@ int run(int argc, char** argv)
     release_chunk_pools();
     Runtime::shutdown();
 
-    println("\n[{}] {}", variant_name(), rc ? "=== READ RECLAIM FAILED ===" : "=== READ RECLAIM OK ===");
+    println("\n[{}] {}{}", variant_name(), bulk ? "(bulk) " : "",
+            rc ? "=== READ RECLAIM FAILED ===" : "=== READ RECLAIM OK ===");
     return rc;
 }
 

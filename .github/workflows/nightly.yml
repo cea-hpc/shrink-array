@@ -21,7 +21,10 @@
 # job in the gcc 16.2 image, as ci.yml's cpp26 job; no clang there.
 # The options no other job turns on (x86-configs): second values indexed and
 # the statistics, a Release without invariant checks at chunk size 1024,
-# shared libraries with libc++ and -Werror.
+# shared libraries with libc++ and -Werror, the announced pure reads
+# (CHUNK_OPTIMISTIC_READS=OFF).
+# The reader-vs-reclaim race widened by the read-delay hook (read-delay), on
+# AArch64 and x86: the one test that makes an optimistic read lose its race.
 # GenMC itself can join here when it is needed.
 
 name: Nightly
@@ -408,7 +411,10 @@ jobs:
   #    build), chunk size 1024 -- the harnesses forced in
   #    (CHUNK_BUILD_VALIDATION, which Release leaves out by default);
   #  - shared libraries (BUILD_SHARED_LIBS), libc++ and -Werror: clang 23,
-  #    Debug, since CHUNK_WERROR applies to Debug builds only.
+  #    Debug, since CHUNK_WERROR applies to Debug builds only;
+  #  - the pure reads announced (CHUNK_OPTIMISTIC_READS=OFF): the protocol
+  #    every other x86 / AArch64 build replaced, still the one of a std-alloc
+  #    or TSan build and of other architectures, check-mode.
   x86-configs:
     name: x86-64, ${{ matrix.name }}
     runs-on: ubuntu-24.04
@@ -436,6 +442,12 @@ jobs:
             llvm: true
             build_type: Debug
             cmake_args: -DCHUNK_OPENMP=ON -DCHUNK_USE_LIBCXX=ON -DBUILD_SHARED_LIBS=ON -DCHUNK_WERROR=ON -DCHUNK_STATIC_SIZES=256
+          - name: OpenMP, pure reads announced (CHUNK_OPTIMISTIC_READS=OFF)
+            cc: gcc-14
+            cxx: g++-14
+            packages: g++-14
+            build_type: RelWithDebInfo
+            cmake_args: -DCHUNK_OPENMP=ON -DCHUNK_CHECK_OPTIM=ON -DCHUNK_OPTIMISTIC_READS=OFF -DCHUNK_STATIC_SIZES=256
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
@@ -462,6 +474,73 @@ jobs:
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
+
+  # The reader-vs-reclaim race with the read-delay hook compiled in
+  # (CHUNK_TEST_READ_DELAY_EVERY=16: one pure read in 16 of a reader thread
+  # waits 50 us between its `values` load and its element load), a Release
+  # build so that the block reads go through read_block (bulk_fast). An
+  # optimistic read that loses its race reads a released buffer, maybe reused,
+  # and must read again: read_reclaim_validation, one element and whole
+  # blocks, 20 s each, on the three variants. AArch64 is where the re-check's
+  # ordering is the hardware's (an address dependency); x86 for TSO; and the
+  # announce once (OFF). 4 threads: 1 writer, 3 readers.
+  read-delay:
+    name: ${{ matrix.name }}, read_reclaim under the read delay
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: AArch64, optimistic reads
+            runner: ubuntu-24.04-arm
+            optimistic: "ON"
+          - name: x86-64, optimistic reads
+            runner: ubuntu-24.04
+            optimistic: "ON"
+          - name: x86-64, announced reads
+            runner: ubuntu-24.04
+            optimistic: "OFF"
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCHUNK_OPENMP=ON
+          -DCHUNK_BUILD_VALIDATION=ON
+          -DCHUNK_OPTIMISTIC_READS=${{ matrix.optimistic }}
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+          "-DCMAKE_CXX_FLAGS=-DCHUNK_TEST_READ_DELAY_EVERY=16"
+      - name: Build
+        run: cmake --build build --target validation_zero_256 validation_zero_or_value_256 validation_zero_any_256
+      - name: read_reclaim_validation, one element and blocks, 20 s each
+        env:
+          OMP_NUM_THREADS: 4
+          READ_RECLAIM_SECONDS: 20
+        run: |
+          fail=0
+          for v in zero zero_or_value zero_any; do
+            for c in plain bulk; do
+              arg=(); [ "$c" = plain ] || arg=("$c")
+              echo "::group::$v $c"
+              build/examples/validation/validation_${v}_256 read_reclaim_validation "${arg[@]}" || fail=1
+              echo "::endgroup::"
+            done
+          done
+          exit $fail
 
   # cpp26 under the sanitizers: GCC 16 in the gcc 16.2 image (ci.yml's cpp26
   # job), OpenMP, the same switches as the x86 ASan and UBSan jobs above.
