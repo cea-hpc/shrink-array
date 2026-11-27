@@ -24,6 +24,8 @@
 #include <utility>  // std::move
 #include <vector>   // for vector
 #include <malloc.h> // malloc_trim, mallopt
+#include <chrono>   // std::chrono::steady_clock (EXPERIMENT CHUNK_PHASE_END_TIMING)
+#include <cstdio>   // std::printf (EXPERIMENT CHUNK_PHASE_END_TIMING)
 
 #include "chunk/config.h"                       // build_config::threaded / use_openmp, chunk_config
 #include "chunk/internal/singleton.h"           // Singleton
@@ -123,6 +125,37 @@ struct SerialFlushOwnership
         g_serial_flush_owner.clear(std::memory_order_release);
     }
 };
+
+// EXPERIMENT CHUNK_PHASE_END_TIMING=1: the blocks of a phase end, timed for the
+// first phase_end_timed phases (one [phase_end] line each, after the
+// compression pass). Rank 0 times the in-region part: the barrier (its wait,
+// the team's imbalance included) and its own flush_all_deferred.
+#ifndef CHUNK_PHASE_END_TIMING
+    #define CHUNK_PHASE_END_TIMING 0
+#endif
+constexpr bool phase_end_timing = CHUNK_PHASE_END_TIMING != 0;
+constexpr int  phase_end_timed  = 4;
+using PhaseEndClock             = std::chrono::steady_clock;
+
+struct PhaseEndTimes
+{
+    int    phase    = 0;
+    double barrier  = 0;
+    double flush    = 0;
+    double destroy  = 0;
+    double reset    = 0;
+    double compress = 0;
+    double arenas   = 0;
+};
+[[maybe_unused]] PhaseEndTimes g_phase_end_times{};
+
+[[maybe_unused]] double phase_end_lap(PhaseEndClock::time_point& t)
+{
+    const auto now = PhaseEndClock::now();
+    const auto s   = std::chrono::duration<double>(now - t).count();
+    t              = now;
+    return s;
+}
 } // namespace
 
 // chunk_config::aggressive_compression() (run time: CHUNK_AGGRESSIVE_COMPRESSION):
@@ -175,11 +208,21 @@ void finalize_parallel_phase_only_flush()
         //    #pragma omp for are typically `nowait`)
         //  - flush: each thread drains its OWN queue using its own rank,
         //    which is stable inside the current parallel region
+        const bool timed = phase_end_timing && CHUNK_PMP_THREAD_RANK == 0 && g_phase_end_times.phase < phase_end_timed;
+        auto       t     = PhaseEndClock::now();
         pmp::current_team().barrier();
         read_reclaim::quiescent_point(); // EXPERIMENT mode 5: past the team's barrier
+        if (timed)
+        {
+            g_phase_end_times.barrier = phase_end_lap(t);
+        }
 
         auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
         type_registry.flush_all_deferred(true);
+        if (timed)
+        {
+            g_phase_end_times.flush = phase_end_lap(t);
+        }
     }
 }
 
@@ -194,18 +237,44 @@ void finalize_parallel_phase_after_flush()
     // use_openmp: a shape of the phase contract only OpenMP has (phases.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
+        const bool  timed         = phase_end_timing && g_phase_end_times.phase < phase_end_timed;
+        auto        t             = PhaseEndClock::now();
         const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
         type_registry.destroy_after_flush(false);
+        if (timed)
+        {
+            g_phase_end_times.destroy = phase_end_lap(t);
+        }
 
         reset_all();
+        if (timed)
+        {
+            g_phase_end_times.reset = phase_end_lap(t);
+        }
         if (!chunk_config::aggressive_compression() && type_registry.has_candidates())
         // run-time switch: chunk/config.h
         {
             type_registry.run_compress_pass(true);
         }
+        if (timed)
+        {
+            g_phase_end_times.compress = phase_end_lap(t);
+        }
 #if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("after_flush");
 #endif
+        if (timed)
+        {
+            auto& pt  = g_phase_end_times;
+            pt.arenas = phase_end_lap(t);
+            std::printf("[phase_end] phase %d: barrier %.6fs flush %.6fs destroy %.6fs reset %.6fs compress "
+                        "%.6fs arenas %.6fs\n",
+                        pt.phase, pt.barrier, pt.flush, pt.destroy, pt.reset, pt.compress, pt.arenas);
+            std::fflush(stdout);
+            const int next = pt.phase + 1;
+            pt             = PhaseEndTimes{};
+            pt.phase       = next;
+        }
     }
 }
 

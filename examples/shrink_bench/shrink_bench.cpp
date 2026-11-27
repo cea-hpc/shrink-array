@@ -665,6 +665,7 @@ try
         std::cout << "\n";
         memory_consumption("after init");
     }
+    std::cout << "\nElapsed time init mem report : " << init_lap() << "s\n";
     end             = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;
     start           = end;
