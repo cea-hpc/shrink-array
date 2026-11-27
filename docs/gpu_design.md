@@ -1150,6 +1150,26 @@ noise. The growth cost is the arenas' page mapping, moved rather than lost; `Dev
 now starts with a buffer per chunk (e926f8f4b), so only an array given a smaller first arena
 pays it in its phases. What is left in the rewrite kernel needs the hardware counters.
 
+`compress()` in the loop (small windows: 5 x 2^30, 2000 iterations, interval 107374, a pass
+every 10, zero_or_value; checksums equal to flat's, memory unchanged). Each pass began with
+`settle()`, a scan of every descriptor for a fresh buffer that a kernel without `finish()`
+might have left (none after a `finish()`: 70 us an array on the GH200, as much as the pass);
+it now settles the fresh list's entries the counters announce (0f1012603). And the five arrays
+were compressed one by one, two synchronisations and blocking copies each: `compress_all(a...)`
+(`kokkos::compress(a...)`) gathers their counters, launches every pass and gathers their folds
+with two waits in all (5fde6ac7f). 200 passes:
+
+| | fbeae2a98 | 0f1012603 | 5fde6ac7f |
+|---|---|---|---|
+| GH200 `compress()` | 213 ms | 153 ms | 130 ms |
+| GH200 loop | 1462 ms (1.55x) | 1340 ms (1.49x) | 1310 ms (1.46x) |
+| MI300A `compress()` | 215 ms | 151 ms | 123 ms |
+| MI300A loop | 2117 ms (1.55x) | 2053 ms (1.50x) | 2018 ms (1.47x) |
+
+Left in a pass (about 0.6 ms for the five arrays): `compress_chunks`, which still looks at
+every chunk, materialised or not, written since the last pass or not (7.1's "touched" bit would
+restrict it), and `release_free` when chunks fold.
+
 Next: the MI300A's rewrite kernels on large windows; the write kernels themselves (27 us against 3.4);
 `compress()` in the loop; then Arcane.
 

@@ -1208,6 +1208,27 @@ perdu ; `DeviceArray(n)` part maintenant d'un tampon par chunk (e926f8f4b), seul
 l'on donne une première arène plus petite le paie dans ses phases. Ce qui reste dans le noyau de
 réécriture demande les compteurs matériels.
 
+`compress()` dans la boucle (petites fenêtres : 5 x 2^30, 2000 itérations, intervalle 107374, une
+passe toutes les 10, zero_or_value ; sommes de contrôle égales à celles du plat, mémoire
+inchangée). Chaque passe commençait par `settle()`, un parcours de tous les descripteurs à la
+recherche d'un tampon frais qu'un noyau sans `finish()` aurait laissé (aucun après un `finish()` :
+70 us par tableau sur le GH200, autant que la passe) ; elle règle maintenant les entrées de la
+liste des tampons frais que les compteurs annoncent (0f1012603). Et les cinq tableaux étaient
+compressés l'un après l'autre, deux synchronisations et des copies bloquantes chacun :
+`compress_all(a...)` (`kokkos::compress(a...)`) recueille leurs compteurs, lance toutes les passes
+et recueille leurs replis avec deux attentes en tout (5fde6ac7f). 200 passes :
+
+| | fbeae2a98 | 0f1012603 | 5fde6ac7f |
+|---|---|---|---|
+| GH200 `compress()` | 213 ms | 153 ms | 130 ms |
+| GH200 boucle | 1462 ms (1,55x) | 1340 ms (1,49x) | 1310 ms (1,46x) |
+| MI300A `compress()` | 215 ms | 151 ms | 123 ms |
+| MI300A boucle | 2117 ms (1,55x) | 2053 ms (1,50x) | 2018 ms (1,47x) |
+
+Ce qui reste dans une passe (environ 0,6 ms pour les cinq tableaux) : `compress_chunks`, qui
+regarde toujours chaque chunk, matérialisé ou non, écrit depuis la dernière passe ou non (le bit
+« touché » de 7.1 le restreindrait), et `release_free` quand des chunks se replient.
+
 Suite : les noyaux de réécriture du MI300A sur les grandes fenêtres ; les noyaux d'écriture eux-mêmes (27 us
 contre 3,4) ; `compress()` dans la boucle ; puis Arcane.
 
