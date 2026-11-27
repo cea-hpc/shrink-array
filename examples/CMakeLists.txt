@@ -157,6 +157,11 @@ if (CHUNK_DEVICE_KOKKOS)
     add_subdirectory(kokkos)
 endif()
 
+# The Arcane facade of device::Array: an installed Arcane, its example
+if (CHUNK_DEVICE_ARCANE)
+    add_subdirectory(arcane)
+endif()
+
 # zero_or_value against zero_any on one workload (per-operation cost, compression)
 add_subdirectory(variant_compare)
 

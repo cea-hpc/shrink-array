@@ -62,6 +62,10 @@ zero_any::DeviceArray zero_any::DeviceView zero_any::DeviceWriter
 zero_or_value::DeviceArray zero_or_value::DeviceView zero_or_value::DeviceWriter
 set_second_value second_value
 
+[chunk/device/arcane_adaptor.h]
+zero::ArcaneArray zero_any::ArcaneArray zero_or_value::ArcaneArray
+write read end_write compress barrier assign image to_host set_second_value second_value written_chunk_count stats
+
 [chunk/device/kokkos_adaptor.h]
 zero::KokkosArray zero_any::KokkosArray zero_or_value::KokkosArray
 write read end_write

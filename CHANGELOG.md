@@ -69,7 +69,10 @@ the tag's checksum to the recipe.
   members: `KokkosArray(state)`, `assign(state)`, `image()`, `to_host()`, `set_second_value()`,
   `second_value()`, `written_chunk_count()`, `stats()` (no more `native()` for them), checked by
   `kokkos_validation`; `examples/kokkos/kokkos_getting_started.cu`, a Kokkos program from
-  creation to reads.
+  creation to reads. `ArcaneArray` (`chunk/device/arcane_adaptor.h`, experimental), the same
+  facade for Arcane's accelerator API (`RUNCOMMAND_LOOP1`, the `RunQueue` waited for by every
+  call that runs the library's kernels), and `examples/arcane/arcane_getting_started.cc`
+  (CMake option `CHUNK_DEVICE_ARCANE`, an installed Arcane with CUDA or HIP).
 - Optimistic pure reads (`CHUNK_OPTIMISTIC_READS`, `ON` by default): on x86-64 and AArch64, with
   the fast allocator and outside ThreadSanitizer, a pure read inside a parallel region no longer
   announces itself to the compression passes (a store and a fence per read). It re-checks a

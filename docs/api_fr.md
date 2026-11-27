@@ -274,6 +274,7 @@ et mesures : [conception_gpu_fr.md](conception_gpu_fr.md), [gpu_assign_fr.md](gp
 | `chunk/device/zero_any_array.h` | `zero_any::DeviceArray`, `DeviceView`, `DeviceWriter` | toute valeur |
 | `chunk/device/zero_or_value_array.h` | `zero_or_value::DeviceArray`, `DeviceView`, `DeviceWriter` | `T{}` ou `set_second_value(v)` |
 | `chunk/device/kokkos_adaptor.h` | `zero::KokkosArray`, `zero_any::KokkosArray`, `zero_or_value::KokkosArray` | comme ci-dessus, pour les codes Kokkos |
+| `chunk/device/arcane_adaptor.h` | `zero::ArcaneArray`, `zero_any::ArcaneArray`, `zero_or_value::ArcaneArray` | comme ci-dessus, pour les codes Arcane (expérimental) |
 
 S = 1024 est la géométrie GPU (section 13 de conception_gpu_fr.md). Ce que les tableaux de l'hôte
 partagent avec ceux du device : `DeviceArray(n)` (une première arène d'un tampon par chunk : aucune
@@ -290,6 +291,12 @@ itérateurs, l'accès à un élément depuis l'hôte (`to_host()` copie tous les
 membres en plus de ses phases (`write()` ... `end_write()`, `read()`, `parallel_for_chunks`,
 `compress()`), conversion et `to_host()` compris ; ceux qui tournent sur le device font d'abord
 un fence Kokkos. Un programme Kokkos de la création aux lectures : [examples/kokkos/kokkos_getting_started.cu](../examples/kokkos/kokkos_getting_started.cu).
+`ArcaneArray` est la même façade pour l'API accélérateur d'Arcane : `write(queue)` et `read(queue)`
+donnent les accès que capture un `RUNCOMMAND_LOOP1`, `end_write(queue)`, `compress(queue)`,
+`parallel_for_chunks(queue, ...)` et la conversion attendent d'abord la `RunQueue`, puis leurs
+propres kernels ; la queue doit être CUDA ou HIP (`-A,AcceleratorRuntime=cuda`). Exemple :
+[examples/arcane/arcane_getting_started.cc](../examples/arcane/arcane_getting_started.cc)
+(`-DCHUNK_DEVICE_ARCANE=ON -DArcane_ROOT=...`).
 
 ## Noms changés en 0.3
 

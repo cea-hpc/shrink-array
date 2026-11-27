@@ -264,6 +264,7 @@ device language and links its runtime (`CUDA::cudart`, `hip::host`). Design and 
 | `chunk/device/zero_any_array.h` | `zero_any::DeviceArray`, `DeviceView`, `DeviceWriter` | any value |
 | `chunk/device/zero_or_value_array.h` | `zero_or_value::DeviceArray`, `DeviceView`, `DeviceWriter` | `T{}` or `set_second_value(v)` |
 | `chunk/device/kokkos_adaptor.h` | `zero::KokkosArray`, `zero_any::KokkosArray`, `zero_or_value::KokkosArray` | as above, for Kokkos codes |
+| `chunk/device/arcane_adaptor.h` | `zero::ArcaneArray`, `zero_any::ArcaneArray`, `zero_or_value::ArcaneArray` | as above, for Arcane codes (experimental) |
 
 S = 1024 is the GPU geometry (section 13 of gpu_design.md). What the host arrays share with the
 device ones: `DeviceArray(n)` (a first arena of one buffer per chunk: no phase can exhaust it, no write is lost; it reserves the flat array's memory, `DeviceArray(n, arena_buffers, ...)` starts smaller),
@@ -278,6 +279,12 @@ element access from the host (`to_host()` copies every element). `KokkosArray` h
 members besides its phases (`write()` ... `end_write()`, `read()`, `parallel_for_chunks`,
 `compress()`), the conversion and `to_host()` included; those that run on the device fence
 Kokkos first. A Kokkos program from creation to reads: [examples/kokkos/kokkos_getting_started.cu](../examples/kokkos/kokkos_getting_started.cu).
+`ArcaneArray` is the same facade for Arcane's accelerator API: `write(queue)` and `read(queue)`
+give the accesses a `RUNCOMMAND_LOOP1` captures, `end_write(queue)`, `compress(queue)`,
+`parallel_for_chunks(queue, ...)` and the conversion wait for the `RunQueue` first and for their
+own kernels after; the queue must be a CUDA or HIP one (`-A,AcceleratorRuntime=cuda`). Example:
+[examples/arcane/arcane_getting_started.cc](../examples/arcane/arcane_getting_started.cc)
+(`-DCHUNK_DEVICE_ARCANE=ON -DArcane_ROOT=...`).
 
 ## Names changed in 0.3
 

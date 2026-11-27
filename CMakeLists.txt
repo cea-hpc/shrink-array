@@ -151,6 +151,9 @@ set_property(CACHE CHUNK_DEVICE_LANGUAGE PROPERTY STRINGS CUDA HIP)
 # for CHUNK_DEVICE_LANGUAGE with CHUNK_KOKKOS_ARCH, its validation and its benchmark.
 option(CHUNK_DEVICE_KOKKOS "Build the Kokkos facade's validation and benchmark (fetches Kokkos; needs a CUDA or HIP compiler)" OFF)
 set(CHUNK_KOKKOS_ARCH "" CACHE STRING "Kokkos_ARCH_<this> for the device: TURING75 (T1000), HOPPER90 (GH200), AMD_GFX942_APU (MI300A)")
+# The Arcane facade's example, against an installed Arcane built with CUDA or HIP
+# (find_package(Arcane): Arcane_ROOT), compiled by Arcane's accelerator macros.
+option(CHUNK_DEVICE_ARCANE "Build the Arcane facade's example (needs an installed Arcane with accelerator support)" OFF)
 if(CHUNK_WITH_TBB)
     find_package(TBB REQUIRED)
     if(CHUNK_THREADS_BACKEND STREQUAL "openmp")
