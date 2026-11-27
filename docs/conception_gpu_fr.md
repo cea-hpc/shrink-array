@@ -1171,6 +1171,32 @@ les atomiques à l'échelle du device), le reste environ 35 ms. Les pages sont p
 boucle au lieu de l'être d'avance : une première arène dimensionnée pour le run (sixième
 argument du bench) devrait les ramener à l'allocation (à passer).
 
+Passé (3cebffdf9, le même nœud, zero_or_value, intervalle 10^7, 200 itérations), la première
+arène à 1/N des chunks :
+
+| | MI300A 1/64 | 1/8 | 1/4 | 1/2 | GH200 1/64 | 1/2 |
+|---|---|---|---|---|---|---|
+| init : allocation | 153 ms | 360 ms | 601 ms | 1072 ms | 8 ms | 40 ms |
+| fenêtre réécrite | 524 ms (43,5x) | 481 ms | 332 ms | 197 ms (16,3x) | 120 ms (9,2x) | 75 ms (5,8x) |
+| boucle totale | 1529 ms | 1470 ms | 1320 ms | 1201 ms | 734 ms | 675 ms |
+| allocation + remplissage + boucle | 1880 ms | 1845 ms | 1935 ms | 2287 ms | 1057 ms | 999 ms |
+
+L'écart de réécriture du MI300A tient à deux choses. Son `hipMalloc` mappe les pages (environ
+29 Go/s ; le GH200 alloue la moitié des chunks en 40 ms) : une première arène plus grande
+déplace ce coût de la boucle vers l'allocation, init et boucle ensemble restent à peu près les
+mêmes jusqu'à 1/4 (et les vues plates paient le leur à leur allocation, hors de la boucle).
+`HSA_XNACK=1` n'y change rien (les arènes sont des `hipMalloc`). Et, sans croissance (1/2), les
+noyaux de réécriture : 197 ms (16,3x) contre 75 ms (5,8x) sur le GH200, la réécriture plate la
+même sur les deux. rocprofv3 (20 itérations, 1/2) : `rewrite<ShrinkStore>` 634 us par appel
+contre 50 us en plat (12,7x), `reset` 538 contre 58 us, les lectures et les lectures-écritures
+à la vitesse du plat : chaque écriture dans un chunk frais mettait son bit dans le bitmap
+`written` du chunk par une atomique à l'échelle du device, 10^7 par fenêtre, à travers les XCD.
+En HIP, les lanes d'une wavefront qui mettent des bits d'un même mot les mettent maintenant en
+une atomique (`Writer::mark_written`, 4410eeeeb ; CUDA inchangé, voir gpu_assign_fr.md 3.3) : la
+réécriture passe de 524 à 469 ms à 1/64 et de 197 à 133 ms (11,0x) à 1/2, la boucle de 1529 à
+1465 ms et de 1201 à 1114 ms (1,13x), validations vertes, aucune attente abandonnée. Reste : le
+mappage des pages de la croissance, et les noyaux au double du rapport du GH200.
+
 Suite : les noyaux de réécriture du MI300A sur les grandes fenêtres ; les noyaux d'écriture eux-mêmes (27 us
 contre 3,4) ; `compress()` dans la boucle ; puis Arcane.
 

@@ -1115,6 +1115,31 @@ rewrite: the claims and the device-scope atomics), the rest about 35 ms. The pag
 the loop instead of up front: a first arena sized for the run (the bench's sixth argument)
 should move them to the allocation (to be run).
 
+Run (3cebffdf9, the same node, zero_or_value, interval 10^7, 200 iterations), the first arena
+from 1/N of the chunks:
+
+| | MI300A 1/64 | 1/8 | 1/4 | 1/2 | GH200 1/64 | 1/2 |
+|---|---|---|---|---|---|---|
+| init: allocation | 153 ms | 360 ms | 601 ms | 1072 ms | 8 ms | 40 ms |
+| window rewritten | 524 ms (43.5x) | 481 ms | 332 ms | 197 ms (16.3x) | 120 ms (9.2x) | 75 ms (5.8x) |
+| loop total | 1529 ms | 1470 ms | 1320 ms | 1201 ms | 734 ms | 675 ms |
+| allocation + fill + loop | 1880 ms | 1845 ms | 1935 ms | 2287 ms | 1057 ms | 999 ms |
+
+The MI300A's rewrite gap is two things. Its `hipMalloc` maps the pages (about 29 GB/s; the
+GH200 allocates 1/2 of the chunks in 40 ms): a larger first arena moves that cost from the loop
+to the allocation, init and loop together stay about the same up to 1/4 (and the flat views pay
+theirs at their allocation, outside the loop). `HSA_XNACK=1` changes nothing there (the arenas
+are `hipMalloc`'s). And, with no growth (1/2), the rewrite kernels: 197 ms (16.3x) against the
+GH200's 75 ms (5.8x), the flat rewrite the same on both. rocprofv3 (20 iterations, 1/2):
+`rewrite<ShrinkStore>` 634 us a call against 50 us flat (12.7x), `reset` 538 against 58 us, the
+reads and read-modify-writes at flat's speed: each write into a fresh chunk ORed its bit into the
+chunk's `written` bitmap with a device-scope atomic of its own, 10^7 a window, across the XCDs.
+On HIP the lanes of a wavefront that set bits of one word now OR them in one atomic
+(`Writer::mark_written`, 4410eeeeb; CUDA unchanged, see gpu_assign.md 3.3): the rewrite 524 ->
+469 ms at 1/64 and 197 -> 133 ms (11.0x) at 1/2, the loop 1529 -> 1465 ms and 1201 -> 1114 ms
+(1.13x), validations green, no wait given up. Left: the growth's page mapping, and the kernels
+at twice the GH200's ratio.
+
 Next: the MI300A's rewrite kernels on large windows; the write kernels themselves (27 us against 3.4);
 `compress()` in the loop; then Arcane.
 
