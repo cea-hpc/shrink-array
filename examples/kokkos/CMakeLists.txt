@@ -27,6 +27,10 @@ set(Kokkos_ARCH_${CHUNK_KOKKOS_ARCH} ON CACHE BOOL "" FORCE)
 # rocThrust (Kokkos's HIP sort) is not needed, and not in a ROCm without its libraries.
 set(Kokkos_ENABLE_ROCTHRUST OFF CACHE BOOL "" FORCE)
 include(FetchContent)
+# The extracted files take the extraction's time, not the archive's (CMP0135, CMake 3.24).
+if (POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)
+endif()
 # Pinned by its SHA-256: a release tarball is not supposed to change, a tag can move.
 # CHUNK_KOKKOS_URL: the tarball fetched beforehand (a path), where CMake cannot reach
 # GitHub -- a proxy whose authentication CMake's curl lacks, a compute node offline.

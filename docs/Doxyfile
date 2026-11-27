@@ -831,6 +831,7 @@ INPUT                  = ../README.md \
                          ../CHANGELOG.md \
                          ../CONTRIBUTING.md \
                          ../third_party/README.md \
+                         ../gpu/proto/README.md \
                          ../chunk/public \
                          ../fast_allocators/public \
                          .
