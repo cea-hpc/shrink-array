@@ -776,6 +776,12 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @param offset Index in the chunk
     /// @return Value at index i
     [[nodiscard]] T read_value(int offset) const noexcept;
+    /// @brief read_value() for a caller inside its WRITE SESSION: no ReadSection.
+    /// @details The write/compress handshake keeps every pass off a chunk while a
+    ///          writer is in it, so the buffer cannot be released under this read:
+    ///          the caller reads the buffer it writes (a read-modify-write body,
+    ///          the marking after a store). ProxyBase::load_value().
+    [[nodiscard]] T read_value_in_session(int offset) const noexcept;
 
     // reader_sync(i) -- the read-side visibility gate of the pure-read proxy
     // entry points -- is inherited from DeferredReadGate<Derived> above

@@ -558,12 +558,17 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         const read_reclaim::ReadSection section;
         return read_values();
     }
-    /// @brief Read through the chunk WITHOUT synchronising first.
+    /// @brief Read through the chunk WITHOUT synchronising first, inside the
+    ///        write session (no ReadSection: ChunkBase::read_value_in_session()).
+    /// @details Every caller runs in the session: the read-modify-write and
+    ///          compound bodies, the marking after a store. Under a ReadSection
+    ///          the re-read of a read-modify-write would pay the read-side
+    ///          protocol for a buffer no pass can release.
     /// @warning Returns a stale value if a deferred write on this offset has
     ///          not been applied. Use read_pure() unless you know otherwise.
     [[nodiscard]] T load_value() const noexcept
     {
-        return chunk_.read_value(elem_offset_);
+        return chunk_.read_value_in_session(elem_offset_);
     }
 
     /**

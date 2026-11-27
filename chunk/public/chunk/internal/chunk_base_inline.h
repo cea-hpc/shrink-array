@@ -782,6 +782,24 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
+[[nodiscard]] CHUNK_FORCE_INLINE T ChunkBase<T, Derived>::read_value_in_session(int offset) const noexcept
+{
+    if constexpr (chunk_config::stats)
+    {
+        if (is_first_value()) // the same split as read_value()
+        {
+            inc_chunk_read_const<Derived>();
+        }
+        else
+        {
+            inc_chunk_read<Derived>();
+        }
+    }
+    // raw-read: read_value_in_session -- the caller holds the write session
+    return element_at_unguarded<false>(offset);
+}
+
+template <typename T, typename Derived>
 T ChunkBase<T, Derived>::operator[](int offset) const noexcept
 {
     if constexpr (chunk_config::stats)
