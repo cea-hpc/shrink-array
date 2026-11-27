@@ -1099,7 +1099,7 @@ template <typename T, unsigned int S, Variant V>
     std::vector<std::int64_t> mats;
     for (std::size_t c = 0; c < nc; ++c)
     {
-        if (is_fresh(h[c].buf))
+        if (is_fresh(h[c].buf) || is_filled(h[c].buf))
         {
             throw std::runtime_error("shrink_array::device::Array::image: a write phase without finish()");
         }

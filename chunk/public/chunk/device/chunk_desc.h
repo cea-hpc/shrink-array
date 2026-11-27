@@ -183,11 +183,32 @@ template <typename T>
     return reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(p) | fresh_tag);
 }
 
-/// @brief The buffer behind a fresh mark (identity on an unmarked one).
+/// The bit of ChunkDesc::buf that marks a filled buffer (CUDA's Writer::assign): published
+/// in this phase with every element written (the constant, then the writes), by a release
+/// exchange that its writers acquire; it needs no `written` bitmap, the settle only removes
+/// the mark. Bit 2: a buffer is S * sizeof(T) bytes into a 256-byte aligned arena, a
+/// multiple of 8.
+inline constexpr std::uintptr_t filled_tag = 4;
+
+/// @brief Whether @p p is a filled buffer (tag_filled()).
+template <typename T>
+[[nodiscard]] CHUNK_HD inline bool is_filled(const T* p) noexcept
+{
+    return (reinterpret_cast<std::uintptr_t>(p) & filled_tag) != 0;
+}
+
+/// @brief Buffer @p p marked filled.
+template <typename T>
+[[nodiscard]] CHUNK_HD inline T* tag_filled(T* p) noexcept
+{
+    return reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(p) | filled_tag);
+}
+
+/// @brief The buffer behind a fresh or filled mark (identity on an unmarked one).
 template <typename T>
 [[nodiscard]] CHUNK_HD inline T* untag(T* p) noexcept
 {
-    return reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(p) & ~fresh_tag);
+    return reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(p) & ~(fresh_tag | filled_tag));
 }
 
 } // namespace shrink_array::device
