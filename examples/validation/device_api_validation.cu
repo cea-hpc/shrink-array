@@ -184,6 +184,31 @@ void run(const char* name)
                line);
     }
 
+    // compress_all() over two arrays: x uniform at 3 (folds in zero_any only: zero folds to
+    // T{} alone, zero_or_value has no second value here), y at 3 on its odd elements (folds in
+    // none); the count is the two arrays' and both read as before.
+    {
+        Arr            x(n);
+        Arr            y(n);
+        std::vector<T> all3(static_cast<std::size_t>(n), T{3});
+        std::vector<T> odd3(static_cast<std::size_t>(n), T{});
+        for (std::int64_t i = 1; i < n; i += 2)
+        {
+            odd3[static_cast<std::size_t>(i)] = T{3};
+        }
+        write_all<WriterT, T><<<256, 256>>>(x.writer(), n, T{3});
+        x.finish();
+        write_odd<WriterT, T><<<256, 256>>>(y.writer(), 0, n, T{3});
+        y.finish();
+        const auto folded = sd::compress_all(x, y);
+        const auto want   = V == sd::Variant::zero_any ? static_cast<unsigned long long>(chunks) : 0ULL;
+        std::snprintf(line, sizeof line, "compress_all(x, y): %llu folded (expected %llu), x %llu and y %llu hold a buffer",
+                      folded, want, x.written_chunk_count(), y.written_chunk_count());
+        expect(folded == want && wrong(x, all3) == 0 && wrong(y, odd3) == 0 &&
+                   y.written_chunk_count() == static_cast<unsigned long long>(chunks),
+               line);
+    }
+
     // A ramp over the first half: its chunks materialise.
     a.parallel_for_chunks(0, h, Ramp<T>{});
     for (std::int64_t i = 0; i < h; ++i)

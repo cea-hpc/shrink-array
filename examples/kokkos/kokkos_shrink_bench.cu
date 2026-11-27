@@ -199,12 +199,7 @@ struct ShrinkStore
     }
     unsigned long long compress() const
     {
-        unsigned long long f = 0;
-        for (auto* x : a)
-        {
-            f += x->compress();
-        }
-        return f;
+        return sk::compress(*a[0], *a[1], *a[2], *a[3], *a[4]); // one fence and two waits for the five
     }
     [[nodiscard]] double bytes() const
     {

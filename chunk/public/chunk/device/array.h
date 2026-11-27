@@ -221,6 +221,14 @@ struct CounterSlot
     WriteCounters*       host;
 };
 
+/// @brief An array's count of folded chunks on the device and its pinned host copy
+///        (compress_all()).
+struct FoldSlot
+{
+    const unsigned long long* device;
+    unsigned long long*       host;
+};
+
 /**
  * @brief A device array of @p T in chunks of @p S, every element @p constant at first.
  * @tparam T element type, trivially copyable
@@ -321,6 +329,20 @@ class Array
     ///        synchronize(). Waits only for the steps that need it (appends, failed spans,
     ///        parked buffers).
     void finish_end();
+
+    /// @brief For compress_all(): where the count of folded chunks is and where its copy goes.
+    [[nodiscard]] FoldSlot fold_slot() const noexcept
+    {
+        return {scratch_, folded_seen_};
+    }
+
+    /// @brief compress()'s first half, with no wait: the fresh buffers counter_slot().host says
+    ///        are pending settled, then the pass launched (compress_all()).
+    void compress_begin();
+
+    /// @brief compress()'s second half, from the count of folded chunks @p folded (read after a
+    ///        synchronize()): the emptied arenas back to the device. Returns @p folded.
+    unsigned long long compress_end(unsigned long long folded);
 
     /// @brief The compression pass (section 7), between phases: every materialised chunk
     ///        whose elements below size() are one value folds back to it (zero_or_value: if
@@ -454,6 +476,7 @@ class Array
     std::int64_t*    fresh_list_ = nullptr; ///< as many entries as the arena has buffers (fit_lost_list)
     WriteCounters*   counters_   = nullptr;
     WriteCounters*   seen_       = nullptr; ///< pinned host copy of the counters (finish_all)
+    unsigned long long* folded_seen_ = nullptr; ///< pinned host copy of compress()'s count (compress_all)
     /// One counter for compress() and materialised(), allocated once instead of a device
     /// allocation and free per call.
     unsigned long long* scratch_ = nullptr;
@@ -504,6 +527,7 @@ Array<T, S, V>::Array(std::int64_t n, unsigned long long arena_buffers, T consta
     failed_       = allocate<Span>(static_cast<std::size_t>(failed_capacity_));
     counters_     = allocate<WriteCounters>(1);
     seen_         = allocate_pinned<WriteCounters>(1);
+    folded_seen_  = allocate_pinned<unsigned long long>(1);
     scratch_      = allocate<unsigned long long>(1);
     spare_        = allocate<T*>(spare_slots);
     append_index_ = allocate<std::int64_t>(static_cast<std::size_t>(append_capacity_));
@@ -532,6 +556,7 @@ Array<T, S, V>::~Array()
     release(fresh_list_);
     release(counters_);
     release_pinned(seen_);
+    release_pinned(folded_seen_);
     release(scratch_);
     release(spare_);
     release(append_index_);
@@ -913,15 +938,26 @@ template <typename T, unsigned int S, Variant V>
 unsigned long long Array<T, S, V>::compress()
 {
     synchronize();
-    // A fresh buffer left by a kernel without finish() would fold on its unwritten elements:
-    // settled first, from the fresh list. After a finish() there is none (its settle emptied
-    // the count), and the scan of every descriptor that settle() is (GH200, 2^30 elements:
-    // 70 us an array, as much as the pass itself) is not run for nothing.
-    WriteCounters pending{};
-    copy(&pending, counters_, 1);
-    if (pending.fresh != 0)
+    copy(seen_, counters_, 1);
+    compress_begin();
+    synchronize();
+    unsigned long long folded = 0;
+    copy(&folded, scratch_, 1);
+    return compress_end(folded);
+}
+
+/// @details A fresh buffer left by a kernel without finish() would fold on its unwritten
+///          elements: settled first, from the fresh list, as counter_slot().host counts them.
+///          After a finish() there is none (its settle emptied the count), and the scan of every
+///          descriptor that settle() is (GH200, 2^30 elements: 70 us an array, as much as the pass
+///          itself) is not run for nothing (GH200 and MI300A, kokkos_shrink_bench's small
+///          windows: compress() 213 -> 153 and 215 -> 151 ms for 200 passes).
+template <typename T, unsigned int S, Variant V>
+void Array<T, S, V>::compress_begin()
+{
+    if (seen_->fresh != 0)
     {
-        settle_listed(pending.fresh); // past the list's capacity: settle()'s scan
+        settle_listed(seen_->fresh); // past the list's capacity: settle()'s scan
     }
     unsigned long long* d = scratch_;
     zero(d, 1);
@@ -933,9 +969,11 @@ unsigned long long Array<T, S, V>::compress()
         kernels::compress_chunks<T, S, V>
             <<<static_cast<unsigned int>(blocks < 65536 ? blocks : 65536), 256>>>(desc_, n_, arena_.ref(), second_, d);
     }
-    synchronize();
-    unsigned long long folded = 0;
-    copy(&folded, d, 1);
+}
+
+template <typename T, unsigned int S, Variant V>
+unsigned long long Array<T, S, V>::compress_end(unsigned long long folded)
+{
     if (folded > 0)
     {
         const auto chunks = static_cast<unsigned long long>(n_chunks_);
@@ -1165,6 +1203,45 @@ void finish_all(A&... a)
     }
     synchronize();
     (a.finish_end(), ...);
+}
+
+/// @brief compress() of every array of @p a with two waits for all instead of two each: their
+///        counters gathered by one kernel, one synchronize(), every pass launched, their counts
+///        of folded chunks gathered by one kernel, one synchronize(), each array's end. Returns
+///        the chunks folded back, every array's. kokkos_shrink_bench compresses five arrays
+///        every tenth iteration.
+template <typename... A>
+unsigned long long compress_all(A&... a)
+{
+    constexpr int     n       = static_cast<int>(sizeof...(A));
+    const CounterSlot slots[] = {a.counter_slot()...};
+    for (int k = 0; k < n; k += kernels::gather_max)
+    {
+        kernels::CounterGather<WriteCounters> g{};
+        g.n = n - k < kernels::gather_max ? n - k : kernels::gather_max;
+        for (int j = 0; j < g.n; ++j)
+        {
+            g.src[j] = slots[k + j].device;
+            g.dst[j] = slots[k + j].host;
+        }
+        kernels::gather_counters<<<1, 32>>>(g);
+    }
+    synchronize();
+    (a.compress_begin(), ...);
+    const FoldSlot folds[] = {a.fold_slot()...};
+    for (int k = 0; k < n; k += kernels::gather_max)
+    {
+        kernels::CounterGather<unsigned long long> g{};
+        g.n = n - k < kernels::gather_max ? n - k : kernels::gather_max;
+        for (int j = 0; j < g.n; ++j)
+        {
+            g.src[j] = folds[k + j].device;
+            g.dst[j] = folds[k + j].host;
+        }
+        kernels::gather_counters<<<1, 32>>>(g);
+    }
+    synchronize();
+    return (a.compress_end(*a.fold_slot().host) + ...);
 }
 
 } // namespace shrink_array::device

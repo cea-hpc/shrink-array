@@ -240,6 +240,15 @@ void end_write(A&... a)
     device::finish_all(a.native()...);
 }
 
+/// @brief compress() of every array of @p a: one Kokkos fence and two waits for all
+///        (device::compress_all). Returns the chunks folded back.
+template <typename... A>
+unsigned long long compress(A&... a)
+{
+    Kokkos::fence("shrink_array::kokkos::compress");
+    return device::compress_all(a.native()...);
+}
+
 } // namespace shrink_array::device::kokkos
 
 // The facade per variant, as the device arrays' (chunk/device/zero_array.h, ...).
