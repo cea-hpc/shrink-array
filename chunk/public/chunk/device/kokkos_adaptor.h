@@ -132,6 +132,15 @@ class Array
     static_assert(std::is_trivially_copyable_v<T>, "kokkos::Array: trivially copyable elements");
 
   public:
+    using value_type                 = T; ///< The element type, as the host arrays'.
+    static constexpr Variant variant = V; ///< The variant (chunk_desc.h).
+
+    /// @brief Elements per chunk: S (the host arrays' chunk_size()).
+    [[nodiscard]] static constexpr unsigned int chunk_size() noexcept
+    {
+        return S;
+    }
+
     /// @brief @p n elements reading @p constant (T{} in the zero variant); an arena of
     ///        @p arena_buffers buffers to start, grown by the phases that need more; an
     ///        append-buffer of @p append_capacity entries for the writes of a phase that finds

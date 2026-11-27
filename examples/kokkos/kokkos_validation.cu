@@ -26,13 +26,16 @@
  *          `w(i) += 1.5` twice by the owner thread; parallel_for_chunks over a range; a write
  *          of zeros over half the array, then compress() (its folds against the host model);
  *          a parallel_reduce over read(); one phase over two arrays ended by one
- *          end_write(a, b) (one wait for both, device::finish_all).
+ *          end_write(a, b) (one wait for both, device::finish_all). Then the facade under the
+ *          variants' names (zero::KokkosArray, zero_any::KokkosArray, zero_or_value::KokkosArray):
+ *          Array(n), a write phase, compress() by each variant's rule.
  */
 
 #include <cstdint> // std::int64_t
 #include <cstdio>  // std::printf, std::snprintf
 #include <cstring>   // std::memcmp
 #include <exception> // std::exception
+#include <type_traits> // std::is_same_v
 #include <vector>  // std::vector
 
 #include <Kokkos_Core.hpp> // Kokkos::View, parallel_for, parallel_reduce, deep_copy
@@ -229,6 +232,37 @@ void run(std::int64_t n, unsigned long long arena_buffers, const char* label)
     }
 }
 
+/// @brief The facade under the variants' names (zero::KokkosArray, ...): Array(n) with the
+///        default arena, a Kokkos write phase, compress() by the variant's rule (a value 3
+///        everywhere folds in zero_any, in zero_or_value once 3 is the second value, never in
+///        zero), read back.
+template <typename A>
+void run_alias(const char* name)
+{
+    constexpr auto     V = A::variant;
+    const std::int64_t n = (1L << 18) + 77;
+    std::printf("[%s::KokkosArray, S=%u] n=%lld\n", name, A::chunk_size(), static_cast<long long>(n));
+    A                   a(n);
+    std::vector<double> mirror(static_cast<std::size_t>(n), 3.0);
+    if constexpr (V == sd::Variant::zero_or_value)
+    {
+        a.native().set_second_value(3.0);
+    }
+    {
+        const auto w = a.write();
+        Kokkos::parallel_for("alias: 3 everywhere", n, KOKKOS_LAMBDA(std::int64_t i) { w(i) = 3.0; });
+        a.end_write();
+    }
+    (void)a.compress();
+    const auto chunks   = static_cast<unsigned long long>((n + A::chunk_size() - 1) / A::chunk_size());
+    const auto expected = V == sd::Variant::zero ? chunks : 0ULL;
+    char       line[160];
+    std::snprintf(line, sizeof line, "3 everywhere, compress(): %llu/%llu chunks hold a buffer (expected %llu)",
+                  a.materialised(), chunks, expected);
+    expect(a.materialised() == expected, line);
+    check(a, mirror, "read back");
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -242,6 +276,13 @@ int main(int argc, char** argv)
         run<1024, sd::Variant::zero_any>((1L << 20) + 77, (1L << 10) + 1, "roomy arena, tail chunk");
         run<256, sd::Variant::zero>((1L << 20) + 77, 1L << 10, "small arena, tail chunk");
         run<1024, sd::Variant::zero>((1L << 20) + 77, (1L << 10) + 1, "roomy arena, tail chunk");
+        namespace sa = shrink_array;
+        static_assert(std::is_same_v<sa::zero_any::KokkosArray<double, 256>, sk::Array<double, 256, sd::Variant::zero_any>>,
+                      "the per-variant names are the facade");
+        run_alias<sa::zero::KokkosArray<double>>("zero");
+        run_alias<sa::zero_any::KokkosArray<double>>("zero_any");
+        run_alias<sa::zero_or_value::KokkosArray<double>>("zero_or_value");
+        run_alias<sa::zero_any::KokkosArray<double, 256>>("zero_any");
     }
     catch (const std::exception& e)
     {
