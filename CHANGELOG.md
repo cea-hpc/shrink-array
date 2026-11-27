@@ -65,7 +65,11 @@ the tag's checksum to the recipe.
   `written_chunk_count()`, `value_type` and `variant`. The installed CMake target
   `shrink_array::device` (`chunk::chunk_device`): the include path and C++20, header-only. These
   headers join `scripts/public_api.txt`, the other ones of chunk/device/ stay the
-  implementation; `device_api_validation` checks the names and the shared API.
+  implementation; `device_api_validation` checks the names and the shared API. `KokkosArray` gains the same
+  members: `KokkosArray(state)`, `assign(state)`, `image()`, `to_host()`, `set_second_value()`,
+  `second_value()`, `written_chunk_count()`, `stats()` (no more `native()` for them), checked by
+  `kokkos_validation`; `examples/kokkos/kokkos_getting_started.cu`, a Kokkos program from
+  creation to reads.
 - Optimistic pure reads (`CHUNK_OPTIMISTIC_READS`, `ON` by default): on x86-64 and AArch64, with
   the fast allocator and outside ThreadSanitizer, a pure read inside a parallel region no longer
   announces itself to the compression passes (a store and a fence per read). It re-checks a

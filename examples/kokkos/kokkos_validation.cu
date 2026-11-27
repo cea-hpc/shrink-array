@@ -28,7 +28,9 @@
  *          a parallel_reduce over read(); one phase over two arrays ended by one
  *          end_write(a, b) (one wait for both, device::finish_all). Then the facade under the
  *          variants' names (zero::KokkosArray, zero_any::KokkosArray, zero_or_value::KokkosArray):
- *          Array(n), a write phase, compress() by each variant's rule.
+ *          Array(n), a write phase, compress() by each variant's rule, set_second_value(),
+ *          written_chunk_count() and stats(); then Array(image().state), assign(state) and
+ *          to_host() against the mirror.
  */
 
 #include <cstdint> // std::int64_t
@@ -246,7 +248,8 @@ void run_alias(const char* name)
     std::vector<double> mirror(static_cast<std::size_t>(n), 3.0);
     if constexpr (V == sd::Variant::zero_or_value)
     {
-        a.native().set_second_value(3.0);
+        a.set_second_value(3.0);
+        expect(a.second_value() == 3.0, "set_second_value(3.0), second_value()");
     }
     {
         const auto w = a.write();
@@ -260,7 +263,41 @@ void run_alias(const char* name)
     std::snprintf(line, sizeof line, "3 everywhere, compress(): %llu/%llu chunks hold a buffer (expected %llu)",
                   a.materialised(), chunks, expected);
     expect(a.materialised() == expected, line);
+    expect(a.written_chunk_count() == a.materialised(), "written_chunk_count() == materialised()");
+    expect(a.stats() == 100.0 * static_cast<double>(expected) / static_cast<double>(chunks), "stats()");
     check(a, mirror, "read back");
+
+    // The conversion: a ramp on every eighth chunk, compress(), image(), A(image().state),
+    // assign(state) onto a third array, to_host() of each against the mirror.
+    {
+        const std::int64_t S = A::chunk_size();
+        const auto         w = a.write();
+        Kokkos::parallel_for("alias: a ramp every eighth chunk", n, KOKKOS_LAMBDA(std::int64_t i) {
+            if ((i / S) % 8 == 0)
+            {
+                w(i) = 0.5 * static_cast<double>(i % 97);
+            }
+        });
+        a.end_write();
+        for (std::int64_t i = 0; i < n; ++i)
+        {
+            if ((i / S) % 8 == 0)
+            {
+                mirror[static_cast<std::size_t>(i)] = 0.5 * static_cast<double>(i % 97);
+            }
+        }
+    }
+    (void)a.compress();
+    const auto image = a.image();
+    A          b(image.state);
+    std::snprintf(line, sizeof line, "A(image().state): %llu chunks hold a buffer, as the source (%llu)",
+                  b.materialised(), a.materialised());
+    expect(b.materialised() == a.materialised(), line);
+    check(b, mirror, "A(image().state) read back");
+    A c(n);
+    c.assign(image.state);
+    check(c, mirror, "assign(image().state) read back");
+    expect(a.to_host() == mirror && b.to_host() == mirror, "to_host() of the source and the copy");
 }
 
 } // namespace

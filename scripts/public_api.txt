@@ -65,6 +65,7 @@ set_second_value second_value
 [chunk/device/kokkos_adaptor.h]
 zero::KokkosArray zero_any::KokkosArray zero_or_value::KokkosArray
 write read end_write
+assign image to_host set_second_value second_value written_chunk_count stats
 
 [chunk/chunk_exchange.h]
 ChunkState ArrayState export_chunk import_chunk export_array import_array

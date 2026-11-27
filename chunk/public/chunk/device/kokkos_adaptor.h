@@ -50,10 +50,11 @@
 #include <cstdint>     // std::int64_t
 #include <memory>      // std::unique_ptr
 #include <type_traits> // std::is_trivially_copyable_v
+#include <vector>      // std::vector (to_host)
 
 #include <Kokkos_Core.hpp> // Kokkos::fence, KOKKOS_INLINE_FUNCTION
 
-#include "chunk/device/array.h"      // device::Array, Writer, View, Variant
+#include "chunk/device/array.h"      // device::Array, Writer, View, Variant, ArrayState, ArrayImage
 #include "chunk/device/chunk_desc.h" // ChunkDesc (descriptor bytes)
 
 namespace shrink_array::device::kokkos
@@ -159,6 +160,53 @@ class Array
     {
     }
 
+    /// @brief The array @p state describes: export_array() of a host array at chunk size S, or
+    ///        image().state of a device one (device::Array(state)).
+    /// @throws std::runtime_error if @p state is at another chunk size.
+    explicit Array(const ArrayState<T>& state) : a_(std::make_unique<device::Array<T, S, V>>(state))
+    {
+    }
+
+    /// @brief Makes this array the one @p state describes, between phases: fences Kokkos, then
+    ///        device::Array::assign(state).
+    /// @throws std::runtime_error if @p state has another size or chunk size.
+    void assign(const ArrayState<T>& state)
+    {
+        Kokkos::fence("shrink_array::kokkos::Array::assign");
+        a_->assign(state);
+    }
+
+    /// @brief This array as an ArrayState owning the materialised chunks' elements, for
+    ///        import_array() on a host array, between phases: fences Kokkos, then
+    ///        device::Array::image().
+    [[nodiscard]] ArrayImage<T> image() const
+    {
+        Kokkos::fence("shrink_array::kokkos::Array::image");
+        return a_->image();
+    }
+
+    /// @brief Every element, on the host, between phases (fences Kokkos).
+    [[nodiscard]] std::vector<T> to_host() const
+    {
+        Kokkos::fence("shrink_array::kokkos::Array::to_host");
+        return a_->to_host();
+    }
+
+    /// @brief zero_or_value: the value other than T{} the chunks may fold to from now on (T{}:
+    ///        none), between phases (device::Array::set_second_value).
+    void set_second_value(T second) noexcept
+        requires(V == Variant::zero_or_value)
+    {
+        a_->set_second_value(second);
+    }
+
+    /// @brief zero_or_value: the second value, T{} while none is declared.
+    [[nodiscard]] T second_value() const noexcept
+        requires(V == Variant::zero_or_value)
+    {
+        return a_->second_value();
+    }
+
     /// @brief The access of a write phase, for the caller's Kokkos kernels; end_write() after them.
     [[nodiscard]] WriteAccess<T, S, V> write() const
     {
@@ -205,6 +253,18 @@ class Array
     [[nodiscard]] unsigned long long materialised() const
     {
         return a_->materialised();
+    }
+
+    /// @brief Chunks holding a buffer, as the host arrays' written_chunk_count() (waits).
+    [[nodiscard]] unsigned long long written_chunk_count() const
+    {
+        return a_->written_chunk_count();
+    }
+
+    /// @brief Percentage of the chunks holding a buffer, the host arrays' stats() (waits).
+    [[nodiscard]] double stats() const
+    {
+        return a_->stats();
     }
 
     /// @brief Bytes the array holds now: the buffers of its materialised chunks and its

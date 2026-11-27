@@ -286,8 +286,10 @@ phases d'écriture. Vers et depuis un tableau de l'hôte, sans décompresser :
 `DeviceArray(export_array(hôte))` ou `assign(state)`, et `image()`, dont `import_array()` prend le
 `state` (`chunk/chunk_exchange.h`, dans une unité de traduction de l'hôte : les en-têtes device
 n'incluent pas ceux des tableaux de l'hôte). Pas sur le device : `resize`, `push_back`, les
-itérateurs, l'accès à un élément depuis l'hôte (`to_host()` copie tous les éléments). Un programme
-Kokkos de la création aux lectures : [examples/kokkos/kokkos_getting_started.cu](../examples/kokkos/kokkos_getting_started.cu).
+itérateurs, l'accès à un élément depuis l'hôte (`to_host()` copie tous les éléments). `KokkosArray` a les mêmes
+membres en plus de ses phases (`write()` ... `end_write()`, `read()`, `parallel_for_chunks`,
+`compress()`), conversion et `to_host()` compris ; ceux qui tournent sur le device font d'abord
+un fence Kokkos. Un programme Kokkos de la création aux lectures : [examples/kokkos/kokkos_getting_started.cu](../examples/kokkos/kokkos_getting_started.cu).
 
 ## Noms changés en 0.3
 
