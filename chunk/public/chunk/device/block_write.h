@@ -189,6 +189,7 @@ struct Writer
     __device__ T*                 wait_claim(ChunkDesc<T, V>& d, T* found) const noexcept;
     __device__ T*                 materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen) const noexcept;
     __device__ void               append(std::int64_t i, T v) const noexcept;
+    __device__ void               mark_written(std::int64_t c, unsigned int e) const noexcept;
     __device__ void               note_fresh(std::int64_t c) const noexcept;
     [[nodiscard]] __device__ T    appended_or(std::int64_t i, T otherwise) const noexcept;
     [[nodiscard]] __device__ bool chunk_appended(std::int64_t c) const noexcept;
@@ -821,6 +822,65 @@ CHUNK_HD T Writer<T, S, V>::load(std::int64_t i) const noexcept
 #endif
 }
 
+/// @details Element @p e of fresh chunk @p c written: its bit in the chunk's `written`
+///          bitmap, which settle() reads after the phase (the kernel's end orders the two).
+///
+///          HIP: one atomic per 32-bit word of the bitmap and per wavefront. The lanes that set
+///          bits of one word -- a grid-stride rewrite: 64 consecutive elements, two or three
+///          words -- elect their lowest lane, which ORs the group's bits in one fetch_or; 32
+///          ballots, uniform over the wavefront, give each group its bits exactly. In lockstep
+///          the active lanes are exactly this call's (no lane is elsewhere), so these
+///          collectives are safe there; at most four groups are formed, the lanes past them
+///          (scattered writes: a word each) OR their own bit as before. The MI300A's
+///          device-scope atomics cross its XCDs: a window of 10^7 elements rewritten by
+///          assign() took 634 us against 50 us flat, one fetch_or per element (rocprofv3,
+///          kokkos_shrink_bench, an arena of half the chunks).
+///
+///          CUDA: one fetch_or per element. The lanes that reach assign() need not be converged
+///          under independent thread scheduling, and a collective over __activemask()'s lanes
+///          deadlocked there (materialise_grouped).
+template <typename T, unsigned int S, Variant V>
+__device__ void Writer<T, S, V>::mark_written(std::int64_t c, unsigned int e) const noexcept
+{
+    const std::int64_t w   = c * words + static_cast<std::int64_t>(e >> 5);
+    const unsigned int bit = 1U << (e & 31);
+#if defined(CHUNK_DEVICE_HIP)
+    const LaneMask active  = active_lanes();
+    const int      lane    = lane_id();
+    LaneMask       pending = active;
+    LaneMask       group   = 0;
+    int            leader  = -1;
+    for (int round = 0; round < 4 && pending != 0; ++round) // pending: the same on every lane
+    {
+        const int          l  = first_lane(pending);
+        const std::int64_t lw = shuffle(active, w, l);
+        const LaneMask     g  = ballot(active, ((pending >> lane) & 1U) != 0 && w == lw);
+        if (((g >> lane) & 1U) != 0)
+        {
+            group  = g;
+            leader = l;
+        }
+        pending &= ~g;
+    }
+    unsigned int bits = 0;
+    for (unsigned int b = 0; b < 32; ++b) // uniform: every active lane takes part
+    {
+        const LaneMask m = ballot(active, (e & 31) == b);
+        bits |= (m & group) != 0 ? 1U << b : 0U;
+    }
+    if (leader < 0)
+    {
+        fetch_or(&written[w], bit); // past the four groups: its own bit
+    }
+    else if (lane == leader)
+    {
+        fetch_or(&written[w], bits);
+    }
+#else
+    fetch_or(&written[w], bit);
+#endif
+}
+
 template <typename T, unsigned int S, Variant V>
 __device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexcept
 {
@@ -856,7 +916,7 @@ __device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexce
     if (is_fresh(buf))
     {
         untag(buf)[e] = v; // 3. the element, then its bit
-        fetch_or(&written[c * words + (e >> 5)], 1U << (e & 31));
+        mark_written(c, e);
         return;
     }
     buf[e] = v; // 4. a buffer of an earlier kernel
