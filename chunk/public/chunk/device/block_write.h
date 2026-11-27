@@ -887,7 +887,16 @@ __device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexce
     const std::int64_t c   = i / S;
     const auto         e   = static_cast<unsigned int>(i % S);
     ChunkDesc<T, V>&   d   = desc[c];
-    T*                 buf = load_ptr(&d.buf);
+#if defined(CHUNK_DEVICE_HIP)
+    // A plain load, which the XCD's L2 serves: an agent-scope atomic load bypasses it on
+    // gfx942 (its XCDs' L2 are not coherent with each other), one per write. A stale nullptr
+    // or busy mark only takes the slow path, which loads again (materialise_grouped: the CAS,
+    // then wait_claim's atomic loads); a stale buffer cannot be: a chunk is published at most
+    // once per write kernel, and the caches are made coherent at the kernel boundaries.
+    T* buf = d.buf;
+#else
+    T* buf = load_ptr(&d.buf);
+#endif
     if (buf == nullptr || buf == busy_mark<T>())
     {
         if (same_value(v, constant_of(d)))
