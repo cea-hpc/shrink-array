@@ -1,0 +1,39 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# The Python tools' dependencies (python/, scripts/), declared -- not a package:
+# the tools run from the tree (cd python && python3 -m shrink_gui, python3
+# scripts/check_format.py ...), and this distribution installs no module at all
+# (packages and py-modules empty), only what an extra asks for:
+#
+#   pip install ".[gui]"    shrink_gui: PySide6 (docs/shrink_gui.md)
+#   pip install ".[plot]"   thread_speedup.py's charts, scripts/plot_memory_bench.py
+#   pip install ".[test]"   pytest python/shrink_gui/tests (the GUI tests skip without PySide6)
+#
+# The scripts/check_*.py and bench_runner need the standard library only. The
+# CI installs ".[test]" with the versions it was last run with pinned:
+# python/constraints-ci.txt.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shrink-array-tools"
+version = "0"
+description = "The Python tools of shrink_array: dependencies only, the tools run from the source tree"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.optional-dependencies]
+# sitecfg.py reads the site file with tomllib (3.11 and later), else tomli.
+gui = ["PySide6>=6.2", "tomli; python_version < '3.11'"]
+plot = ["matplotlib"]
+test = ["pytest", "PySide6>=6.2", "tomli; python_version < '3.11'"]
+
+[tool.setuptools]
+# Nothing to install: without these two, setuptools' discovery would take the
+# tree's top-level directories for packages and refuse the flat layout.
+packages = []
+py-modules = []

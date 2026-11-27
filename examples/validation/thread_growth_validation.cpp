@@ -42,11 +42,9 @@
 // step 3 is skipped.
 // ============================================================================
 
-#include <cstdio>     // std::fopen, std::fclose, std::fread, std::fflush, FILE, stdout, std::remove
-#include <cstdlib>    // std::system
-#include <string>     // std::string, std::to_string
-#include <vector>     // std::vector
-#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
+#include <cstdio> // std::fflush, stdout
+#include <string> // std::string, std::to_string
+#include <vector> // std::vector
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/runtime.h"               // Runtime::init
@@ -55,7 +53,7 @@
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
-#include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h"        // run_self; run() is called by validation_driver.cpp
 #include "validation_variant.h"        // Array, variant_name, begin_phase / end_phase
 
 namespace validation::thread_growth_validation
@@ -160,22 +158,11 @@ static long run_regions(Array<int>& arr, std::vector<int>& ra, Array<double>& da
 /// capacity invariant.
 [[maybe_unused]] static int check_beyond(const char* self) // OpenMP builds only
 {
-    const std::string log    = validation::temp_path("thread_growth_beyond.log");
-    const std::string cmd    = validation::self_command(self) + " --beyond > \"" + log + "\" 2>&1";
-    const int         status = std::system(cmd.c_str());
-    std::string       out;
-    if (FILE* file = std::fopen(log.c_str(), "r"))
-    {
-        char buf[4096];
-        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, file)) > 0;)
-        {
-            out.append(buf, n);
-        }
-        std::fclose(file);
-    }
-    std::remove(log.c_str());
+    // The child: this harness again, no shell (validation_process.h).
+    const validation::ProcessResult child = validation::run_self(self, {"--beyond"});
+    const std::string&              out   = child.output;
 
-    const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
+    const bool stopped = child.stopped();
     const bool message = out.contains("thread capacity");
     println("[beyond] team past the capacity: {}, {}", stopped ? "stopped" : "RAN ON",
             message ? "capacity message printed" : "NO capacity message");

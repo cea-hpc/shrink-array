@@ -75,7 +75,7 @@
 #include "chunk/range_ops.h"             // for_each_value / for_each_span / read_range (bulk-reads step)
 #include "chunk/print.h"                 // shrink_array::println
 
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, variant_name, begin_phase / end_phase, maybe_set_second_value
 
 namespace validation::iterator_validation

@@ -1634,4 +1634,18 @@ void ProxyBase<Derived, T, ChunkT>::check_nan_written([[maybe_unused]] InT<T> va
     }
 }
 
+template <typename Derived, typename T, typename ChunkT>
+[[nodiscard]] T ProxyBase<Derived, T, ChunkT>::read_values_outside_session() const noexcept
+{
+    const read_reclaim::ReadSection section;
+    for (;;) // optimistic reads: read again if a grace period began meanwhile
+    {
+        const T value = read_values();
+        if (!section.retry_after(value)) [[likely]]
+        {
+            return value;
+        }
+    }
+}
+
 } // namespace shrink_array

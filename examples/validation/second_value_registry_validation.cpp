@@ -49,11 +49,8 @@
  *          Usage: second_value_registry_validation [chunks]
  */
 
-#include <cstdio>     // std::snprintf, std::remove, std::getline
-#include <cstdlib>    // std::system
-#include <fstream>    // the --id-limit child's log
-#include <string>     // std::string, std::to_string, std::getline
-#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
+#include <cstdio> // std::snprintf
+#include <string> // std::string, std::to_string, std::getline
 
 #include "chunk/internal/chunk_traits.h" // forward decls (zero_any::Chunk) + default IntType = int
 #include "chunk/zero_any_array.h"        // zero_any::Array, zero_any::Chunk complete (its registry types)
@@ -64,7 +61,7 @@
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run_self; run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, begin_phase
 
 namespace validation::second_value_registry_validation
@@ -174,21 +171,12 @@ static int run_id_limit_child()
 ///        value_by_id[] out of bounds.
 static void check_id_limit(const char* self)
 {
-    const std::string log     = validation::temp_path("second_value_id_limit.log");
-    const std::string cmd     = std::string("CHUNK_SECOND_VALUE_ID_LIMIT=16 ") + validation::self_command(self) +
-                                " --id-limit > \"" + log + "\" 2>&1";
-    const int         status  = std::system(cmd.c_str());
-    const bool        stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
-    bool              said    = false;
-    {
-        std::ifstream in(log);
-        std::string   line;
-        while (std::getline(in, line))
-        {
-            said = said || line.find("identifiers exhausted") != std::string::npos;
-        }
-    }
-    std::remove(log.c_str());
+    // The child: this harness again, no shell (validation_process.h).
+    validation::ProcessOptions opt;
+    opt.env                                 = {"CHUNK_SECOND_VALUE_ID_LIMIT=16"};
+    const validation::ProcessResult child   = validation::run_self(self, {"--id-limit"}, opt);
+    const bool                      stopped = child.stopped();
+    const bool                      said    = child.output.find("identifiers exhausted") != std::string::npos;
     println("D  identifier limit (16, 40 distinct values)       {}, {}{}", stopped ? "stopped" : "RAN ON",
             said ? "with the message" : "no message", (stopped && said) ? "" : "  <-- WRONG");
     if (!stopped || !said)

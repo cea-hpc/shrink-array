@@ -34,7 +34,9 @@ A **run** is a directory on the cluster, `<runs directory>/<id>/`:
 
 ## 2. Requirements and start
 
-- On the laptop: Python 3.9 or later and **PySide6** 6.2 or later (`pip install PySide6`).
+- On the laptop: Python 3.9 or later and **PySide6** 6.2 or later: `pip install ".[gui]"` from the
+  repository root (`pyproject.toml` declares the tools' dependencies; it installs no module, the GUI
+  still runs from `python/`).
 - On the cluster: Python 3.6 or later, the shrink-array repository cloned, and the site's
   submit command for the batch mode (`ccc_msub` on inti; see §6).
 - An ssh master connection, opened once per session:
@@ -354,10 +356,12 @@ language is chosen at the top right (French or English).
 ## 7. Tests
 
 ```sh
+pip install ".[test]"   # pytest and PySide6, from the repository root
 cd python && python3 -m pytest shrink_gui/tests -q
 ```
 
-The tests run without a display (`QT_QPA_PLATFORM=offscreen`) against a fake local cluster:
+The CI runs them at the versions `python/constraints-ci.txt` pins
+(`pip install -c python/constraints-ci.txt ".[test]"`). The tests run without a display (`QT_QPA_PLATFORM=offscreen`) against a fake local cluster:
 fake `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun`, `ccc_mqinfo` and `ccc_mpinfo` (`tests/fakes`), with
 the inti site file regardless of what `~/.config` holds; `test_site.py` also runs a plain Slurm site
 (fake `sbatch` and `scancel`).

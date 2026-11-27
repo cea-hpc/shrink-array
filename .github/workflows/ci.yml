@@ -84,7 +84,8 @@ jobs:
       - name: Dependencies
         run: |
           .github/apt_install.sh libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
-          python -m pip install -q --only-binary :all: pytest==9.1.1 PySide6==6.9.3
+          # pyproject.toml's test extra, at the versions python/constraints-ci.txt pins.
+          python -m pip install -q --only-binary :all: -c python/constraints-ci.txt ".[test]"
       - name: pytest
         env:
           QT_QPA_PLATFORM: offscreen

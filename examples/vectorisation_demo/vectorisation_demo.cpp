@@ -33,7 +33,7 @@ import shrink_array; // zero::Array, Runtime, max_threads, chunk_config::stats
     #include <print>       // std::println, std::print
     #include <algorithm>   // For std::shuffle
     #include <string>      // std::string, std::to_string
-    #include <type_traits> // std::is_same_v (the simd clauses)
+    #include <type_traits> // std::is_same_v (simd on the std::vector loops)
     #include <vector>      // std::vector
 
     #include "chunk/runtime.h"    // Runtime, Runtime::shutdown
@@ -83,13 +83,30 @@ void calculate(double                  val,
                const V&                arr2,
                const V&                arr3)
 {
-    // simd for a std::vector only: the chunk proxies do not vectorise, and asking
-    // for it anyway draws clang's -Wpass-failed (multi_mat shows a way around).
-#pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
-    for (int i = start0; i < end0; ++i)
+    const auto body = [&](int i)
     {
         const int pos = index[i - start0];
         array_vec[pos] += arr1[pos] + (arr2[pos] * arr3[i]) - arr2[i] + val;
+    };
+    // simd for a std::vector only: the chunk proxies do not vectorise, and asking
+    // for it anyway draws -Wpass-failed. Two loops, not `if (simd : false)`:
+    // icpx 2026.2 keeps the vectorisation request despite the constant-false
+    // clause (clang 23 honours it).
+    if constexpr (std::is_same_v<V, std::vector<double>>)
+    {
+#pragma omp for simd nowait
+        for (int i = start0; i < end0; ++i)
+        {
+            body(i);
+        }
+    }
+    else
+    {
+#pragma omp for nowait
+        for (int i = start0; i < end0; ++i)
+        {
+            body(i);
+        }
     }
 }
 
@@ -103,13 +120,27 @@ void calculate1(double                     val,
                 const V&                   arr2,
                 const V&                   arr3)
 {
-    // simd for a std::vector only: the chunk proxies do not vectorise, and asking
-    // for it anyway draws clang's -Wpass-failed (multi_mat shows a way around).
-#pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
-    for (int i = start0; i < end0; ++i)
+    const auto body = [&](int i)
     {
         const int pos = index[i - start0];
         arr1[pos] += array_vec[pos] + (arr2[pos] * arr3[i]) - arr2[i] + val;
+    };
+    // As in calculate: two loops, simd on the std::vector one only.
+    if constexpr (std::is_same_v<V, std::vector<double>>)
+    {
+#pragma omp for simd nowait
+        for (int i = start0; i < end0; ++i)
+        {
+            body(i);
+        }
+    }
+    else
+    {
+#pragma omp for nowait
+        for (int i = start0; i < end0; ++i)
+        {
+            body(i);
+        }
     }
 }
 

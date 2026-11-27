@@ -24,7 +24,7 @@ if(CMAKE_C_COMPILER)
     # the system cc. gcc 15.2's lto1 died on motif_offset.c there with an
     # internal compiler error ("resolution sub id ... not in object file").
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
-    set(_formal_models writer_compressor compressor_flush reader_reclaim switch_mt motif_offset range_edges queue_handback)
+    set(_formal_models writer_compressor compressor_flush reader_reclaim switch_mt motif_offset range_edges queue_handback optimistic_read)
     foreach(_m IN LISTS _formal_models)
         add_executable(formal_native_${_m} ${_m}.c)
         target_compile_definitions(formal_native_${_m} PRIVATE NATIVE SHAPE_SYMMETRIC)

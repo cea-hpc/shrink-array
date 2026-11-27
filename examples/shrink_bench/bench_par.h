@@ -458,7 +458,7 @@ class Registry
         std::string            name(cut == std::string_view::npos ? file : file.substr(cut + 1));
         name += ':';
         name += std::to_string(loc.line());
-        for (auto& s : sites_)
+        for (const auto& s : sites_)
         {
             if (s->name == name)
             {

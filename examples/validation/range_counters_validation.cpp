@@ -56,7 +56,7 @@
 #include "chunk/print.h"                 // shrink_array::println
 #include "chunk/internal/enum_name.h"    // shrink_array::name_of (case_name)
 
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run() is called by validation_driver.cpp
 #include "validation_variant.h" // Array, variant_name, begin_phase / end_phase, maybe_set_second_value
 
 namespace validation::range_counters_validation

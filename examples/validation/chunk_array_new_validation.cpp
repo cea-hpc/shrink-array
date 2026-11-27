@@ -67,7 +67,7 @@
 static_assert(shrink_array::build_config::use_openmp, "OpenMP builds only: the region cases use omp single");
 
 // Defined by every executable of the library (the fast allocator reads it).
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run() is called by validation_driver.cpp
 #include "validation_variant.h" // variant_name
 
 namespace validation::chunk_array_new_validation

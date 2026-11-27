@@ -224,6 +224,37 @@ qui n'est pas un tampon.
 
 Tout cela tient sous RC11 et sous IMM. Ce que dit le tableau est l'objet de la section 8.7.
 
+### 6.2 Les lecteurs optimistes (`formal/optimistic_read.c`)
+
+Le même protocole avec le lecteur de `chunk_config::optimistic_reads` (section 5.5 de
+[synchronisation_dekker_fr.md](synchronisation_dekker_fr.md)) : il n'annonce rien, charge
+l'époque, `values` et l'élément (NELEMS = 1, ou un bloc de 2 et son repli), et revérifie l'époque à
+une adresse qui dépend de la valeur. La passe vole le tampon, incrémente l'époque, et réemploie le
+bloc aussitôt -- des stores de poison, par son propre thread ou, avec `RECYCLER_THREAD`, par un
+autre à qui le bloc est passé par un drapeau. Le bloc n'est jamais libéré : c'est la prémisse du
+protocole. La propriété : une lecture que la revérification accepte ne rend jamais le poison.
+Chaque cas nomme son modèle mémoire : l'argument est celui du matériel, le verdict doit donc
+différer entre eux -- correct sous ARMv8 et TSO, refusé sous RC11 et IMM, ce qui calibre que le
+modèle voit la différence. GenMC 0.20, 2026-11-25 (sur la branche exp/optimistic-read, le même
+protocole) :
+
+| cas | ARMv8 | TSO | RC11 | IMM |
+|---|---|---|---|---|
+| source : 1 élément ; un bloc de 2 ; 2 lecteurs x 2 lectures ; le bloc réemployé par un autre thread | passe | passe | échoue (bloc de 2) | échoue (bloc de 2, avec ou sans barrière release dans la passe) |
+| `ENTRY_DEP` : l'époque en relaxed, `values` à une adresse qui en dépend (l'entrée sous clang) | passe | passe | -- | -- |
+| `MUT_ENTRY_NO_DEP` : `values` en relaxed sans la dépendance | échoue | passe (TSO garde l'ordre des chargements) | -- | -- |
+| `MUT_NO_RECHECK` ; `MUT_BUMP_AFTER_RELEASE` | échoue | échoue | -- | -- |
+| `MUT_RECHECK_UNORDERED` ; `MUT_ENTER_RELAXED` | échoue | passe (TSO) | -- | -- |
+| `MUT_FOLD_FIRST_ONLY` : la dépendance du bloc sur l'élément 0 seul | échoue | -- | -- | -- |
+| `SHAPE_FENCE` (une barrière acquire avant la revérification) seule ; avec `PASS_RELEASE_FENCE` (le seqlock C11) | -- | -- | échoue ; passe | -- ; passe |
+| le seqlock C11, le bloc réemployé par un autre thread | -- | -- | échoue (ses stores ont aussi besoin d'un release) | -- |
+
+Pas encore exécuté : `SHAPE_FENCE` sous TSO, la forme des lectures de bloc sur x86
+(`read_reclaim::fold_block` y est faux). TSO garde les chargements dans l'ordre, il devrait passer ;
+le cas a sa place dans `run_genmc.sh` la prochaine fois que GenMC tourne.
+Son build natif (`formal/CMakeLists.txt`) tourne à chaque push, sur x86 et AArch64
+(`ctest -L formal`, ci.yml).
+
 ## 7. Le modèle du protocole 4 : lecteurs d'un motif contre réécritures de la case d'offset
 
 `formal/motif_offset.c` transcrit la section 6 de [algo_pattern_fr.md](algo_pattern_fr.md). Un chunk de

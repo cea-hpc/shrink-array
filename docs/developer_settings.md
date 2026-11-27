@@ -170,6 +170,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_DEFERRED_DRAIN_THRESHOLD` | empty (4,096) | threshold at which a rank flushes its own queue |
 | `CHUNK_FORCE_DEFER_EVERY` | 0 | one write in N through the deferred path, across the whole tree (validation; 32 threads at most) |
 | `CHUNK_DEBUG` | depends on the build | the library's debug checks; `ON` with `CMAKE_BUILD_TYPE=Debug` (not cached: follows the current configuration) |
+| `CHUNK_OPTIMISTIC_READS` | `ON` | pure reads re-checked against the reclaim epoch instead of announced (`read_reclaim.h`); in effect on x86-64 and AArch64 with the fast allocator, outside ThreadSanitizer only. `OFF`: every pure read announces itself |
 | `CHUNK_POOL_NO_REUSE` | `OFF` | deferred-op pools without free list: every block a real `new` / `delete` (ASan, TSan) |
 | `CHUNK_DO_CHECK` | `OFF` | every written value checked for NaN |
 | `CHUNK_RECHUNK_LEDGERTRACE` | `OFF` | trace every block-registry transition |

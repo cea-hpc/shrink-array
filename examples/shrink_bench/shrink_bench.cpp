@@ -137,13 +137,16 @@ static long prealloc_check(const char* name, Int count, T (*value_at)(Int))
         std::println("[prealloc] {}: {} chunks preallocated in [{}, {}), {} outside", name, in, beg, end, out);
     }
 
-    // The loop over the window: stores into chunks that already exist.
+    // The loop over the window: stores into chunks that already exist. Not
+    // for_static_vec: its `omp for simd` on the std::vector baseline cannot
+    // vectorise a body calling through the value_at pointer, and clang warns
+    // (-Wpass-failed); a check loop has nothing to gain from simd anyway.
     bench_par::region(
         [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
-            bench_par::for_static_vec(team, beg, end,
-                                      [&](const Int i) __attribute__((always_inline)) { arr[i] = value_at(i); });
+            team.for_static<Int>(
+                beg, end, [&](const Int i) __attribute__((always_inline)) { arr[i] = value_at(i); }, bench_par::nowait);
             finalize_parallel_phase_only_flush_g();
         });
     finalize_parallel_phase_after_flush_g();

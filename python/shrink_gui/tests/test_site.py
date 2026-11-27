@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """The site file (sitecfg.py, sites/): reading, checks, and a plain Slurm
 site (sbatch, #SBATCH, scancel) from the helper to the window."""
+import ast
 import base64
 import json
 import os
@@ -191,7 +192,8 @@ print("RESULT", repr((w.windowTitle(), w.host.text(), modes, w.preset.currentDat
     res = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=120)
     line = [ln for ln in res.stdout.splitlines() if ln.startswith("RESULT ")]
     assert line, res.stdout + res.stderr
-    title, host, modes, preset, directives, conn, repo_label = eval(line[0][7:])
+    # The child prints repr() of a tuple of str / list / None: literals, nothing to evaluate.
+    title, host, modes, preset, directives, conn, repo_label = ast.literal_eval(line[0][7:])
     assert "cluster" in title and host == "cluster" and repo_label == "Dépôt (cluster)"
     assert modes == ["sbatch (batch)"] and preset == "cpu"
     assert directives.startswith("#SBATCH --partition=cpu")

@@ -134,6 +134,11 @@ element:
 - **Random reads**: the two costs add up, about a quarter of the time each. They are what
   the correctness rests on (the acquire of the dirty bit, the release order of the section's
   exit): nothing cheap to remove, and any change goes through formal/reader_reclaim.c first.
+- **What came of it**: the read section is now optimistic on x86-64 and AArch64 (no store, no
+  fence: a dependent re-check of an epoch, `CHUNK_OPTIMISTIC_READS`), and the dirty bit is read
+  relaxed, its acquire fence taken out of line when it is set. Grace, against the announce, 1 and
+  72 threads: element reads gcc -27 to -37 %, llvm -38 to -53 %; read-bulk, rmw and write within
+  noise; read-random gcc +1 to 2 %, llvm +5 to 7 % (the re-check's dependent load after a miss).
 - **The memory orders are already the cheapest ones**: GCC 16 emits ldapr (RCpc) for the
   acquire loads of the read path; its ldar (seq_cst loads) are all in the compression, flush
   and end-of-phase paths.

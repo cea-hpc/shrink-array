@@ -78,7 +78,7 @@ namespace shrink_array::internal
 ///          under many threads. Only the traces read it.
 [[nodiscard]] inline long rss_mib_now() noexcept
 {
-    const long kib = shrink_array::exact_rss_kib();
+    const long kib = exact_rss_kib();
     return kib >= 0 ? kib / 1024 : -1;
 }
 
