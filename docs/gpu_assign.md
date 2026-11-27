@@ -136,7 +136,10 @@ and 0.17 G to 7.7 G (S = 1024), one per element written. The scattered writes do
 (2.1x-2.3x first write, 1.0x-1.3x into materialised chunks). MI300A (`adda2ea5e`, ROCm 10.2, the
 HIP path unchanged but for `write_marked`): validations green, no wait given up; scattered writes
 1.45x-1.70x and 1.03x-1.07x as at 491a05a87; the grid-stride first write 74.6x / 48.5x
-(S = 256 / 1024) against 57x / 42x there, not compared in one session yet.
+(S = 256 / 1024) against 57x / 42x there. Against `fc2801768` on the same node and build (ROCm
+10.2, 8 GiB): 75.1x / 74.8x and 44.0x / 42.8x (`zero_any` / `zero`, S = 256 / 1024) before,
+74.8x / 74.5x and 46.6x / 45.6x at `ece8e73c1`, the same within noise. The S = 256 gap to 57x
+predates the per-lane claim: a commit between 491a05a87 and fc2801768, to be bisected.
 
 **The grouping's gain back, without a collective.** What the grouping saved was the CAS of 32
 lanes on one descriptor (a grid-stride first write: about one CAS per element per lane against one

@@ -146,7 +146,10 @@ Les écritures dispersées ne changent pas (2,1x-2,3x en première écriture, 1,
 matérialisés). MI300A (`adda2ea5e`, ROCm 10.2, le chemin HIP inchangé hormis `write_marked`) :
 validations vertes, aucune attente abandonnée ; écritures dispersées à 1,45x-1,70x et 1,03x-1,07x
 comme à 491a05a87 ; la première écriture grid-stride à 74,6x / 48,5x (S = 256 / 1024) contre
-57x / 42x alors, pas encore comparée dans une même session.
+57x / 42x alors. Contre `fc2801768` sur le même nœud et le même build (ROCm 10.2, 8 Gio) :
+75,1x / 74,8x et 44,0x / 42,8x (`zero_any` / `zero`, S = 256 / 1024) avant, 74,8x / 74,5x et
+46,6x / 45,6x à `ece8e73c1`, les mêmes au bruit près. L'écart à 57x à S = 256 précède la
+réservation par lane : un commit entre 491a05a87 et fc2801768, à chercher par bissection.
 
 **Le gain du regroupement retrouvé, sans opération collective.** Ce que le regroupement
 économisait, c'étaient les CAS de 32 lanes sur un même descripteur (une première écriture
