@@ -18,8 +18,12 @@
 #   cuda: nvcc on PATH (or CMAKE_CUDA_COMPILER), a g++ it accepts;
 #         CUDA_ARCH, default 90 (GH200)
 #   hip:  ROCM_PATH (default: from the clang++ on PATH, else /opt/rocm);
-#         HIP_ARCH, default gfx942 (MI300A). --rocm-path is passed to clang:
-#         ROCm 10.2's driver looked for libamdhip64.so under llvm/../../lib.
+#         HIP_ARCH, default gfx942 (MI300A). The root is given to CMake
+#         (CMAKE_HIP_COMPILER_ROCM_ROOT) and to clang (--rocm-path): CMake takes
+#         it from `clang++ -v -print-targets`, without the flags, and ROCm
+#         10.2's clang reports llvm/bin/../../.. -- the layout with
+#         lib/llvm/bin, one level too high where llvm/ sits at the root (inti's
+#         module); its driver also looked for libamdhip64.so there.
 #
 # Exit status: 0 when every validation passes (and the repeats of
 # device_assign_validation), 1 otherwise.
@@ -72,6 +76,7 @@ else
     gcc_dir=$(dirname "$("$gxx" -print-libgcc-file-name)")
     cmake_args+=(-DCHUNK_DEVICE_LANGUAGE=HIP -DCMAKE_HIP_ARCHITECTURES="${HIP_ARCH:-gfx942}"
                  -DCMAKE_HIP_COMPILER="$ROCM_PATH/llvm/bin/clang++" -DCMAKE_PREFIX_PATH="$ROCM_PATH"
+                 -DCMAKE_HIP_COMPILER_ROCM_ROOT="$ROCM_PATH"
                  "-DCMAKE_HIP_FLAGS=--rocm-path=$ROCM_PATH --gcc-install-dir=$gcc_dir")
     echo "device_check: ROCM_PATH=$ROCM_PATH"
 fi
