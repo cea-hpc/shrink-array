@@ -144,6 +144,11 @@ class Array
     {
     }
 
+    /// @brief @p n elements at T{}, device::Array's default first arena (default_arena()).
+    explicit Array(std::int64_t n) : a_(std::make_unique<device::Array<T, S, V>>(n))
+    {
+    }
+
     /// @brief The access of a write phase, for the caller's Kokkos kernels; end_write() after them.
     [[nodiscard]] WriteAccess<T, S, V> write() const
     {
@@ -226,3 +231,25 @@ void end_write(A&... a)
 }
 
 } // namespace shrink_array::device::kokkos
+
+// The facade per variant, as the device arrays' (chunk/device/zero_array.h, ...).
+namespace shrink_array::zero
+{
+/// @brief The Kokkos facade of a zero device array (device::kokkos::Array).
+template <typename T, unsigned int S = 1024>
+using KokkosArray = device::kokkos::Array<T, S, device::Variant::zero>;
+} // namespace shrink_array::zero
+
+namespace shrink_array::zero_any
+{
+/// @brief The Kokkos facade of a zero_any device array (device::kokkos::Array).
+template <typename T, unsigned int S = 1024>
+using KokkosArray = device::kokkos::Array<T, S, device::Variant::zero_any>;
+} // namespace shrink_array::zero_any
+
+namespace shrink_array::zero_or_value
+{
+/// @brief The Kokkos facade of a zero_or_value device array (device::kokkos::Array).
+template <typename T, unsigned int S = 1024>
+using KokkosArray = device::kokkos::Array<T, S, device::Variant::zero_or_value>;
+} // namespace shrink_array::zero_or_value

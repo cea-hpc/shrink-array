@@ -59,7 +59,7 @@ command -v ninja > /dev/null && gen=(-G Ninja)
 
 echo "device_check: $lang, repo $src at $(git log --oneline -1 2>/dev/null), host $(uname -m), build $build"
 
-targets="device_assign_validation device_write_validation device_arena_validation device_convert_validation device_memory_validation_zero_any"
+targets="device_assign_validation device_write_validation device_arena_validation device_api_validation device_convert_validation device_memory_validation_zero_any"
 cmake_args=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="$gxx"
             -DCHUNK_BUILD_VALIDATION=ON -DCHUNK_DEVICE_CORE_CHECK=ON)
 if [ "$lang" = cuda ]; then

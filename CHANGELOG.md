@@ -56,6 +56,16 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- The GPU arrays under the host variants' names (experimental, chunk/device/):
+  `zero::DeviceArray<T, S = 1024>`, `zero_any::DeviceArray`, `zero_or_value::DeviceArray`, with
+  their `DeviceView` and `DeviceWriter` (`chunk/device/zero_array.h`, `zero_any_array.h`,
+  `zero_or_value_array.h`) and `KokkosArray` (`kokkos_adaptor.h`), aliases of
+  `device::Array<T, S, Variant>`. `device::Array` gains the host arrays' `Array(n)` (a default
+  first arena, `default_arena()`), `Array(state)`, `chunk_size()`, `stats()`,
+  `written_chunk_count()`, `value_type` and `variant`. The installed CMake target
+  `shrink_array::device` (`chunk::chunk_device`): the include path and C++20, header-only. These
+  headers join `scripts/public_api.txt`, the other ones of chunk/device/ stay the
+  implementation; `device_api_validation` checks the names and the shared API.
 - `scripts/compile_all.sh --pgo=generate|use` (and `compile_all_gnu.sh`), CMake option `CHUNK_PGO`
   (`OFF`, `GENERATE`, `USE`) and `CHUNK_PGO_DIR`: profile-guided optimisation of the C++ code, in two
   passes on the same build directories (the optimised ones, as `--lto`). GCC, Clang and IntelLLVM

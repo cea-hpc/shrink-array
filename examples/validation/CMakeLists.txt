@@ -936,7 +936,7 @@ if (CHUNK_DEVICE_CORE_CHECK)
     message(FATAL_ERROR "CHUNK_DEVICE_LANGUAGE: CUDA or HIP, not '${_dev_lang}'")
   endif()
   enable_language(${_dev_lang})
-  set(_dev_targets device_arena_validation device_write_validation device_assign_validation)
+  set(_dev_targets device_arena_validation device_write_validation device_assign_validation device_api_validation)
   if (_dev_lang STREQUAL "CUDA")
     # device_core_validation: the core layer (chunk/internal/host_device.h) on the
     # device against the host; CUDA runtime calls, not ported to HIP yet.
@@ -945,6 +945,7 @@ if (CHUNK_DEVICE_CORE_CHECK)
   # device_arena_validation: chunk/device/arena.h under concurrent takes.
   # device_write_validation: chunk/device/block_write.h and array.h against a host mirror.
   # device_assign_validation: Writer::assign / load (docs/gpu_assign.md) against a host mirror.
+  # device_api_validation: the per-variant names (zero::DeviceArray, ...) and the host API they share.
   foreach (_t IN LISTS _dev_targets)
     add_executable(${_t} ${_t}.cu)
     set_source_files_properties(${_t}.cu PROPERTIES LANGUAGE ${_dev_lang})

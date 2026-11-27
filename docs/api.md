@@ -250,6 +250,32 @@ every build -- the standard ones where the library has them, the same signatures
 `std::format` otherwise. `println("{} chunks", n)` to stdout, `println(stderr, ...)` to a stream.
 The examples print through them.
 
+## 11. GPU arrays (`chunk/device/`, experimental)
+
+One device implementation, `device::Array<T, S, Variant>` (`chunk/device/array.h`), under the
+names of the host variants. Header-only, compiled by the program's CUDA or HIP compiler; the
+CMake target `shrink_array::device` gives the include path and C++20, the program enables its
+device language and links its runtime (`CUDA::cudart`, `hip::host`). Design and measurements:
+[gpu_design.md](gpu_design.md), [gpu_assign.md](gpu_assign.md).
+
+| header | names | folds a chunk back to |
+|---|---|---|
+| `chunk/device/zero_array.h` | `zero::DeviceArray<T, S = 1024>`, `zero::DeviceView`, `zero::DeviceWriter` | `T{}` |
+| `chunk/device/zero_any_array.h` | `zero_any::DeviceArray`, `DeviceView`, `DeviceWriter` | any value |
+| `chunk/device/zero_or_value_array.h` | `zero_or_value::DeviceArray`, `DeviceView`, `DeviceWriter` | `T{}` or `set_second_value(v)` |
+| `chunk/device/kokkos_adaptor.h` | `zero::KokkosArray`, `zero_any::KokkosArray`, `zero_or_value::KokkosArray` | as above, for Kokkos codes |
+
+S = 1024 is the GPU geometry (section 13 of gpu_design.md). What the host arrays share with the
+device ones: `DeviceArray(n)` (a first arena of one buffer per 64 chunks, grown by the phases),
+`size()`, `chunk_size()`, `stats()` and `written_chunk_count()` (the chunks holding a buffer),
+`compress()`. The phases: a write kernel takes `writer()` (`w.assign(i, v)`), then `finish()`;
+`parallel_for_chunks(lo, hi, f)` is the library's own write loop, a phase by itself; a read
+kernel takes `view()` (`v(i)`), between write phases. To and from a host array, without
+decompressing: `DeviceArray(export_array(host))` or `assign(state)`, and `image()`, whose
+`state` `import_array()` takes (`chunk/chunk_exchange.h`, in a host translation unit: the device
+headers do not include the host arrays'). Not on the device: `resize`, `push_back`, iterators,
+element access from the host (`to_host()` copies every element).
+
 ## Names changed in 0.3
 
 The former names compiled until 0.3, deprecated; 0.4 removed them. A program written against

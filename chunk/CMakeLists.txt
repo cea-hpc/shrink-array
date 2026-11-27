@@ -480,6 +480,9 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/zero_array.h
         public/chunk/zero_or_value_array.h
         public/chunk/zero_any_array.h
+        public/chunk/device/zero_array.h
+        public/chunk/device/zero_or_value_array.h
+        public/chunk/device/zero_any_array.h
         public/chunk/pattern_array.h
         public/chunk/bit_array.h
         public/chunk/bit.h
@@ -749,6 +752,18 @@ foreach(_vname IN LISTS _chunk_variant_names)
   endif()
   list(APPEND _chunk_install_targets ${_vname})
 endforeach()
+
+# The GPU arrays (chunk/device/): header-only, built by the consumer's CUDA or HIP
+# compiler -- zero::DeviceArray, zero_any::DeviceArray, zero_or_value::DeviceArray, their
+# Kokkos facades. The include path and C++20 only: the consumer enables its device
+# language and links its runtime (CUDA::cudart, hip::host), as this project's device
+# validations do. shrink_array::device, chunk::chunk_device.
+add_library(chunk_device INTERFACE)
+target_include_directories(chunk_device INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/public>
+        $<INSTALL_INTERFACE:include>)
+chunk_require_cxx20(chunk_device INTERFACE)
+list(APPEND _chunk_install_targets chunk_device)
 
 # The installed names in the build tree too: a project that takes this one
 # through add_subdirectory() or FetchContent links chunk::chunk_zero_any, as it

@@ -260,6 +260,33 @@ dans tous les builds -- ceux de la bibliothèque standard quand elle les a, les 
 au-dessus de `std::format` sinon. `println("{} chunks", n)` vers stdout, `println(stderr, ...)`
 vers un flux. Les exemples affichent par eux.
 
+## 11. Tableaux GPU (`chunk/device/`, expérimental)
+
+Une seule implémentation device, `device::Array<T, S, Variant>` (`chunk/device/array.h`), sous
+les noms des variantes de l'hôte. En-têtes seuls, compilés par le compilateur CUDA ou HIP du
+programme ; la cible CMake `shrink_array::device` donne le chemin d'inclusion et C++20, le
+programme active son langage device et lie son runtime (`CUDA::cudart`, `hip::host`). Conception
+et mesures : [conception_gpu_fr.md](conception_gpu_fr.md), [gpu_assign_fr.md](gpu_assign_fr.md).
+
+| en-tête | noms | replie un chunk vers |
+|---|---|---|
+| `chunk/device/zero_array.h` | `zero::DeviceArray<T, S = 1024>`, `zero::DeviceView`, `zero::DeviceWriter` | `T{}` |
+| `chunk/device/zero_any_array.h` | `zero_any::DeviceArray`, `DeviceView`, `DeviceWriter` | toute valeur |
+| `chunk/device/zero_or_value_array.h` | `zero_or_value::DeviceArray`, `DeviceView`, `DeviceWriter` | `T{}` ou `set_second_value(v)` |
+| `chunk/device/kokkos_adaptor.h` | `zero::KokkosArray`, `zero_any::KokkosArray`, `zero_or_value::KokkosArray` | comme ci-dessus, pour les codes Kokkos |
+
+S = 1024 est la géométrie GPU (section 13 de conception_gpu_fr.md). Ce que les tableaux de l'hôte
+partagent avec ceux du device : `DeviceArray(n)` (une première arène d'un tampon pour 64 chunks,
+agrandie par les phases), `size()`, `chunk_size()`, `stats()` et `written_chunk_count()` (les
+chunks qui ont un tampon), `compress()`. Les phases : un kernel d'écriture prend `writer()`
+(`w.assign(i, v)`), puis `finish()` ; `parallel_for_chunks(lo, hi, f)` est la boucle d'écriture de
+la bibliothèque, une phase à elle seule ; un kernel de lecture prend `view()` (`v(i)`), entre deux
+phases d'écriture. Vers et depuis un tableau de l'hôte, sans décompresser :
+`DeviceArray(export_array(hôte))` ou `assign(state)`, et `image()`, dont `import_array()` prend le
+`state` (`chunk/chunk_exchange.h`, dans une unité de traduction de l'hôte : les en-têtes device
+n'incluent pas ceux des tableaux de l'hôte). Pas sur le device : `resize`, `push_back`, les
+itérateurs, l'accès à un élément depuis l'hôte (`to_host()` copie tous les éléments).
+
 ## Noms changés en 0.3
 
 Les anciens noms compilaient jusqu'à 0.3, obsolètes ; 0.4 les a retirés. Un programme écrit

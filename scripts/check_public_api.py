@@ -104,11 +104,15 @@ def main() -> int:
     bad = []
 
     on_disk = {"chunk/" + p.name for p in (root / "chunk/public/chunk").glob("*.h")}
+    # chunk/device/: the GPU arrays. Only the headers public_api.txt lists are the interface
+    # there (the per-variant names); the others are the implementation, experimental.
+    device_on_disk = {"chunk/device/" + p.name for p in (root / "chunk/public/chunk/device").glob("*.h")}
     listed = set(sections)
     for h in sorted(on_disk - listed):
         bad.append("%s: a public header (outside internal/) that public_api.txt does not list" % h)
-    for h in sorted(listed - on_disk):
+    for h in sorted(listed - on_disk - device_on_disk):
         bad.append("%s: listed in public_api.txt, but not a header of chunk/public/chunk/" % h)
+    on_disk |= device_on_disk & listed
 
     cache = {}
     for header in sorted(listed & on_disk):

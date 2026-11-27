@@ -235,6 +235,9 @@ class Array
     static_assert(std::is_trivially_copyable_v<T>, "device::Array: trivially copyable elements");
 
   public:
+    using value_type = T;                    ///< The element type, as the host arrays'.
+    static constexpr Variant variant = V;    ///< The variant (chunk_desc.h).
+
     /// Threads per block of the write kernels: 256, or S below it.
     static constexpr int default_block = static_cast<int>(S < 256 ? S : 256);
 
@@ -247,6 +250,28 @@ class Array
     ///        @p constant other than T{} is also the second value (set_second_value()).
     /// @throws std::invalid_argument in the zero variant if @p constant is not T{}.
     Array(std::int64_t n, unsigned long long arena_buffers, T constant = T{}, unsigned long long append_capacity = 0);
+
+    /// @brief @p n elements at T{}, the default first arena (default_arena()), grown by the
+    ///        phases that need more: the host arrays' Array(n).
+    explicit Array(std::int64_t n) : Array(n, default_arena(n))
+    {
+    }
+
+    /// @brief The array @p state describes (export_array() of a host array at chunk size S,
+    ///        or image().state of a device one): Array(state.size), then assign(state).
+    /// @throws std::runtime_error if @p state is at another chunk size.
+    explicit Array(const ArrayState<T>& state) : Array(static_cast<std::int64_t>(state.size))
+    {
+        assign(state);
+    }
+
+    /// @brief The first arena of Array(n): one buffer per 64 chunks, one at least
+    ///        (kokkos_shrink_bench's start); the phases grow it as they need.
+    [[nodiscard]] static constexpr unsigned long long default_arena(std::int64_t n) noexcept
+    {
+        const std::int64_t chunks = n > 0 ? (n + S - 1) / S : 0;
+        return chunks / 64 > 0 ? static_cast<unsigned long long>(chunks / 64) : 1ULL;
+    }
     ~Array();
     Array(const Array&)            = delete;
     Array& operator=(const Array&) = delete;
@@ -345,6 +370,25 @@ class Array
 
     /// @brief Chunks holding a buffer (waits).
     [[nodiscard]] unsigned long long materialised() const;
+
+    /// @brief Elements per chunk: S (the host arrays' chunk_size()).
+    [[nodiscard]] static constexpr unsigned int chunk_size() noexcept
+    {
+        return S;
+    }
+
+    /// @brief Chunks holding a buffer, as the host arrays' written_chunk_count() (waits).
+    [[nodiscard]] unsigned long long written_chunk_count() const
+    {
+        return materialised();
+    }
+
+    /// @brief Percentage of the chunks holding a buffer, 0 with no chunk: the host arrays'
+    ///        stats() (waits).
+    [[nodiscard]] double stats() const
+    {
+        return n_chunks_ != 0 ? 100.0 * static_cast<double>(materialised()) / static_cast<double>(n_chunks_) : 0.0;
+    }
 
     /// @brief Publications that lost their CAS since the array was made.
     [[nodiscard]] unsigned long long cas_lost() const;

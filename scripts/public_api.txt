@@ -5,6 +5,9 @@
 #   - the [header] sections are exactly the headers of chunk/public/chunk/
 #     outside internal/: a header added, moved or removed fails until this
 #     file says so;
+#   - in chunk/device/ (the GPU arrays) only the headers listed here are the
+#     interface -- the per-variant names and the Kokkos facade; the others are
+#     their implementation, experimental before 1.0;
 #   - every name of a section must still be reachable from its header -- a
 #     word of the header or of a chunk/ or fast_allocators/ header it
 #     includes, directly or not: a public name removed or renamed fails.
@@ -46,6 +49,22 @@ for_each_value for_each_span read_range
 
 [chunk/vector_range_ops.h]
 fill_range copy_range assume_drained
+
+[chunk/device/zero_array.h]
+zero::DeviceArray zero::DeviceView zero::DeviceWriter
+size n_chunks chunk_size stats written_chunk_count materialised default_arena compress view writer
+parallel_for_chunks finish assign image to_host
+
+[chunk/device/zero_any_array.h]
+zero_any::DeviceArray zero_any::DeviceView zero_any::DeviceWriter
+
+[chunk/device/zero_or_value_array.h]
+zero_or_value::DeviceArray zero_or_value::DeviceView zero_or_value::DeviceWriter
+set_second_value second_value
+
+[chunk/device/kokkos_adaptor.h]
+zero::KokkosArray zero_any::KokkosArray zero_or_value::KokkosArray
+write read end_write
 
 [chunk/chunk_exchange.h]
 ChunkState ArrayState export_chunk import_chunk export_array import_array
