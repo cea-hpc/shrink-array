@@ -185,10 +185,9 @@ struct Writer
     __device__ T*                 take_buffer(std::int64_t c) const noexcept;
     __device__ void               park(T* buf) const noexcept;
     __device__ void               fail(std::int64_t c, std::int64_t lo, std::int64_t hi) const noexcept;
-    __device__ T*                 publish(std::int64_t c, ChunkDesc<T, V>& d, T constant) const noexcept;
-    __device__ void               fill_constant(T* buf, T constant) const noexcept;
+    __device__ T*                 publish(std::int64_t c, ChunkDesc<T, V>& d) const noexcept;
     __device__ T*                 wait_claim(ChunkDesc<T, V>& d, T* found) const noexcept;
-    __device__ T* materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen, T constant) const noexcept;
+    __device__ T*                 materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen) const noexcept;
     __device__ void               append(std::int64_t i, T v) const noexcept;
     __device__ void               mark_written(std::int64_t c, unsigned int e) const noexcept;
     __device__ void               note_fresh(std::int64_t c) const noexcept;
@@ -230,14 +229,6 @@ __device__ void settle_chunk(const Writer<T, S, V>& w, std::int64_t c, int lane)
 {
     ChunkDesc<T, V>& d   = w.desc[c];
     T* const         buf = d.buf;
-    if (is_filled(buf))
-    {
-        if (lane == 0)
-        {
-            d.buf = untag(buf); // every element written: the mark only
-        }
-        return; // uniform per warp
-    }
     if (!is_fresh(buf))
     {
         return; // uniform per warp
@@ -379,10 +370,6 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
             backoff();
             seen = load_ptr(&d.buf);
         }
-        if (is_filled(seen))
-        {
-            seen = load_ptr_acquire(&d.buf); // an assign() of this kernel filled it: its pre-fill first
-        }
         s_buf = seen;
     }
     __syncthreads();
@@ -409,7 +396,7 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
         }
         else
         {
-            write_plain<BLOCK>(untag(buf), c, lo, hi, new_vals); // an earlier kernel's, or filled by an assign()
+            write_plain<BLOCK>(buf, c, lo, hi, new_vals); // an earlier kernel's
         }
         return;
     }
@@ -457,15 +444,11 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
     if (t == 0)
     {
         T* const published = whole ? mine : tag_fresh(mine);
-        T*       found     = cas_ptr(&d.buf, static_cast<T*>(nullptr), published);
+        T* const found     = cas_ptr(&d.buf, static_cast<T*>(nullptr), published);
         if (found != nullptr)
         {
             fetch_add(&counters->cas_lost, 1ULL);
             park(mine);
-            if (is_filled(found))
-            {
-                found = load_ptr_acquire(&d.buf); // filled by an assign(): its pre-fill first
-            }
         }
         else if (!whole)
         {
@@ -493,7 +476,7 @@ __device__ void Writer<T, S, V>::write(std::int64_t c, std::int64_t lo, std::int
     }
     else
     {
-        write_plain<BLOCK>(untag(winner), c, lo, hi, new_vals); // a whole-chunk writer or a filling assign() overlapped
+        write_plain<BLOCK>(winner, c, lo, hi, new_vals); // a whole-chunk writer overlapped: outside the contract
     }
 }
 
@@ -646,92 +629,19 @@ __device__ void Writer<T, S, V>::park(T* buf) const noexcept
 
 /// @details The claim's winner takes a buffer from the arena (not the spare slot: one atomic
 ///          less before the publication, which every other writer of the chunk waits for) and
-///          publishes it -- or releases the claim when the arena is exhausted. Returns what it
-///          published (nullptr: the caller appends).
-///
-///          HIP: empty, tagged fresh, by a relaxed exchange; every write into it then sets its
-///          bit of the `written` bitmap (mark_written, one atomic per word and wavefront).
-///
-///          CUDA: filled with the constant first (one lane, 16-byte stores) and tagged filled,
-///          by a release exchange that the writers acquire: a write into it is a plain store,
-///          no bit. The bits were half of a first write by assign() (RTX A1000, device_bench:
-///          a grid-stride first write 22.8 ms with them, 11.0 ms without), and CUDA cannot
-///          aggregate them per warp (materialise_grouped). The settle only removes the mark.
-///          Not on HIP: acquire and release cost the MI300A 300x to 600x a flat write in the
-///          prototype's protocol.
+///          publishes it empty, tagged fresh, by a relaxed exchange -- or releases the claim
+///          when the arena is exhausted. Returns what it published (nullptr: the caller appends).
 template <typename T, unsigned int S, Variant V>
-__device__ T* Writer<T, S, V>::publish(std::int64_t c, ChunkDesc<T, V>& d, T constant) const noexcept
+__device__ T* Writer<T, S, V>::publish(std::int64_t c, ChunkDesc<T, V>& d) const noexcept
 {
     T* const mine = arena.take(c);
-#if defined(CHUNK_DEVICE_HIP)
-    (void)constant; // an empty buffer, its unwritten elements take the constant at the settle
     T* const publ = mine != nullptr ? tag_fresh(mine) : nullptr;
     (void)exchange_ptr(&d.buf, publ);
-#else
-    if (mine != nullptr)
-    {
-        // T{} as a literal where the constant is T{} (zero always, zero_any and zero_or_value
-        // mostly): stores from the zero register. The same zeros from a register that holds
-        // them took a first write by assign() 60 % longer, and 1.0 as a literal as long (RTX
-        // A1000, device_bench, S = 1024: 13.8 ms against 22.6 and 21.5 ms).
-        if (same_value(constant, T{}))
-        {
-            fill_constant(mine, T{});
-        }
-        else
-        {
-            fill_constant(mine, constant);
-        }
-    }
-    T* const publ = mine != nullptr ? tag_filled(mine) : nullptr;
-    (void)exchange_ptr_release(&d.buf, publ); // the pre-fill before the pointer
-#endif
     if (publ != nullptr)
     {
-        note_fresh(c); // after the publication: no waiter waits for it; the settle removes the mark
+        note_fresh(c); // after the publication: no waiter waits for it
     }
     return publ;
-}
-
-/// @details One thread, 16-byte stores where a buffer's size allows them (S * sizeof(T) a
-///          multiple of 16: every geometry of the library's builds).
-template <typename T, unsigned int S, Variant V>
-__device__ void Writer<T, S, V>::fill_constant(T* buf, T constant) const noexcept
-{
-    if constexpr ((static_cast<std::size_t>(S) * sizeof(T)) % 16 == 0 && (sizeof(T) == 4 || sizeof(T) == 8))
-    {
-        // The 16-byte word built from the constant's bits in registers: through a local array
-        // and a memcpy, the fill of a runtime constant cost a first write by assign() 60 % more
-        // than T{}'s (zero_any against zero, RTX A1000, S = 1024).
-        uint4 word;
-        if constexpr (sizeof(T) == 8)
-        {
-            unsigned long long bits = 0;
-            __builtin_memcpy(&bits, &constant, sizeof(bits)); // a scalar: kept in registers (bit_cast crashed nvcc 13.3)
-            const auto lo   = static_cast<unsigned int>(bits);
-            const auto hi   = static_cast<unsigned int>(bits >> 32);
-            word            = make_uint4(lo, hi, lo, hi);
-        }
-        else
-        {
-            unsigned int bits = 0;
-            __builtin_memcpy(&bits, &constant, sizeof(bits));
-            word            = make_uint4(bits, bits, bits, bits);
-        }
-        constexpr unsigned int per = static_cast<unsigned int>(16 / sizeof(T));
-        uint4* const           out = reinterpret_cast<uint4*>(buf);
-        for (unsigned int k = 0; k < S / per; ++k)
-        {
-            out[k] = word;
-        }
-    }
-    else
-    {
-        for (unsigned int e = 0; e < S; ++e)
-        {
-            buf[e] = constant;
-        }
-    }
 }
 
 /// @details Polls the descriptor (relaxed loads, a short pause) while another thread's claim
@@ -793,8 +703,7 @@ __device__ T* Writer<T, S, V>::wait_claim(ChunkDesc<T, V>& d, T* found) const no
  *          @p seen: what this lane loaded (nullptr or busy_mark()).
  */
 template <typename T, unsigned int S, Variant V>
-__device__ T*
-Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen, T constant) const noexcept
+__device__ T* Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen) const noexcept
 {
 #if defined(CHUNK_DEVICE_HIP)
     const LaneMask active = active_lanes();
@@ -812,7 +721,7 @@ Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen
     T* got = nullptr;
     if (won)
     {
-        got = publish(c, d, constant);
+        got = publish(c, d);
     }
     sync_lanes(active); // every claim of this call published before any lane waits
     if (lead && !won)
@@ -845,7 +754,7 @@ Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen
     T* got = nullptr;
     if (won)
     {
-        got = publish(c, d, constant);
+        got = publish(c, d);
     }
     if (!won)
     {
@@ -854,10 +763,6 @@ Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen
             found = load_ptr(&d.buf); // a lane of this warp may have just published it
         }
         got = wait_claim(d, found);
-        if (is_filled(got))
-        {
-            got = load_ptr_acquire(&d.buf); // its publisher's pre-fill before this lane's writes
-        }
     }
     return got;
 #endif
@@ -985,8 +890,7 @@ __device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexce
     T*                 buf = load_ptr(&d.buf);
     if (buf == nullptr || buf == busy_mark<T>())
     {
-        const T constant = constant_of(d); // a compressed chunk's: no writer changes it in a phase
-        if (same_value(v, constant))
+        if (same_value(v, constant_of(d)))
         {
             // 1. The constant onto its chunk: nothing (a claimed chunk still reads it) -- unless
             //    the chunk appended in this phase: an earlier append of this element by this
@@ -1002,7 +906,7 @@ __device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexce
             }
             return;
         }
-        buf = materialise_grouped(c, d, buf, constant); // 2.
+        buf = materialise_grouped(c, d, buf); // 2.
         if (buf == nullptr)
         {
             append(i, v);
@@ -1013,21 +917,6 @@ __device__ void Writer<T, S, V>::assign_device(std::int64_t i, T v) const noexce
     {
         untag(buf)[e] = v; // 3. the element, then its bit
         mark_written(c, e);
-        return;
-    }
-    if (is_filled(buf))
-    {
-        // 3'. CUDA: filled in this phase, every element valid. Acquired (a relaxed load saw it,
-        //     or the claim's winner is this lane: then no load is needed, the reload is cheap).
-        //     A chunk that appended in this phase appends again: no bit tells the replay that a
-        //     direct write came after an append of the same element, the last append wins.
-        if (chunk_appended(c))
-        {
-            append(i, v);
-            return;
-        }
-        T* const p = untag(load_ptr_acquire(&d.buf));
-        p[e]       = v;
         return;
     }
     buf[e] = v; // 4. a buffer of an earlier kernel
@@ -1050,13 +939,6 @@ template <typename T, unsigned int S, Variant V>
         // device::load: the member load(i) hides the atomic load inside the class.
         const bool set = ((device::load(&written[c * words + (e >> 5)]) >> (e & 31)) & 1U) != 0;
         return set ? untag(buf)[e] : chunk_appended(c) ? appended_or(i, constant_of(d)) : constant_of(d);
-    }
-    if (is_filled(buf))
-    {
-        // CUDA: filled in this phase (its pre-fill acquired); a chunk that appended keeps its
-        // writes in the append-buffer (assign_device 3').
-        const T x = untag(load_ptr_acquire(&d.buf))[e];
-        return chunk_appended(c) ? appended_or(i, x) : x;
     }
     return buf[e]; // a buffer of an earlier kernel: no append to its chunk in this one
 }

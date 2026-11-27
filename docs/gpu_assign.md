@@ -156,31 +156,6 @@ element, as per lane). GH200, 8 GiB (`7b835276b`, every device validation and te
 against 21.0x / 20.3x and 14.1x / 13.8x grouped and 27.4x / 26.8x and 19.9x / 19.3x per lane;
 the scattered writes unchanged, no wait given up.
 
-**CUDA: filled buffers, no `written` bit.** On CUDA the bit of each element written into a fresh
-buffer was a device-scope `fetch_or` of its own (CUDA cannot aggregate it per warp, above): half
-of a first write (RTX A1000, device_bench, 0.5 GiB: a grid-stride first write 22.8 ms with the
-bits, 11.0 ms with none, the result then wrong). The claim's winner now fills the buffer with the
-constant (one lane, 16-byte stores) and publishes it tagged *filled* (`filled_tag`, bit 2) by a
-release exchange; a writer that sees the tag acquires the descriptor (the waiters and the losers of
-the CAS too) and stores its element, no bit; the settle only removes the tag. A chunk that appended
-in the phase appends again (no bit tells the replay that a direct write came after an append of the
-same element: the last append wins); `load()` reads a filled buffer through the append-buffer the
-same way. HIP keeps the fresh buffers and the wavefront's `fetch_or` (acquire and release cost the
-MI300A 300x to 600x a flat write in the prototype's protocol). A literal T{} for the fill where the
-constant is T{}: stores from the zero register; the same zeros from a register that holds them, or
-1.0 as a literal, took the first write 60 % longer (S = 1024: 13.8 against 22.6 and 21.5 ms).
-
-| RTX A1000, 0.5 GiB, zero_any / zero | before | filled |
-|---|---|---|
-| grid-stride first write, S = 256 | 22.8 / 21.2 ms | 11.8 / 11.4 ms |
-| grid-stride first write, S = 1024 | 23.4 / 23.4 ms | 14.4 / 13.7 ms |
-| scattered first write, S = 256 | 160 / 157 ms | 105 / 98 ms |
-| scattered first write, S = 1024 | 152 / 148 ms | 89 / 73 ms |
-| into materialised chunks (contiguous, scattered) | the same | the same |
-
-The device validations, ten `device_assign_validation` runs and compute-sanitizer's memcheck pass.
-To be measured on the GH200.
-
 ### 3.4 Arena exhausted
 
 `DeviceArena::take` returns `nullptr` and nothing else in the kernel can make room: the write

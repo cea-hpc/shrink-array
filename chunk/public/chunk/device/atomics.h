@@ -98,47 +98,6 @@ __device__ inline P* load_ptr(P* const* slot) noexcept
 #endif
 }
 
-/// @brief Acquire load of a pointer slot, device scope: a buffer published by
-///        exchange_ptr_release() is seen with every store before the publication (CUDA's
-///        filled buffers: their pre-fill). On the GH200 it cost what a relaxed load does on the
-///        write path (stage 0, gpu/proto).
-template <typename P>
-__device__ inline P* load_ptr_acquire(P* const* slot) noexcept
-{
-#if defined(CHUNK_DEVICE_HIP)
-    return __hip_atomic_load(const_cast<P**>(slot), __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_AGENT);
-#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
-    unsigned long long bits = 0;
-    asm volatile("ld.acquire.gpu.global.u64 %0, [%1];" : "=l"(bits) : "l"(slot) : "memory");
-    return reinterpret_cast<P*>(bits);
-#else
-    P* const p = *reinterpret_cast<P* const volatile*>(slot);
-    __threadfence();
-    return p;
-#endif
-}
-
-/// @brief Release exchange of a pointer slot, device scope: the stores of this thread before
-///        it are visible to whoever loads the new value with load_ptr_acquire(). Returns the
-///        former value.
-template <typename P>
-__device__ inline P* exchange_ptr_release(P** slot, P* desired) noexcept
-{
-#if defined(CHUNK_DEVICE_HIP)
-    return __hip_atomic_exchange(slot, desired, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_AGENT);
-#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
-    unsigned long long old = 0;
-    asm volatile("atom.release.gpu.global.exch.b64 %0, [%1], %2;"
-                 : "=l"(old)
-                 : "l"(slot), "l"(reinterpret_cast<unsigned long long>(desired))
-                 : "memory");
-    return reinterpret_cast<P*>(old);
-#else
-    __threadfence();
-    return exchange_ptr(slot, desired);
-#endif
-}
-
 /// @brief Atomic load of a 32-bit word (a bit of the `written` bitmap).
 __device__ inline unsigned load(const unsigned* word) noexcept
 {

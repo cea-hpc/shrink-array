@@ -168,33 +168,6 @@ exécutions de `device_assign_validation` passent) : 22,0x / 22,2x à S = 256 et
 S = 1024, contre 21,0x / 20,3x et 14,1x / 13,8x avec le regroupement et 27,4x / 26,8x et
 19,9x / 19,3x par lane ; les écritures dispersées inchangées, aucune attente abandonnée.
 
-**CUDA : des tampons remplis, plus de bit `written`.** Sur CUDA, le bit de chaque élément écrit dans
-un tampon frais était un `fetch_or` à l'échelle du device à lui seul (CUDA ne peut pas le regrouper
-par warp, ci-dessus) : la moitié d'une première écriture (RTX A1000, device_bench, 0,5 Gio : une
-première écriture grid-stride à 22,8 ms avec les bits, 11,0 ms sans, le résultat alors faux). Le
-gagnant de la réservation remplit maintenant le tampon de la constante (un lane, des écritures de
-16 octets) et le publie marqué *rempli* (`filled_tag`, bit 2) par un échange release ; un écrivain
-qui voit la marque lit le descripteur en acquire (les attentes et les perdants du CAS aussi) et
-écrit son élément, sans bit ; le règlement ne fait qu'enlever la marque. Un chunk qui a écrit dans
-l'append-buffer pendant la phase y écrit encore (aucun bit ne dit au rejeu qu'une écriture directe
-a suivi un ajout du même élément : le dernier ajout l'emporte) ; `load()` lit un tampon rempli à
-travers l'append-buffer de la même façon. HIP garde les tampons frais et le `fetch_or` par
-wavefront (acquire et release coûtaient au MI300A 300x à 600x une écriture plate dans le protocole
-du prototype). Un T{} littéral pour le remplissage quand la constante est T{} : des écritures depuis
-le registre zéro ; les mêmes zéros depuis un registre qui les contient, ou 1,0 littéral, rendaient
-la première écriture 60 % plus longue (S = 1024 : 13,8 contre 22,6 et 21,5 ms).
-
-| RTX A1000, 0,5 Gio, zero_any / zero | avant | rempli |
-|---|---|---|
-| première écriture grid-stride, S = 256 | 22,8 / 21,2 ms | 11,8 / 11,4 ms |
-| première écriture grid-stride, S = 1024 | 23,4 / 23,4 ms | 14,4 / 13,7 ms |
-| première écriture dispersée, S = 256 | 160 / 157 ms | 105 / 98 ms |
-| première écriture dispersée, S = 1024 | 152 / 148 ms | 89 / 73 ms |
-| dans des chunks matérialisés (contiguës, dispersées) | les mêmes | les mêmes |
-
-Les validations device, dix exécutions de `device_assign_validation` et le memcheck de
-compute-sanitizer passent. À mesurer sur le GH200.
-
 ### 3.4 Arène épuisée
 
 `DeviceArena::take` renvoie `nullptr` et rien d'autre dans le noyau ne peut faire de place :
