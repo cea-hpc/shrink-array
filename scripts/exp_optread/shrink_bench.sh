@@ -10,7 +10,8 @@
 #   WORK     builds, logs and CSV (default: $CCCWORKDIR/optread_sb1)
 #   CONFIGS  (default "gcc:0 gcc:7 llvm:0 llvm:7"), as run.sh: <compiler>:<mode>[d][i][n]
 #            (n = -DCHUNK_RECHECK_INT_LOAD=0: mode 7 without the integer load, the
-#            default under clang on AArch64 since 16cab1e9f)
+#            default under clang on AArch64 since 16cab1e9f; s = -DCHUNK_GRACE_SYMMETRIC=1,
+#            the grace period without membarrier)
 #   VARIANTS (default "zero zero_or_value zero_any")
 #   THREADS  (default "8 72"; 72 = one Grace socket)
 #   ROUNDS   (default 3)   JOBS (default 32)   ARGS (default "--mode perf")
@@ -75,8 +76,9 @@ for cfg in $CONFIGS; do
     case $suffix in *d*) flags="$flags -DCHUNK_READ_DEP_ORDER=1" ;; esac
     case $suffix in *i*) flags="$flags -DCHUNK_RECHECK_INT_LOAD=1" ;; esac
     case $suffix in *n*) flags="$flags -DCHUNK_RECHECK_INT_LOAD=0" ;; esac
+    case $suffix in *s*) flags="$flags -DCHUNK_GRACE_SYMMETRIC=1" ;; esac
     case $suffix in *i*n*|*n*i*) echo "[sbench] $cfg: i and n contradict"; exit 1 ;; esac
-    case $suffix in *[!din]*) echo "[sbench] unknown suffix in $cfg"; exit 1 ;; esac
+    case $suffix in *[!dins]*) echo "[sbench] unknown suffix in $cfg"; exit 1 ;; esac
     load_env "$comp"
     echo "[sbench] $cfg: $($CXX --version | head -1), CXXFLAGS $flags"
     B=$(build_dir "$cfg")

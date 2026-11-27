@@ -14,7 +14,8 @@
 #   WORK  (default: $CCCWORKDIR/optread_val1)
 #   COMPS (default "gcc llvm")   PARTS (default "A B")   JOBS (default 64)
 #   CTEST_JOBS (default 24: the tests run at 8 threads)
-#   STRESS_MODES (default "7 3")   VARIANTS (default "zero zero_or_value zero_any")
+#   STRESS_MODES (default "7 3"; suffix s: -DCHUNK_GRACE_SYMMETRIC=1, the grace period
+#                without membarrier, e.g. "7s 3s")   VARIANTS (default "zero zero_or_value zero_any")
 #   THREADS (default "8 72")   CASES (default "plain bulk compound")
 #   SECONDS_PER_RUN (default 20: READ_RECLAIM_SECONDS; on x86 the mode 3 plain control caught
 #                    7 stale reads in 10 s, 1 in 2 s -- too few to trust less)
@@ -110,7 +111,8 @@ for comp in $COMPS; do
       B=$WORK/stress-$comp-mode$m
       # Release (bulk needs bulk_fast: no stats, no CHUNK_CHECK), the hooks compiled in.
       timing_flag=; [ "$TIMING" = 1 ] && timing_flag=" -DCHUNK_READ_RECLAIM_TIMING=1"
-      configure "$comp" "$B" "-DCHUNK_READ_SECTION_MODE=$m -DCHUNK_TEST_READ_DELAY_EVERY=16$timing_flag" \
+      sym_flag=; case $m in *s) sym_flag=" -DCHUNK_GRACE_SYMMETRIC=1" ;; esac
+      configure "$comp" "$B" "-DCHUNK_READ_SECTION_MODE=${m%s} -DCHUNK_TEST_READ_DELAY_EVERY=16$timing_flag$sym_flag" \
           -DCMAKE_BUILD_TYPE=Release -DCHUNK_BUILD_VALIDATION=ON -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF || exit 1
       tg=(); for v in $VARIANTS; do tg+=("validation_${v}_256"); done
       ninja -C "$B" -j "$JOBS" "${tg[@]}" > "$B.build.log" 2>&1 \
@@ -149,10 +151,10 @@ for comp in $COMPS; do
                    | sed 's/^.*\] //' | cut -c1-100)
           [ -n "$detail" ] || detail="(no verdict line: $(tail -1 "$log" | cut -c1-80))"
           if [ $rc -eq 77 ]; then verdict=skipped; n_skip=$((n_skip + 1))
-          elif [ "$m" = 3 ] && [ "$c" != compound ]; then
+          elif [ "${m%s}" = 3 ] && [ "$c" != compound ]; then
               if [ $rc -eq 1 ] && grep -qE 'FAIL stale' "$log"; then verdict="ok(control)"; n_ctl_ok=$((n_ctl_ok + 1))
               else verdict="CONTROL-BAD"; n_ctl_bad=$((n_ctl_bad + 1)); fi
-          elif [ "$m" = 3 ]; then verdict="info"
+          elif [ "${m%s}" = 3 ]; then verdict="info"
           elif [ $rc -eq 0 ]; then verdict=ok; n_ok=$((n_ok + 1))
           else verdict=FAIL; n_fail=$((n_fail + 1)); fi
           retries=$(grep -oE '\[optimistic\] reads retried [0-9]+' "$log" | awk '{print $NF}')

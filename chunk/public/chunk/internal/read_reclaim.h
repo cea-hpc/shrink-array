@@ -145,6 +145,20 @@ inline constexpr bool scan_announce =
 
 /// @brief EXPERIMENT mode 7: optimistic reads that retry.
 inline constexpr bool optimistic_retry = enabled && CHUNK_READ_SECTION_MODE == 7;
+
+// EXPERIMENT CHUNK_GRACE_SYMMETRIC=1 (modes 3 and 7, whose pure reads announce
+// nothing): the grace period without membarrier. Only the compressor's scans
+// (ScanSection) still announce; they take a full seq_cst fence after their
+// announce instead of the light side, and wait_for_readers() a seq_cst fence
+// instead of heavy_barrier() -- the symmetric Dekker (formal/reader_reclaim.c,
+// SHAPE_SYMMETRIC; what a TSan build runs). Why: Grace, 72 threads,
+// optread_val4: heavy_barrier() is ~all of a pass's grace period, 25-630 us,
+// writers issuing membarriers at once. Scans are rare: their fence is cheap.
+#ifndef CHUNK_GRACE_SYMMETRIC
+    #define CHUNK_GRACE_SYMMETRIC 0
+#endif
+inline constexpr bool grace_symmetric =
+    enabled && (CHUNK_READ_SECTION_MODE == 3 || CHUNK_READ_SECTION_MODE == 7) && CHUNK_GRACE_SYMMETRIC != 0;
 /// @brief EXPERIMENT mode 7: element_at loads an 8-byte element as an integer, so that the
 ///        re-check's dependency is taken on the integer register the load wrote: no FP ->
 ///        integer move (fmov / vmovq) on the chain from the missed element to the re-check
@@ -319,6 +333,21 @@ inline ReaderSlot* claim_slot() noexcept
 }
 
 /// @brief The light side: free with membarrier registered, a fence otherwise.
+inline void light_fence() noexcept;
+/// @brief EXPERIMENT CHUNK_GRACE_SYMMETRIC: a scan's fence -- seq_cst when the
+///        grace period takes no membarrier, the light side otherwise.
+inline void scan_fence() noexcept
+{
+    if constexpr (grace_symmetric)
+    {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
+    else
+    {
+        light_fence();
+    }
+}
+
 inline void light_fence() noexcept
 {
     if (dekker::asymmetric_active()) [[likely]]
@@ -428,12 +457,12 @@ class ScanSection
                 slot_ = slot;
                 seq_  = slot->scan_seq.load(std::memory_order_relaxed) + 1; // odd
                 slot->scan_seq.store(seq_, std::memory_order_release);
-                light_fence();
+                scan_fence(); // EXPERIMENT CHUNK_GRACE_SYMMETRIC
             }
             else
             {
                 g_overflow_readers.fetch_add(1, std::memory_order_seq_cst);
-                light_fence();
+                scan_fence(); // EXPERIMENT CHUNK_GRACE_SYMMETRIC
             }
         }
     }
@@ -475,12 +504,26 @@ inline void wait_for_readers() noexcept
     if constexpr (grace_timing)
     {
         const auto t0 = std::chrono::steady_clock::now();
-        dekker::heavy_barrier();
+        if constexpr (grace_symmetric)
+        {
+            std::atomic_thread_fence(std::memory_order_seq_cst);
+        }
+        else
+        {
+            dekker::heavy_barrier();
+        }
         g_heavy_barrier.add(ns_since(t0, std::chrono::steady_clock::now()));
     }
     else
     {
-        dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
+        if constexpr (grace_symmetric)
+        {
+            std::atomic_thread_fence(std::memory_order_seq_cst); // symmetric: the scans fence too
+        }
+        else
+        {
+            dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
+        }
     }
     const int         nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
     const ReaderSlot* mine   = t_slot;
