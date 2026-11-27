@@ -126,7 +126,17 @@ same reason: the whole block calls it, and `f`'s divergence could narrow `active
 Cost on CUDA (RTX A1000, 0.5 GiB, `device_bench`): the grid-stride first write by `assign()`
 goes from 5.0x-5.9x to 7.0x-9.9x the flat write (claim waits 9 M -> 334 M; not their counter:
 without it, the same times); the scattered writes do not change (4.1x-4.5x). The chunk-aligned
-path is not concerned. To be measured on the GH200.
+path is not concerned.
+
+GH200, 8 GiB, the same session (`fc2801768` against `adda2ea5e`, `scripts/device_check.sh cuda`,
+the six device validations and ten `device_assign_validation` runs green): the grid-stride first
+write goes from 21.0x / 20.3x to 27.4x / 26.8x at S = 256 (`zero_any` / `zero`) and from 14.1x /
+13.8x to 19.9x / 19.3x at S = 1024, +30% / +40%; the claim waits from 0.27 G to 10.3 G (S = 256)
+and 0.17 G to 7.7 G (S = 1024), one per element written. The scattered writes do not change
+(2.1x-2.3x first write, 1.0x-1.3x into materialised chunks). MI300A (`adda2ea5e`, ROCm 10.2, the
+HIP path unchanged but for `write_marked`): validations green, no wait given up; scattered writes
+1.45x-1.70x and 1.03x-1.07x as at 491a05a87; the grid-stride first write 74.6x / 48.5x
+(S = 256 / 1024) against 57x / 42x there, not compared in one session yet.
 
 ### 3.4 Arena exhausted
 

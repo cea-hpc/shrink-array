@@ -135,8 +135,18 @@ une divergence de `f` pourrait réduire `active_lanes()`.
 Coût sur CUDA (RTX A1000, 0,5 Gio, `device_bench`) : la première écriture grid-stride par
 `assign()` passe de 5,0x-5,9x à 7,0x-9,9x l'écriture plate (attentes de réservation 9 M ->
 334 M ; ce n'est pas leur compteur : sans lui, les mêmes temps) ; les écritures dispersées ne
-changent pas (4,1x-4,5x). Le chemin aligné sur les chunks n'est pas concerné. À mesurer sur le
-GH200.
+changent pas (4,1x-4,5x). Le chemin aligné sur les chunks n'est pas concerné.
+
+GH200, 8 Gio, dans une même session (`fc2801768` contre `adda2ea5e`, `scripts/device_check.sh
+cuda`, les six validations device et dix exécutions de `device_assign_validation` passent) : la
+première écriture grid-stride passe de 21,0x / 20,3x à 27,4x / 26,8x à S = 256 (`zero_any` /
+`zero`) et de 14,1x / 13,8x à 19,9x / 19,3x à S = 1024, soit +30 % / +40 % ; les attentes de
+réservation de 0,27 G à 10,3 G (S = 256) et de 0,17 G à 7,7 G (S = 1024), une par élément écrit.
+Les écritures dispersées ne changent pas (2,1x-2,3x en première écriture, 1,0x-1,3x dans des chunks
+matérialisés). MI300A (`adda2ea5e`, ROCm 10.2, le chemin HIP inchangé hormis `write_marked`) :
+validations vertes, aucune attente abandonnée ; écritures dispersées à 1,45x-1,70x et 1,03x-1,07x
+comme à 491a05a87 ; la première écriture grid-stride à 74,6x / 48,5x (S = 256 / 1024) contre
+57x / 42x alors, pas encore comparée dans une même session.
 
 ### 3.4 Arène épuisée
 
