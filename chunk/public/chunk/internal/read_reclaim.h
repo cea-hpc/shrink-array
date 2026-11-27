@@ -219,6 +219,14 @@ struct NoAnnounce
 {
 };
 
+/// @brief The tag of a ReadSection whose caller loads `values` through dep()
+///        (element_at only): chunk_config::optimistic_dep_entry.
+struct DepEntry
+{
+};
+/// @brief The DepEntry tag.
+inline constexpr DepEntry dep_entry{};
+
 /**
  * @brief Brackets one pure read: from before the `values` load to after the
  *        element load(s).
@@ -233,6 +241,10 @@ class ReadSection
   public:
     /// @brief Enter: the epoch (optimistic), or the announce.
     ReadSection() noexcept;
+    /// @brief As ReadSection(), but under chunk_config::optimistic_dep_entry the epoch is
+    ///        loaded relaxed: the caller MUST then load `values` at an address offset by
+    ///        dep(), which orders that load after this one.
+    explicit ReadSection(DepEntry) noexcept;
     // A scope: neither copied nor moved.
     ReadSection(const ReadSection&)            = delete;
     ReadSection& operator=(const ReadSection&) = delete;
@@ -252,6 +264,10 @@ class ReadSection
     /// @brief Add @p value's bytes to the block's dependency (fold_block). Nothing otherwise.
     template <typename V>
     void fold(const V& value) const noexcept;
+
+    /// @brief 0 at run time; for the CPU, an address dependency on the epoch the entry
+    ///        loaded (chunk_config::optimistic_dep_entry). 0 otherwise.
+    [[nodiscard]] std::uintptr_t dep() const noexcept;
 
   private:
     /// @brief The announce, when reads are not optimistic: held for its constructor and

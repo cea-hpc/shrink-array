@@ -93,6 +93,30 @@ inline read_reclaim::ReadSection::ReadSection() noexcept
     }
 }
 
+inline read_reclaim::ReadSection::ReadSection(DepEntry) noexcept
+{
+    if constexpr (optimistic && chunk_config::optimistic_dep_entry)
+    {
+        seq_ = g_reclaim_epoch.load(std::memory_order_relaxed); // ordered by dep(): the `values` load
+    }
+    else if constexpr (optimistic)
+    {
+        seq_ = g_reclaim_epoch.load(std::memory_order_acquire);
+    }
+}
+
+[[nodiscard]] CHUNK_FORCE_INLINE std::uintptr_t read_reclaim::ReadSection::dep() const noexcept
+{
+    if constexpr (optimistic && chunk_config::optimistic_dep_entry)
+    {
+        // seq_ ^ seq_, the xor hidden from the compiler: 0, but a dependency for the CPU.
+        std::uintptr_t opaque = seq_;
+        __asm__("" : "+r"(opaque));
+        return opaque ^ static_cast<std::uintptr_t>(seq_);
+    }
+    return 0;
+}
+
 /// @details Acquire: the swaps of the pass that bumped the epoch are visible to the
 ///          read that follows, which therefore loads the new pointer.
 [[gnu::noinline, gnu::cold]] inline std::uint64_t read_reclaim::note_retry() noexcept

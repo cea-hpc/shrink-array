@@ -386,6 +386,41 @@ inline constexpr bool optimistic_reads = false;
 #endif
 
 /**
+ * @brief Optimistic reads, under clang: element_at's entry loads the epoch RELAXED and
+ *        the chunk's `values` relaxed at an address that depends on it, instead of two
+ *        acquire loads (read_reclaim::ReadSection(DepEntry)).
+ * @details clang keeps an escaped local -- the private copy of an OpenMP reduction
+ *          variable -- in memory across an acquire load: `sum += a[i]` then reloads and
+ *          stores `sum` every element. The address dependency orders the same loads on
+ *          AArch64 and x86 (formal/optimistic_read.c, ENTRY_DEP: correct under ARMv8 and
+ *          TSO). Measured with the optimistic reads: Grace, llvm 22, an element read
+ *          2.40 -> 1.17 ns; x86, clang 23, zero_or_value read-varied 2.19 -> 1.09 ns.
+ *          gcc keeps the acquire entry: it keeps `sum` in a register regardless, and
+ *          reads faster with it (Grace 1.38 against 1.53 ns).
+ */
+#if defined(__clang__)
+inline constexpr bool optimistic_dep_entry = optimistic_reads;
+#else
+inline constexpr bool optimistic_dep_entry = false;
+#endif
+
+/**
+ * @brief Optimistic reads: element_at loads an 8-byte element as an integer (memcpy into
+ *        a std::uint64_t, then bit_cast), so that the re-check's dependency is taken on the
+ *        integer register the load wrote.
+ * @details Otherwise a double goes through an FP -> integer move (fmov, vmovq) on the
+ *          chain from a missed element to the re-check: 90 % of a random-read loop's
+ *          samples on Grace. Element reads, Grace, llvm 22: 2 to 6 points faster against
+ *          the announce; x86, gcc 14: read-varied -2..-4 %. Not under clang on x86, where
+ *          it flipped inlining elsewhere (zero_any rmw 7.7 -> 14.1 ns, read-bulk +11..22 %).
+ */
+#if defined(__clang__) && defined(__x86_64__)
+inline constexpr bool optimistic_int_load = false;
+#else
+inline constexpr bool optimistic_int_load = optimistic_reads;
+#endif
+
+/**
  * @brief EXPERIMENTAL (-DCHUNK_READ_DEP_ORDER=1 in CMAKE_CXX_FLAGS, AArch64 only): the pure
  *        read's load of a chunk's `values` (ChunkBase::element_at) is RELAXED, ordered with
  *        the loads through it by their address dependency instead of an acquire.

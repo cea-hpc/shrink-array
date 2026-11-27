@@ -664,10 +664,12 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @return Pointer to the chunk data
     [[nodiscard]] T* values_load() const noexcept;
 
-    /// @brief values_load() for a pure read (element_at): the same acquire, or, under
-    ///        chunk_config::read_dep_order (experimental, AArch64), a relaxed load whose
-    ///        users must reach memory only THROUGH the returned pointer.
-    [[nodiscard]] const T* values_load_for_read() const noexcept;
+    /// @brief values_load() for a pure read (element_at): the same acquire, or a relaxed
+    ///        load whose users must reach memory only THROUGH the returned pointer --
+    ///        under chunk_config::optimistic_dep_entry at an address offset by @p dep
+    ///        (ReadSection::dep(): 0, ordered after the epoch's load), under
+    ///        chunk_config::read_dep_order (experimental, AArch64) plain.
+    [[nodiscard]] const T* values_load_for_read(std::uintptr_t dep = 0) const noexcept;
 
     /// @brief Store a pointer to the values with appropriate memory ordering
     /// @param new_values Pointer to store
@@ -1186,7 +1188,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief element_at() without the read section: the load of `values` and
     ///        the element, nothing else.
     template <bool Relaxed>
-    [[nodiscard]] T element_at_unguarded(int offset) const noexcept;
+    [[nodiscard]] T element_at_unguarded(int offset, std::uintptr_t dep = 0) const noexcept;
 
     /// @brief Return @p ptr to the allocator instance that carved it, found
     ///        through its slab (TCAllocator::owner / owner_rank), never
@@ -1204,6 +1206,12 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     template <bool Relaxed>
     [[nodiscard]] static T load_at(const T* vals, int offset) noexcept;
+    /// @brief load_at() for element_at_unguarded: under chunk_config::optimistic_int_load
+    ///        a pure read's 8-byte element is loaded as an integer (memcpy into a
+    ///        std::uint64_t), then bit_cast, so that the re-check's dependency comes
+    ///        from an integer register. The block reads keep load_at() (vectorised).
+    template <bool Relaxed>
+    [[nodiscard]] static T load_element(const T* vals, int offset) noexcept;
 };
 
 } // namespace shrink_array
