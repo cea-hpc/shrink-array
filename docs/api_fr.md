@@ -276,8 +276,9 @@ et mesures : [conception_gpu_fr.md](conception_gpu_fr.md), [gpu_assign_fr.md](gp
 | `chunk/device/kokkos_adaptor.h` | `zero::KokkosArray`, `zero_any::KokkosArray`, `zero_or_value::KokkosArray` | comme ci-dessus, pour les codes Kokkos |
 
 S = 1024 est la géométrie GPU (section 13 de conception_gpu_fr.md). Ce que les tableaux de l'hôte
-partagent avec ceux du device : `DeviceArray(n)` (une première arène d'un tampon pour 64 chunks,
-agrandie par les phases), `size()`, `chunk_size()`, `stats()` et `written_chunk_count()` (les
+partagent avec ceux du device : `DeviceArray(n)` (une première arène d'un tampon par chunk : aucune
+phase ne peut l'épuiser, aucune écriture n'est perdue ; elle réserve la mémoire du tableau plat,
+`DeviceArray(n, arena_buffers, ...)` part plus petit), `size()`, `chunk_size()`, `stats()` et `written_chunk_count()` (les
 chunks qui ont un tampon), `compress()`. Les phases : un kernel d'écriture prend `writer()`
 (`w.assign(i, v)`), puis `finish()` ; `parallel_for_chunks(lo, hi, f)` est la boucle d'écriture de
 la bibliothèque, une phase à elle seule ; un kernel de lecture prend `view()` (`v(i)`), entre deux

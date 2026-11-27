@@ -266,7 +266,7 @@ device language and links its runtime (`CUDA::cudart`, `hip::host`). Design and 
 | `chunk/device/kokkos_adaptor.h` | `zero::KokkosArray`, `zero_any::KokkosArray`, `zero_or_value::KokkosArray` | as above, for Kokkos codes |
 
 S = 1024 is the GPU geometry (section 13 of gpu_design.md). What the host arrays share with the
-device ones: `DeviceArray(n)` (a first arena of one buffer per 64 chunks, grown by the phases),
+device ones: `DeviceArray(n)` (a first arena of one buffer per chunk: no phase can exhaust it, no write is lost; it reserves the flat array's memory, `DeviceArray(n, arena_buffers, ...)` starts smaller),
 `size()`, `chunk_size()`, `stats()` and `written_chunk_count()` (the chunks holding a buffer),
 `compress()`. The phases: a write kernel takes `writer()` (`w.assign(i, v)`), then `finish()`;
 `parallel_for_chunks(lo, hi, f)` is the library's own write loop, a phase by itself; a read

@@ -60,8 +60,8 @@ the tag's checksum to the recipe.
   `zero::DeviceArray<T, S = 1024>`, `zero_any::DeviceArray`, `zero_or_value::DeviceArray`, with
   their `DeviceView` and `DeviceWriter` (`chunk/device/zero_array.h`, `zero_any_array.h`,
   `zero_or_value_array.h`) and `KokkosArray` (`kokkos_adaptor.h`), aliases of
-  `device::Array<T, S, Variant>`. `device::Array` gains the host arrays' `Array(n)` (a default
-  first arena, `default_arena()`), `Array(state)`, `chunk_size()`, `stats()`,
+  `device::Array<T, S, Variant>`. `device::Array` gains the host arrays' `Array(n)` (a first arena
+  of one buffer per chunk, `default_arena()`: no phase can exhaust it, no write is lost), `Array(state)`, `chunk_size()`, `stats()`,
   `written_chunk_count()`, `value_type` and `variant`. The installed CMake target
   `shrink_array::device` (`chunk::chunk_device`): the include path and C++20, header-only. These
   headers join `scripts/public_api.txt`, the other ones of chunk/device/ stay the

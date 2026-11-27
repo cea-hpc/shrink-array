@@ -153,7 +153,8 @@ class Array
     {
     }
 
-    /// @brief @p n elements at T{}, device::Array's default first arena (default_arena()).
+    /// @brief @p n elements at T{}, device::Array's default first arena (default_arena(): a
+    ///        buffer per chunk, no write lost).
     explicit Array(std::int64_t n) : a_(std::make_unique<device::Array<T, S, V>>(n))
     {
     }

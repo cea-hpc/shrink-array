@@ -265,12 +265,17 @@ class Array
         assign(state);
     }
 
-    /// @brief The first arena of Array(n): one buffer per 64 chunks, one at least
-    ///        (kokkos_shrink_bench's start); the phases grow it as they need.
+    /// @brief The first arena of Array(n): one buffer per chunk (one at least), so that no
+    ///        phase can exhaust it: no write goes to the append-buffer, none is lost, as with
+    ///        the host arrays' Array(n). It reserves the flat array's memory from the start;
+    ///        Array(n, arena_buffers, ...) starts smaller (kokkos_shrink_bench: a buffer per
+    ///        64 chunks) at the price of an append-buffer sized for the assign() phases --
+    ///        with a 4-buffer arena and the default append-buffer, `w(i) = 3` over 257 chunks
+    ///        of a zero array lost 254029 writes (GH200, kokkos_validation).
     [[nodiscard]] static constexpr unsigned long long default_arena(std::int64_t n) noexcept
     {
         const std::int64_t chunks = n > 0 ? (n + S - 1) / S : 0;
-        return chunks / 64 > 0 ? static_cast<unsigned long long>(chunks / 64) : 1ULL;
+        return chunks > 0 ? static_cast<unsigned long long>(chunks) : 1ULL;
     }
     ~Array();
     Array(const Array&)            = delete;

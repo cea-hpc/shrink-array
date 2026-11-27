@@ -102,6 +102,17 @@ __global__ void write_odd(WriterT w, std::int64_t lo, std::int64_t hi, T c)
     }
 }
 
+/// @brief A write kernel through the per-variant writer: w(i) = c on every element.
+template <typename WriterT, typename T>
+__global__ void write_all(WriterT w, std::int64_t n, T c)
+{
+    const std::int64_t stride = static_cast<std::int64_t>(gridDim.x) * blockDim.x;
+    for (std::int64_t i = blockIdx.x * static_cast<std::int64_t>(blockDim.x) + threadIdx.x; i < n; i += stride)
+    {
+        w.assign(i, c);
+    }
+}
+
 template <typename Arr, typename T>
 long wrong(const Arr& a, const std::vector<T>& mirror)
 {
@@ -133,6 +144,27 @@ void run(const char* name)
     expect(a.size() == n && a.n_chunks() == chunks && Arr::chunk_size() == S, "DeviceArray(n): size, n_chunks, chunk_size");
     expect(a.written_chunk_count() == 0 && a.stats() == 0.0 && Arr::default_arena(n) >= 1,
            "a fresh array holds no buffer (written_chunk_count, stats)");
+
+    // A fresh DeviceArray(n), every element written by assign(): the default arena holds every
+    // chunk, so no write goes to the append-buffer and none is lost (a buffer per 64 chunks
+    // lost 254029 of 262221 writes of a zero array on the GH200).
+    {
+        Arr            c(n);
+        std::vector<T> all(static_cast<std::size_t>(n), T{3});
+        write_all<WriterT, T><<<256, 256>>>(c.writer(), n, T{3});
+        bool threw = false;
+        try
+        {
+            c.finish();
+        }
+        catch (const std::exception&)
+        {
+            threw = true;
+        }
+        std::snprintf(line, sizeof line, "DeviceArray(n), assign() of every element: %s, %llu appended",
+                      threw ? "writes lost" : "nothing lost", c.appended());
+        expect(!threw && wrong(c, all) == 0 && c.appended() == 0, line);
+    }
 
     // A ramp over the first half: its chunks materialise.
     a.parallel_for_chunks(0, h, Ramp<T>{});
