@@ -78,7 +78,7 @@ inline void TCSlab<Links>::alloc_block()
 
     if (data == nullptr) [[unlikely]]
     {
-        FAST_ALLOC_FATAL("slab arena (kind {}) failed to allocate {} bytes", static_cast<int>(arena_kind),
+        FAST_ALLOC_FATAL("slab arena (kind {}) failed to allocate {} bytes", std::to_underlying(arena_kind),
                          block_allocator);
     }
 

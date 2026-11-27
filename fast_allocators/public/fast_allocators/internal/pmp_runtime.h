@@ -335,7 +335,7 @@ struct RuntimeSchedule
     omp_sched_t kind  = omp_sched_static;
     int         chunk = 0;
     omp_get_schedule(&kind, &chunk);
-    return {.kind = static_cast<int>(kind), .chunk = chunk};
+    return {.kind = static_cast<int>(kind), .chunk = chunk}; // unsigned underlying type (omp_sched_monotonic)
 #elif FAST_ALLOC_PMP_BACKEND_STD
     return {.kind  = std_backend::settings().sched_kind.load(std::memory_order_relaxed),
             .chunk = std_backend::settings().sched_chunk.load(std::memory_order_relaxed)};

@@ -129,7 +129,7 @@ enum class Channel : std::uint8_t
     count_
 };
 
-inline constexpr std::size_t n_channels = static_cast<std::size_t>(Channel::count_);
+inline constexpr std::size_t n_channels = std::to_underlying(Channel::count_);
 inline constexpr std::size_t n_levels   = 6;
 
 /// @brief Longest message, in bytes, before it is cut (with "...").
@@ -144,19 +144,19 @@ inline constexpr std::array<std::string_view, n_levels> level_names{"fatal", "er
 /// @brief The name CHUNK_LOG spells channel @p chan with.
 [[nodiscard]] constexpr std::string_view name(Channel chan) noexcept
 {
-    return channel_names[static_cast<std::size_t>(chan)];
+    return channel_names[std::to_underlying(chan)];
 }
 
 /// @brief The name CHUNK_LOG spells level @p lvl with.
 [[nodiscard]] constexpr std::string_view name(Level lvl) noexcept
 {
-    return level_names[static_cast<std::size_t>(lvl)];
+    return level_names[std::to_underlying(lvl)];
 }
 
 /// @brief True when messages of level @p lvl are compiled in (CHUNK_LOG_MAX_LEVEL).
 [[nodiscard]] constexpr bool compiled(Level lvl) noexcept
 {
-    return static_cast<int>(lvl) <= CHUNK_LOG_MAX_LEVEL;
+    return std::to_underlying(lvl) <= CHUNK_LOG_MAX_LEVEL;
 }
 
 /// @brief One message, as a sink receives it: @p message has no prefix and no newline.
@@ -442,7 +442,7 @@ inline void default_sink(const Record& record) noexcept
     try
     {
         const auto res = std::format_to_n(line, sizeof(line) - 1, "[shrink_array][{}][{}][{}] {}", name(record.channel),
-                                          letter[static_cast<std::size_t>(record.level)], thread_id(), record.message);
+                                          letter[std::to_underlying(record.level)], thread_id(), record.message);
         len            = static_cast<std::size_t>(res.size) < sizeof(line) - 1 ? static_cast<std::size_t>(res.size)
                                                                                : sizeof(line) - 1;
     }
@@ -565,7 +565,7 @@ inline void emit_direct(Level                       lvl,
                         std::string_view            message,
                         const std::source_location& loc = std::source_location::current()) noexcept
 {
-    if (static_cast<unsigned>(lvl) + 1U < thresholds[static_cast<std::size_t>(chan)].load(std::memory_order_relaxed))
+    if (std::to_underlying(lvl) + 1U < thresholds[std::to_underlying(chan)].load(std::memory_order_relaxed))
     {
         emit(Record{lvl, chan, message, loc});
     }
@@ -664,7 +664,7 @@ void write(Level                                lvl,
 ///        One relaxed load and a compare once the configuration is read.
 [[nodiscard]] inline bool enabled(Channel chan, Level lvl) noexcept
 {
-    const auto& threshold = detail::thresholds[static_cast<std::size_t>(chan)];
+    const auto& threshold = detail::thresholds[std::to_underlying(chan)];
     unsigned    stored    = threshold.load(std::memory_order_relaxed);
     if (stored == 0U) [[unlikely]]
     {

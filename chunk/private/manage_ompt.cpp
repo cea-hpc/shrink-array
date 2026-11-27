@@ -40,6 +40,7 @@
 #include <cstring>     // std::strlen (the refused callbacks' list)
 #include <format>      // std::format_to_n (the refused callbacks' list)
 #include <string_view> // std::string_view (the CHUNK_REQUIRE_OMPT messages)
+#include <utility>     // std::to_underlying
 
 #include "chunk/config.h"                   // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
 #include "chunk/internal/singleton.h"       // Singleton
@@ -417,9 +418,10 @@ void on_barrier_end(ompt_sync_region_t    kind,
     int           ep    = 0;
     if (g_ompt_stats) [[unlikely]]
     {
-        slot  = ompt_my_slot();
-        count = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < ompt_kinds) ? static_cast<int>(kind) : 0;
-        ep    = endpoint == ompt_scope_begin ? 0 : 1;
+        slot                 = ompt_my_slot();
+        const int kind_value = std::to_underlying(kind);
+        count                = kind_value > 0 && kind_value < ompt_kinds ? kind_value : 0;
+        ep                   = endpoint == ompt_scope_begin ? 0 : 1;
         if (slot)
         {
             ompt_bump(slot->calls[count][ep]);

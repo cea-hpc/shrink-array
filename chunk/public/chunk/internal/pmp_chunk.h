@@ -17,6 +17,7 @@
 #pragma once
 
 #include <algorithm> // std::max (get_size_max_array_omp)
+#include <utility>   // std::to_underlying
 
 #include "chunk/config.h"                         // build_config::any_check, build_config::threaded
 #include "fast_allocators/internal/pmp_loops.h"   // fast_alloc::pmp: the loops and teams re-exported below
@@ -270,7 +271,7 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 ///        schedule of the `schedule(runtime)` loops it then opens.
 inline void chunk_pmp_set_schedule(ChunkPmpSchedule schedule) noexcept
 {
-    ::fast_alloc::pmp::set_runtime_schedule({.kind = static_cast<int>(schedule.kind), .chunk = schedule.chunk});
+    ::fast_alloc::pmp::set_runtime_schedule({.kind = std::to_underlying(schedule.kind), .chunk = schedule.chunk});
 }
 
 /// @brief The calling thread's number in its current team (omp_get_thread_num),
