@@ -575,6 +575,12 @@ l'est côté CPU (`docs/getting_started_fr.md` §5).
 et le MI300A (`kokkos_shrink_bench`, petites et grandes fenêtres, à 675d0d701) sont dans
 [variantes_fr.md](variantes_fr.md) section 5.
 
+**Critère de l'étape 3 atteint (novembre 2026) :** l'exemple
+[examples/kokkos/kokkos_getting_started.cu](../examples/kokkos/kokkos_getting_started.cu) (la
+façade de la création aux lectures, liée à `shrink_array::device` et à Kokkos seuls) et
+`kokkos_validation` (les phases, les alias des variantes, la conversion depuis et vers l'hôte)
+passent sur le GH200, le MI300A et une RTX A1000, à a464e0949 (Kokkos 5.3.0).
+
 **Étape 0, faite sur le GPU du portable (RTX A1000, sm_86, novembre 2026)**, 1 Gio de
 doubles, rapports au tableau plat (détails et bench dans [gpu/proto](../gpu/proto/README.md)) :
 

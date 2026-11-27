@@ -557,6 +557,12 @@ the only usage trap, and it is documented the way the thread rule is on the CPU 
 the MI300A (`kokkos_shrink_bench`, small and large windows, at 675d0d701) are in
 [variants.md](variants.md) section 5.
 
+**Stage 3's criterion met (November 2026):** the example
+[examples/kokkos/kokkos_getting_started.cu](../examples/kokkos/kokkos_getting_started.cu) (the
+facade from creation to reads, linked to `shrink_array::device` and Kokkos only) and
+`kokkos_validation` (the phases, the variants' aliases, the conversion to and from the host)
+pass on the GH200, the MI300A and an RTX A1000, at a464e0949 (Kokkos 5.3.0).
+
 **Stage 0, done on a laptop GPU (RTX A1000, sm_86, November 2026)**, 1 GiB of doubles, ratios
 against a flat array (details and the bench in [gpu/proto](../gpu/proto/README.md)):
 
