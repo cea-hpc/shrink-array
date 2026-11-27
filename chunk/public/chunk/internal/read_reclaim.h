@@ -72,7 +72,10 @@
  *    returns garbage that the re-check discards. Hence the fast allocator only. No read
  *    uses a value it loaded from a buffer as an address before its re-check.
  *  - The compressor's own scans (ScanSection) keep the announce: an array torn down
- *    inside a region waits for them (ArrayChunkCore::await_chunk_readers()).
+ *    inside a region waits for them (ArrayChunkCore::await_chunk_readers()). They are
+ *    rare, so they take a seq_cst fence (announce_fence()) and the grace period a
+ *    seq_cst fence too, without membarrier: the symmetric Dekker
+ *    (formal/reader_reclaim.c, SHAPE_SYMMETRIC).
  *  - In C++ terms the stale read is a data race: off under ThreadSanitizer.
  * Elsewhere (CHUNK_OPTIMISTIC_READS=OFF, CHUNK_STD_ALLOC, other architectures, TSan)
  * every pure read announces itself as above.
@@ -159,10 +162,20 @@ inline ReaderSlot* claim_slot() noexcept
     return nullptr;
 }
 
-/// @brief The light side: free with membarrier registered, a fence otherwise.
-inline void light_fence() noexcept
+/**
+ * @brief The announcer's fence, after its odd store.
+ * @details Optimistic reads: only the compressor's scans announce, and they are rare --
+ *          a seq_cst fence each, so that the grace period needs no membarrier (the
+ *          symmetric Dekker, wait_for_readers()). Otherwise every pure read announces:
+ *          the light side, free with membarrier registered, a fence otherwise.
+ */
+inline void announce_fence() noexcept
 {
-    if (dekker::asymmetric_active()) [[likely]]
+    if constexpr (optimistic)
+    {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
+    else if (dekker::asymmetric_active()) [[likely]]
     {
         std::atomic_signal_fence(std::memory_order_seq_cst);
     }
@@ -290,7 +303,17 @@ inline void wait_for_readers() noexcept
         // element came from a buffer released after this point sees the new epoch.
         g_reclaim_epoch.fetch_add(1, std::memory_order_seq_cst);
     }
-    dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
+    if constexpr (optimistic)
+    {
+        // Symmetric: the announcers (the scans alone) fence themselves (announce_fence()).
+        // A membarrier here cost 25 to 630 us per pass at 72 threads on Grace -- writers
+        // issuing them at once -- and held every released buffer that long.
+        std::atomic_thread_fence(std::memory_order_seq_cst); // orders the CASes before the slot reads
+    }
+    else
+    {
+        dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
+    }
     const int         nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
     const ReaderSlot* mine   = t_slot;
     for (int i = 0; i < nslots; ++i)

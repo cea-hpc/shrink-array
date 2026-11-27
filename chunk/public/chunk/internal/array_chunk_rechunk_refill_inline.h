@@ -538,8 +538,8 @@ void RechunkSupport<Derived, true>::Refill::read_span([[maybe_unused]] int new_c
 {
     // Bulk read, one values_load() per SOURCE chunk instead of the full read
     // protocol per element (const operator[]: index split, sync_chunk, a
-    // ReadSection with its light_fence -- a full seq_cst fence without
-    // asymmetric Dekker --, acquire load, zero_any range test; none of it
+    // ReadSection -- the optimistic re-check of the epoch, or the announce
+    // and its fence --, acquire load, zero_any range test; none of it
     // vectorises).
     //
     // Sound because the source is QUIESCENT for the whole refill: rechunk_to()

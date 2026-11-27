@@ -49,7 +49,7 @@ inline read_reclaim::AnnouncedSection::AnnouncedSection() noexcept
             // thread on Grace, within its spread, nothing measurable at 64
             // (formal/reader_reclaim.c, MUT_ENTER_RELAXED; docs/formal_models.md F3).
             slot->seq.store(seq_, std::memory_order_release);
-            light_fence();
+            announce_fence();
         }
         else
         {
@@ -59,7 +59,7 @@ inline read_reclaim::AnnouncedSection::AnnouncedSection() noexcept
             // announce in C11 (store buffering against the reclaimer's acquire
             // load of the counter), though it is on the AArch64 and x86
             // mappings (formal/reader_reclaim.c, MUT_OVERFLOW_NO_FENCE).
-            light_fence();
+            announce_fence();
         }
     }
 }
