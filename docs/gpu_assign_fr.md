@@ -148,6 +148,20 @@ validations vertes, aucune attente abandonnée ; écritures dispersées à 1,45x
 comme à 491a05a87 ; la première écriture grid-stride à 74,6x / 48,5x (S = 256 / 1024) contre
 57x / 42x alors, pas encore comparée dans une même session.
 
+**Le gain du regroupement retrouvé, sans opération collective.** Ce que le regroupement
+économisait, c'étaient les CAS de 32 lanes sur un même descripteur (une première écriture
+grid-stride : environ un CAS par élément et par lane, contre un par warp), pas les attentes entre
+warps, qui restent. Le chemin CUDA laisse maintenant le premier lane actif réserver d'abord ; les
+autres lanes, dans un bloc qui vient après, relisent le descripteur et ne réservent qu'un chunk
+encore compressé. `active_lanes()` n'y est qu'une indication : aucune synchronisation n'en dépend,
+et une indication fausse coûte un CAS, pas une attente. RTX A1000, 0,5 Gio, même session, première
+écriture grid-stride à S = 256 (`zero_any` / `zero`) et 1024 : regroupé 22,2 / 20,1 et
+23,2 / 22,8 ms ; par lane 31,0 / 29,9 et 30,2 / 27,9 ms ; avec l'indication 22,8 / 21,2 et
+23,4 / 23,4 ms. Les écritures dispersées ne changent pas (147-160 ms), le test de stress qui
+bloquait le regroupement passe 30 fois sur 30, les validations device et dix exécutions de
+`device_assign_validation` passent. Les attentes de réservation restent comptées par lane (environ
+une par élément, comme par lane). À mesurer sur le GH200.
+
 ### 3.4 Arène épuisée
 
 `DeviceArena::take` renvoie `nullptr` et rien d'autre dans le noyau ne peut faire de place :

@@ -692,6 +692,13 @@ __device__ T* Writer<T, S, V>::wait_claim(ChunkDesc<T, V>& d, T* found) const no
  *          with independent thread scheduling the winner progresses even when the waiter is a
  *          lane of its own warp.
  *
+ *          What the grouping saved is kept without a collective: the first active lane claims
+ *          first, and the other lanes, in a block after it, load the descriptor again and
+ *          claim only a chunk still compressed. On a grid-stride first write the warp makes
+ *          one CAS instead of 32 on one address (RTX A1000, device_bench 0.5 GiB: 30 ms per
+ *          lane, 22-23 ms with the hint, as with the grouping). active_lanes() is only a hint
+ *          there: no sync depends on it, and a wrong one costs a CAS, not a wait.
+ *
  *          @p seen: what this lane loaded (nullptr or busy_mark()).
  */
 template <typename T, unsigned int S, Variant V>
@@ -722,16 +729,41 @@ __device__ T* Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, 
     }
     return shuffle_ptr(active, got, leader);
 #else
-    T* found = seen;
-    if (seen == nullptr)
+    // A hint only, never a collective's mask: the first active lane claims first, the others
+    // look again after it (the second block runs once the first has reconverged) and claim
+    // only a chunk still compressed -- one CAS per warp on a grid-stride first write instead
+    // of one per lane. A wrong hint costs a CAS, never a wait on another lane.
+    const bool first = lane_id() == first_lane(active_lanes());
+    T*         found = seen;
+    bool       won   = false;
+    if (first && seen == nullptr)
     {
         found = cas_ptr(&d.buf, static_cast<T*>(nullptr), busy_mark<T>());
+        won   = found == nullptr;
+    }
+    if (!first && seen == nullptr)
+    {
+        found = load_ptr(&d.buf);
         if (found == nullptr)
         {
-            return publish(c, d);
+            found = cas_ptr(&d.buf, static_cast<T*>(nullptr), busy_mark<T>());
+            won   = found == nullptr;
         }
     }
-    return wait_claim(d, found);
+    T* got = nullptr;
+    if (won)
+    {
+        got = publish(c, d);
+    }
+    if (!won)
+    {
+        if (found == busy_mark<T>())
+        {
+            found = load_ptr(&d.buf); // a lane of this warp may have just published it
+        }
+        got = wait_claim(d, found);
+    }
+    return got;
 #endif
 }
 

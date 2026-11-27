@@ -138,6 +138,18 @@ HIP path unchanged but for `write_marked`): validations green, no wait given up;
 1.45x-1.70x and 1.03x-1.07x as at 491a05a87; the grid-stride first write 74.6x / 48.5x
 (S = 256 / 1024) against 57x / 42x there, not compared in one session yet.
 
+**The grouping's gain back, without a collective.** What the grouping saved was the CAS of 32
+lanes on one descriptor (a grid-stride first write: about one CAS per element per lane against one
+per warp), not the waits between warps, which stay. The CUDA path now lets the first active lane
+claim first; the other lanes, in a block after it, load the descriptor again and claim only a chunk
+still compressed. `active_lanes()` is a hint there: no sync depends on it, and a wrong one costs a
+CAS, not a wait. RTX A1000, 0.5 GiB, the same session, grid-stride first write at S = 256
+(`zero_any` / `zero`) and 1024: grouped 22.2 / 20.1 and 23.2 / 22.8 ms; per lane 31.0 / 29.9 and
+30.2 / 27.9 ms; with the hint 22.8 / 21.2 and 23.4 / 23.4 ms. The scattered writes do not change
+(147-160 ms), the stress that hung the grouping passes 30 runs of 30, the device validations and
+ten `device_assign_validation` runs pass. The claim waits stay counted per lane (about one per
+element, as per lane). To be measured on the GH200.
+
 ### 3.4 Arena exhausted
 
 `DeviceArena::take` returns `nullptr` and nothing else in the kernel can make room: the write
