@@ -168,6 +168,16 @@ exécutions de `device_assign_validation` passent) : 22,0x / 22,2x à S = 256 et
 S = 1024, contre 21,0x / 20,3x et 14,1x / 13,8x avec le regroupement et 27,4x / 26,8x et
 19,9x / 19,3x par lane ; les écritures dispersées inchangées, aucune attente abandonnée.
 
+Essayé et annulé sur CUDA (5ccbd2116) : le gagnant de la réservation remplit le tampon de la
+constante et le publie en release, les écrivains le lisent en acquire et écrivent sans bit
+`written`. Gagnant là où chaque bit est une atomique isolée -- les premières écritures dispersées de
+device_bench, GH200 143 -> 85 ms à S = 1024 --, perdant sur les fenêtres contiguës de
+kokkos_shrink_bench (grandes fenêtres, arène 1/2 : réécriture 75,7 -> 91,1 ms, boucle 665 ->
+689 ms) : là les 32 bits d'un warp tombent dans un même mot, peu coûteux, et le remplissage mettait
+les 8 Ko d'un seul lane sur le chemin qu'attend chaque écrivain du chunk. Mesuré en route : un
+remplissage depuis le registre zéro (un T{} littéral) est environ 60 % plus rapide que les mêmes zéros
+depuis un autre registre (RTX A1000).
+
 ### 3.4 Arène épuisée
 
 `DeviceArena::take` renvoie `nullptr` et rien d'autre dans le noyau ne peut faire de place :

@@ -156,6 +156,15 @@ element, as per lane). GH200, 8 GiB (`7b835276b`, every device validation and te
 against 21.0x / 20.3x and 14.1x / 13.8x grouped and 27.4x / 26.8x and 19.9x / 19.3x per lane;
 the scattered writes unchanged, no wait given up.
 
+Tried and reverted on CUDA (5ccbd2116): the claim's winner filling the buffer with the constant and
+publishing it by release, the writers acquiring it and storing with no `written` bit. It won where
+each bit is an isolated atomic -- device_bench's scattered first writes, GH200 143 -> 85 ms at
+S = 1024 -- and lost on kokkos_shrink_bench's contiguous windows (large windows, arena 1/2: rewrite
+75.7 -> 91.1 ms, loop 665 -> 689 ms): there a warp's 32 bits fall in one word, cheap, and the fill
+put one lane's 8 KB on the path every writer of the chunk waits for. Measured on the way: a fill
+from the zero register (a literal T{}) is about 60 % faster than the same zeros from another
+register (RTX A1000).
+
 ### 3.4 Arena exhausted
 
 `DeviceArena::take` returns `nullptr` and nothing else in the kernel can make room: the write
