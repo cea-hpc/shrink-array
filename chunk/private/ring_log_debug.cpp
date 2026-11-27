@@ -615,8 +615,6 @@ bool analyze_ring_sweep()
         size_t   fast_idx;
         uint32_t comp_tid;
         size_t   comp_idx;
-        uint64_t start;
-        uint64_t end;
     };
 
     std::vector<Overlap> overlaps;
@@ -684,7 +682,7 @@ bool analyze_ring_sweep()
                     const uint64_t ov_end   = std::min(fiv.end, ac.end);
                     if (ov_start < ov_end)
                     {
-                        overlaps.push_back({ep.tid, ep.idx, ac.tid, ac.idx, ov_start, ov_end});
+                        overlaps.push_back({ep.tid, ep.idx, ac.tid, ac.idx});
                     }
                 }
                 break;
