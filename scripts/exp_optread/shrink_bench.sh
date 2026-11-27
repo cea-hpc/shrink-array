@@ -15,6 +15,12 @@
 #   VARIANTS (default "zero zero_or_value zero_any")
 #   THREADS  (default "8 72"; 72 = one Grace socket)
 #   ROUNDS   (default 3)   JOBS (default 32)   ARGS (default "--mode perf")
+#   TARGET_SUFFIX (default _256): the executable is shrink_bench_omp_<variant><suffix>.
+#            A suffix with "dyn" (_dyn, _int64_dyn) configures -DCHUNK_BUILD_DYN=ON
+#            (runtime size SHRINK_BENCH_DYN_SIZE, default 64), one with "int64" adds
+#            -DSHRINK_BENCH_INT64=ON. Use a WORK of its own: the CMake cache differs.
+#   KMP_BLOCKTIME and the other runtime variables exported before the job reach the
+#            runs (printed in the header below so that the log shows it).
 #   SEED     (default 20261126): every run draws the same intervals. shrink_bench
 #            takes its seed from seed<iter_max>.txt in its working directory and,
 #            without one, draws a new seed from std::random_device.
@@ -29,6 +35,10 @@ ROUNDS=${ROUNDS:-3}
 JOBS=${JOBS:-32}
 ARGS=${ARGS:-"--mode perf"}
 SEED=${SEED:-20261126}
+TARGET_SUFFIX=${TARGET_SUFFIX:-_256}
+bench_opts=(-DCHUNK_BUILD_DYN=OFF)
+case $TARGET_SUFFIX in *dyn*) bench_opts=(-DCHUNK_BUILD_DYN=ON) ;; esac
+case $TARGET_SUFFIX in *int64*) bench_opts+=(-DSHRINK_BENCH_INT64=ON) ;; esac
 # The seed file's name follows --iter_max (shrink_bench's default 2000).
 ITER=2000
 read -r -a _args <<< "$ARGS"
@@ -40,6 +50,7 @@ CSV=$WORK/shrink_bench.csv
 echo "comp,mode,variant,threads,round,status,compute_s,wall_s,peak_mo,kernel_peak_mo,retries" > "$CSV"
 echo "[sbench] $(hostname) $(uname -m) SRC=$SRC WORK=$WORK commit $(git -C "$SRC" log --oneline -1)"
 echo "[sbench] CONFIGS=$CONFIGS VARIANTS=$VARIANTS THREADS=$THREADS ROUNDS=$ROUNDS ARGS=$ARGS SEED=$SEED (seed$ITER.txt)"
+echo "[sbench] TARGET_SUFFIX=$TARGET_SUFFIX (${bench_opts[*]}) KMP_BLOCKTIME=${KMP_BLOCKTIME-<unset>}"
 [ "$(uname -m)" = aarch64 ] || echo "[sbench] WARNING: not an aarch64 node"
 source "$SRC/scripts/site_env.sh"
 
@@ -67,7 +78,7 @@ load_env() {
 build_dir() { local comp=${1%%:*} mode=${1#*:}; echo "$WORK/$comp-mode$mode"; }
 
 targets=()
-for v in $VARIANTS; do targets+=("shrink_bench_omp_${v}_256"); done
+for v in $VARIANTS; do targets+=("shrink_bench_omp_${v}${TARGET_SUFFIX}"); done
 
 for cfg in $CONFIGS; do
   (
@@ -85,7 +96,7 @@ for cfg in $CONFIGS; do
     extra=()
     [ "$comp" = llvm ] && extra=(-DCHUNK_USE_LIBCXX=OFF -DCHUNK_GCC_TOOLCHAIN_DIR=$GCC_TC)
     cmake -S "$SRC" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_C_COMPILER="$CC" \
-        -DCHUNK_OPENMP=ON -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF -DCHUNK_BUILD_VALIDATION=OFF \
+        -DCHUNK_OPENMP=ON -DCHUNK_STATIC_SIZES=256 "${bench_opts[@]}" -DCHUNK_BUILD_VALIDATION=OFF \
         "${extra[@]}" "-DCMAKE_CXX_FLAGS=$flags" > "$B.configure.log" 2>&1 \
         || { echo "[sbench] configure FAILED $cfg"; tail -20 "$B.configure.log"; exit 1; }
     echo "[sbench] $cfg $(grep 'Threading backend' "$B.configure.log")"
@@ -104,7 +115,7 @@ for r in $(seq 1 "$ROUNDS"); do
         (
           comp=${cfg%%:*}; mode=${cfg#*:}
           load_env "$comp" >/dev/null 2>&1
-          bin="$(build_dir "$cfg")/examples/shrink_bench/shrink_bench_omp_${v}_256"
+          bin="$(build_dir "$cfg")/examples/shrink_bench/shrink_bench_omp_${v}${TARGET_SUFFIX}"
           tag=${comp}_m${mode}_${v}_t${t}_r${r}
           log=$WORK/logs/$tag.log
           # Its own working directory: shrink_bench writes memory_mo.txt (and the
