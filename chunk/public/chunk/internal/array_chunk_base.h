@@ -1052,6 +1052,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @note Compiles to nothing in a serial build (`if constexpr (threaded)`).
      */
     void sync_chunk(const ChunkType& chunk_t, int chunk_index, int offset) const noexcept;
+    /// @brief sync_chunk()'s dirty branch, out of line: its acquire fence and gate
+    ///        would otherwise sit in the caller's loop, where clang then keeps every
+    ///        escaped local (an OpenMP reduction variable) in memory.
+    [[gnu::noinline, gnu::cold]] void sync_chunk_dirty(const ChunkType& chunk_t, int offset) const noexcept;
 
     /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).
     static void rechunk_thunk(Core& core, unsigned int new_size)

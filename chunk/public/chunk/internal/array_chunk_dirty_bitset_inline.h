@@ -16,9 +16,9 @@
 
 #pragma once
 #include <algorithm> // std::min
-#include <atomic>    // std::memory_order_acq_rel, std::memory_order_relaxed, std::memory_order_release
-#include <cstddef>   // std::size_t
-#include <utility>   // std::move
+#include <atomic> // std::memory_order_acq_rel, std::memory_order_relaxed, std::memory_order_release, std::atomic_thread_fence
+#include <cstddef> // std::size_t
+#include <utility> // std::move
 
 #include "chunk/internal/array_chunk_dirty_bitset.h" // the class these bodies belong to
 
@@ -115,6 +115,17 @@ void DirtyBitsetSupport<Derived, true>::clear_dirty_bitset() noexcept
     {
         words[i].word.store(0, std::memory_order_relaxed);
     }
+}
+
+template <typename Derived>
+[[nodiscard]] bool DirtyBitsetSupport<Derived, true>::is_chunk_dirty(int chunk_idx) const noexcept
+{
+    if (is_chunk_dirty_hint(chunk_idx)) [[unlikely]]
+    {
+        std::atomic_thread_fence(std::memory_order_acquire);
+        return true;
+    }
+    return false;
 }
 
 } // namespace shrink_array

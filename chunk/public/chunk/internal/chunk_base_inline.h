@@ -608,9 +608,11 @@ template <typename T, typename Derived>
         // Relaxed: the loads that need to follow it go through the pointer (address
         // dependency, chunk_config::read_dep_order). The empty asm makes the value
         // opaque, so the compiler cannot substitute a value it compared equal to
-        // (region bounds, the constant marker) and lose the dependency.
+        // (region bounds, the constant marker) and lose the dependency. Not volatile:
+        // its output is used, so it stays; a volatile asm is, for clang, a possible
+        // write that keeps the caller's escaped locals in memory.
         const T* vals = values_.load(std::memory_order_relaxed);
-        __asm__ volatile("" : "+r"(vals));
+        __asm__("" : "+r"(vals));
         return vals;
     }
     else
