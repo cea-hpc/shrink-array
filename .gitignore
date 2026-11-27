@@ -67,3 +67,7 @@ cov-response.json
 
 # --- Timestamped benchmark plots written by the python/ scripts ---
 python/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-*.png
+
+# scripts/device_check.sh: its build trees and logs
+/build-device-*/
+/device-check-*/
