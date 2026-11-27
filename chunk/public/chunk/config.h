@@ -367,6 +367,25 @@ inline constexpr bool tsan_build = false;
 #endif
 
 /**
+ * @brief Optimistic pure reads (read_reclaim.h): a read announces nothing; it re-checks
+ *        the reclaim epoch after its loads and reads again if a pass began meanwhile.
+ * @details CHUNK_OPTIMISTIC_READS (default ON), and only where the argument holds:
+ *          - x86-64 or AArch64: the re-check is ordered after the element load by an
+ *            address dependency, which the hardware honours and C++ does not
+ *            (formal/optimistic_read.c: correct under ARMv8 and TSO, not under RC11 / IMM);
+ *          - the fast allocator: a released value buffer stays mapped, so a read that
+ *            loses the race returns garbage the re-check discards, never a fault;
+ *          - no ThreadSanitizer: the losing read is a data race, which TSan reports.
+ *          Elsewhere every pure read announces itself (a store and a fence each).
+ */
+#if CHUNK_OPT_OPTIMISTIC_READS && CHUNK_OPT_FAST_ALLOC && (defined(__x86_64__) || defined(__aarch64__)) && \
+    !defined(CHUNK_TSAN_BUILD)
+inline constexpr bool optimistic_reads = true;
+#else
+inline constexpr bool optimistic_reads = false;
+#endif
+
+/**
  * @brief EXPERIMENTAL (-DCHUNK_READ_DEP_ORDER=1 in CMAKE_CXX_FLAGS, AArch64 only): the pure
  *        read's load of a chunk's `values` (ChunkBase::element_at) is RELAXED, ordered with
  *        the loads through it by their address dependency instead of an acquire.

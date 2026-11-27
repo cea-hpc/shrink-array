@@ -173,6 +173,7 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_DEFERRED_DRAIN_THRESHOLD` | vide (4 096) | seuil de vidage de sa propre file par un rang |
 | `CHUNK_FORCE_DEFER_EVERY` | 0 | une écriture sur N par le chemin différé, dans tout l'arbre (validation ; 32 threads au plus) |
 | `CHUNK_DEBUG` | selon le build | les vérifications de mise au point de la bibliothèque ; `ON` avec `CMAKE_BUILD_TYPE=Debug` (non mis en cache : suit la configuration courante) |
+| `CHUNK_OPTIMISTIC_READS` | `ON` | lectures simples revérifiées contre l'époque de récupération au lieu d'être annoncées (`read_reclaim.h`) ; effectif sur x86-64 et AArch64 avec le fast allocator, hors ThreadSanitizer seulement. `OFF` : chaque lecture simple s'annonce |
 | `CHUNK_POOL_NO_REUSE` | `OFF` | pools d'opérations différées sans liste libre : chaque bloc un vrai `new` / `delete` (ASan, TSan) |
 | `CHUNK_DO_CHECK` | `OFF` | chaque valeur écrite vérifiée contre NaN |
 | `CHUNK_RECHUNK_LEDGERTRACE` | `OFF` | tracer chaque transition du registre des blocs |

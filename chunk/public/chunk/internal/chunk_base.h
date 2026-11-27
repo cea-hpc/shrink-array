@@ -814,7 +814,9 @@ class ChunkBase : public CRTPSupport<Derived>,
      * @param count number of elements, first + count <= chunk size
      * @param out   destination, @p count elements
      */
-    void read_block(int first, int count, T* out) const noexcept;
+    // Forced: with the optimistic re-read loop gcc 16 kept it out of line, a call per
+    // bulk block -- read-bulk +9 % (zero_or_value) and +32 % (zero), x86.
+    CHUNK_FORCE_INLINE void read_block(int first, int count, T* out) const noexcept;
 
     /// @brief read_block() for a member with the motif state, given the chunk's
     ///        second-value slot @p offset_slot (a motif chunk reads motif + offset).

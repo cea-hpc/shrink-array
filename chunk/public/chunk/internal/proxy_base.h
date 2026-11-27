@@ -553,11 +553,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          for a first constant), and the shortcut would wrongly drop the
     ///          operation. The section makes that pass wait for this read
     ///          before it releases anything, as for element_at.
-    [[nodiscard]] T read_values_outside_session() const noexcept
-    {
-        const read_reclaim::ReadSection section;
-        return read_values();
-    }
+    [[nodiscard]] T read_values_outside_session() const noexcept;
     /// @brief Read through the chunk WITHOUT synchronising first, inside the
     ///        write session (no ReadSection: ChunkBase::read_value_in_session()).
     /// @details Every caller runs in the session: the read-modify-write and

@@ -645,7 +645,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
             // loaded from that writer's flag: a read section, so that an array
             // torn down inside a region waits for it before it frees its chunks
             // (ArrayChunkCore::await_chunk_readers()).
-            const read_reclaim::ReadSection scan;
+            const read_reclaim::ScanSection scan; // announced, whatever the pure reads do
             return WriteCompressSyncPolicy<ProxyT>::template any_thread_writing_on_marked<ChunkT>(max_thr);
         }
         else

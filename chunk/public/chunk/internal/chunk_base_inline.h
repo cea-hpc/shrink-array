@@ -827,7 +827,7 @@ T ChunkBase<T, Derived>::operator[](int offset) const noexcept
 }
 
 template <typename T, typename Derived>
-void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexcept
+CHUNK_FORCE_INLINE void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexcept
 {
     if constexpr (has_motif_state_v<Derived>)
     {
@@ -838,27 +838,35 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexc
         }
     }
     const read_reclaim::ReadSection section;
-    const T* const                  vals = values_load();
-    test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-    if constexpr (is_zero_any_family_v<Derived>)
+    const auto                      body = [&]() noexcept
     {
-        // Same single load as element_at_unguarded: a chunk compressed to a
-        // second constant points at an identifier, not at values.
-        if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+        const T* const vals = values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if constexpr (is_zero_any_family_v<Derived>)
         {
-            const T value = derived().second_value_from_ptr(vals);
-            for (int j = 0; j < count; ++j)
+            // Same single load as element_at_unguarded: a chunk compressed to a
+            // second constant points at an identifier, not at values.
+            if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
             {
-                out[j] = value;
+                const T value = derived().second_value_from_ptr(vals);
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = value;
+                }
+                return;
             }
-            return;
         }
-    }
-    for (int j = 0; j < count; ++j)
+        for (int j = 0; j < count; ++j)
+        {
+            // raw-read: read_block -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
+            section.fold(out[j]);
+        }
+    };
+    do // optimistic reads: read again if a grace period began meanwhile
     {
-        // raw-read: read_block -- under its own ReadSection
-        out[j] = load_at<false>(vals, first + j);
-    }
+        body();
+    } while (section.retry());
 }
 
 template <typename T, typename Derived>
@@ -866,39 +874,48 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out, const T* of
     requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
-    for (;;)
+    const auto                      body = [&]() noexcept
     {
-        const T* const vals = values_load();
-        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+        for (;;)
         {
-            const T value = derived().second_value_from_ptr(vals);
+            const T* const vals = values_load();
+            test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+            if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+            {
+                const T value = derived().second_value_from_ptr(vals);
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = value;
+                }
+                return;
+            }
+            if (Derived::is_motif_ptr(vals)) [[unlikely]]
+            {
+                T off{};
+                if (!derived().motif_offset(vals, offset_slot, off)) [[unlikely]]
+                {
+                    continue; // the pointer moved: the slot may hold another state's value (F5)
+                }
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = Derived::motif_value(vals, first + j, off);
+                    section.fold(out[j]);
+                }
+                return;
+            }
             for (int j = 0; j < count; ++j)
             {
-                out[j] = value;
+                // raw-read: read_block -- under its own ReadSection
+                out[j] = load_at<false>(vals, first + j);
+                section.fold(out[j]);
             }
             return;
         }
-        if (Derived::is_motif_ptr(vals)) [[unlikely]]
-        {
-            T off{};
-            if (!derived().motif_offset(vals, offset_slot, off)) [[unlikely]]
-            {
-                continue; // the pointer moved: the slot may hold another state's value (F5)
-            }
-            for (int j = 0; j < count; ++j)
-            {
-                out[j] = Derived::motif_value(vals, first + j, off);
-            }
-            return;
-        }
-        for (int j = 0; j < count; ++j)
-        {
-            // raw-read: read_block -- under its own ReadSection
-            out[j] = load_at<false>(vals, first + j);
-        }
-        return;
-    }
+    };
+    do // optimistic reads: read again if a grace period began meanwhile
+    {
+        body();
+    } while (section.retry());
 }
 
 template <typename T, typename Derived>
@@ -907,41 +924,53 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
     requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
-    for (;;)
+    const auto                      body = [&]() noexcept
     {
-        const T* const vals = values_load();
-        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (is_first_value(vals))
+        for (;;)
         {
-            // raw-read: read_block_or_constant -- the shared first-constant buffer
-            constant = load_at<false>(vals, 0);
-            return true;
-        }
-        if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
-        {
-            constant = derived().second_value_from_ptr(vals);
-            return true;
-        }
-        if (Derived::is_motif_ptr(vals)) [[unlikely]]
-        {
-            T off{};
-            if (!derived().motif_offset(vals, offset_slot, off)) [[unlikely]]
+            const T* const vals = values_load();
+            test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+            if (is_first_value(vals))
             {
-                continue; // the pointer moved: the slot may hold another state's value (F5)
+                // raw-read: read_block_or_constant -- the shared first-constant buffer
+                constant = load_at<false>(vals, 0);
+                section.fold(constant);
+                return true;
+            }
+            if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+            {
+                constant = derived().second_value_from_ptr(vals);
+                return true;
+            }
+            if (Derived::is_motif_ptr(vals)) [[unlikely]]
+            {
+                T off{};
+                if (!derived().motif_offset(vals, offset_slot, off)) [[unlikely]]
+                {
+                    continue; // the pointer moved: the slot may hold another state's value (F5)
+                }
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = Derived::motif_value(vals, first + j, off);
+                    section.fold(out[j]);
+                }
+                return false;
             }
             for (int j = 0; j < count; ++j)
             {
-                out[j] = Derived::motif_value(vals, first + j, off);
+                // raw-read: read_block_or_constant -- under its own ReadSection
+                out[j] = load_at<false>(vals, first + j);
+                section.fold(out[j]);
             }
             return false;
         }
-        for (int j = 0; j < count; ++j)
-        {
-            // raw-read: read_block_or_constant -- under its own ReadSection
-            out[j] = load_at<false>(vals, first + j);
-        }
-        return false;
-    }
+    };
+    bool result = false;
+    do // optimistic reads: read again if a grace period began meanwhile
+    {
+        result = body();
+    } while (section.retry());
+    return result;
 }
 
 template <typename T, typename Derived>
@@ -956,28 +985,39 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
         }
     }
     const read_reclaim::ReadSection section;
-    const T* const                  vals = values_load();
-    test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-    if (is_first_value(vals))
+    const auto                      body = [&]() noexcept
     {
-        // raw-read: read_block_or_constant -- the shared first-constant buffer
-        constant = load_at<false>(vals, 0);
-        return true;
-    }
-    if constexpr (is_zero_any_family_v<Derived>)
-    {
-        if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+        const T* const vals = values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if (is_first_value(vals))
         {
-            constant = derived().second_value_from_ptr(vals);
+            // raw-read: read_block_or_constant -- the shared first-constant buffer
+            constant = load_at<false>(vals, 0);
+            section.fold(constant);
             return true;
         }
-    }
-    for (int j = 0; j < count; ++j)
+        if constexpr (is_zero_any_family_v<Derived>)
+        {
+            if (derived().is_second_value_ptr_of(vals)) [[unlikely]]
+            {
+                constant = derived().second_value_from_ptr(vals);
+                return true;
+            }
+        }
+        for (int j = 0; j < count; ++j)
+        {
+            // raw-read: read_block_or_constant -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
+            section.fold(out[j]);
+        }
+        return false;
+    };
+    bool result = false;
+    do // optimistic reads: read again if a grace period began meanwhile
     {
-        // raw-read: read_block_or_constant -- under its own ReadSection
-        out[j] = load_at<false>(vals, first + j);
-    }
-    return false;
+        result = body();
+    } while (section.retry());
+    return result;
 }
 
 template <typename T, typename Derived>
@@ -1218,7 +1258,14 @@ template <bool Relaxed>
     else
     {
         const read_reclaim::ReadSection section;
-        return element_at_unguarded<false>(offset);
+        for (;;) // optimistic reads: read again if a grace period began meanwhile
+        {
+            const T value = element_at_unguarded<false>(offset);
+            if (!section.retry_after(value)) [[likely]]
+            {
+                return value;
+            }
+        }
     }
 }
 
@@ -1234,7 +1281,14 @@ template <bool Relaxed>
     else
     {
         const read_reclaim::ReadSection section;
-        return element_at_unguarded<false>(offset, offset_slot);
+        for (;;) // optimistic reads: read again if a grace period began meanwhile
+        {
+            const T value = element_at_unguarded<false>(offset, offset_slot);
+            if (!section.retry_after(value)) [[likely]]
+            {
+                return value;
+            }
+        }
     }
 }
 
