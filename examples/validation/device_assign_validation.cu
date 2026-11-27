@@ -18,7 +18,9 @@
  * @file device_assign_validation.cu
  * @brief Writer::assign and Writer::load (chunk/device/block_write.h, docs/gpu_assign.md)
  *        against a host mirror: scattered writes from many threads, grid-stride first
- *        writes, `+=` by the thread that owns the element, one thread writing an element
+ *        writes, scattered writes into materialised and compressed chunks mixed (the lanes
+ *        of a warp on both paths of assign()), `+=` by the thread that owns the element, one
+ *        thread writing an element
  *        twice and reading it back in between, two `assign()` on divergent paths of one warp,
  *        two kernels before one finish(), assign() after a chunk-aligned write, and small
  *        arenas, where the append-buffer and its replay carry the writes.
@@ -293,6 +295,62 @@ void run(unsigned seed, std::int64_t n, unsigned long long arena_buffers, double
         scatter<S, V><<<512, 256>>>(a.writer(), d_index + half, d_v1 + half, static_cast<std::int64_t>(index.size()) - half);
         a.finish();
         check(a, model, "scattered writes, two kernels, one finish()");
+    }
+
+    // 1b. Scattered writes into an array of materialised and compressed chunks mixed: unaligned
+    //     runs of consecutive indices (a constant per run, so that compress() folds some
+    //     chunks), then a quarter of the elements shuffled. The lanes of a warp then take both
+    //     paths of assign(): those on materialised chunks write and go on to their next
+    //     grid-stride iteration while the others are in the claim. With the claim grouped per
+    //     warp (__activemask, ballot, shuffles) this kernel hung on every run on NVIDIA
+    //     (RTX A1000, n = 2^20, S = 1024): two subsets of a warp, with masks naming each other,
+    //     waited for each other in a shuffle and a __syncwarp (Writer::materialise_grouped).
+    {
+        std::vector<std::int64_t> index;
+        std::vector<double>       value;
+        std::int64_t              at = static_cast<std::int64_t>(rng() % S);
+        while (at < n)
+        {
+            const std::int64_t len = 1 + static_cast<std::int64_t>(rng() % (3 * S));
+            const std::int64_t hi  = std::min(at + len, n);
+            if (rng() % 3 != 0)
+            {
+                const double c = pick();
+                for (std::int64_t i = at; i < hi; ++i)
+                {
+                    index.push_back(i);
+                    value.push_back(c);
+                }
+            }
+            at = hi + static_cast<std::int64_t>(rng() % (S / 2));
+        }
+        for (std::size_t k = 0; k < index.size(); ++k)
+        {
+            model.write(index[k], value[k]);
+        }
+        sd::copy(d_index, index.data(), index.size());
+        sd::copy(d_v1, value.data(), value.size());
+        scatter<S, V><<<512, 256>>>(a.writer(), d_index, d_v1, static_cast<std::int64_t>(index.size()));
+        a.finish();
+        (void)a.compress();
+        (void)model.fold();
+        check(a, model, "unaligned runs by assign(), then compress()");
+
+        std::vector<std::int64_t> shuffled(nn);
+        std::iota(shuffled.begin(), shuffled.end(), std::int64_t{0});
+        std::shuffle(shuffled.begin(), shuffled.end(), rng);
+        shuffled.resize(nn / 4);
+        std::vector<double> v(shuffled.size());
+        for (std::size_t k = 0; k < shuffled.size(); ++k)
+        {
+            v[k] = pick();
+            model.write(shuffled[k], v[k]);
+        }
+        sd::copy(d_index, shuffled.data(), shuffled.size());
+        sd::copy(d_v1, v.data(), v.size());
+        scatter<S, V><<<512, 256>>>(a.writer(), d_index, d_v1, static_cast<std::int64_t>(shuffled.size()));
+        a.finish();
+        check(a, model, "scattered writes into materialised and compressed chunks mixed");
     }
 
     // 2. The same thread twice on its element, reading back in between, on two divergent

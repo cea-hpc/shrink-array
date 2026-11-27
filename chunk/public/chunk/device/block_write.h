@@ -546,7 +546,10 @@ __device__ void Writer<T, S, V>::write_marked(T*           buf,
     const std::int64_t base       = c * S;
     const int          t          = static_cast<int>(threadIdx.x);
     const int          lane       = lane_id();
-    const LaneMask     warp       = active_lanes();
+    // Every lane of the warp is here (the whole block calls it, BLOCK a multiple of the warp
+    // size): the full mask, not active_lanes(), which f's divergence before the call could
+    // narrow and drop the bits of the lanes it leaves out.
+    const LaneMask warp = full_warp;
     for (int j = 0; j < per_thread; ++j)
     {
         const int          e        = t + j * BLOCK;
@@ -666,19 +669,35 @@ __device__ T* Writer<T, S, V>::wait_claim(ChunkDesc<T, V>& d, T* found) const no
 }
 
 /**
- * @details The claim first, the buffer after (docs/gpu_assign.md 3.3), aggregated per warp: the
- *          active lanes that need chunk @p c elect a leader, and the others get its result by a
- *          shuffle (a grid-stride first write: one claim or one wait per warp instead of one
- *          per lane). Three phases, as the prototype learned: every leader tries its claim (a
- *          relaxed CAS from nullptr to busy_mark()); the winners publish; only then do the
- *          others wait. On AMD the lanes of a wavefront run in lockstep: a leader waiting in
- *          the same call as a winner would hold back that winner's publication, and every
- *          writer of its chunk behind it (the MI300A gave up waits that way). @p seen: what
- *          this lane loaded (nullptr or busy_mark()).
+ * @details The claim first, the buffer after (docs/gpu_assign.md 3.3).
+ *
+ *          HIP: aggregated per wavefront. The active lanes that need chunk @p c elect a leader,
+ *          and the others get its result by a shuffle (a grid-stride first write: one claim or
+ *          one wait per wavefront instead of one per lane). Three phases, as the prototype
+ *          learned: every leader tries its claim (a relaxed CAS from nullptr to busy_mark());
+ *          the winners publish; only then do the others wait. The lanes of a wavefront run in
+ *          lockstep: a leader waiting in the same call as a winner would hold back that
+ *          winner's publication, and every writer of its chunk behind it (the MI300A gave up
+ *          waits that way). In lockstep the active mask is exactly the lanes of this call.
+ *
+ *          CUDA: per lane, no warp collective. Under independent thread scheduling (Volta and
+ *          later) the lanes that reach assign() need not be converged: the lanes on a
+ *          materialised chunk write and go on to their next grid-stride iteration while their
+ *          neighbours are still in this call. The grouped version hung there on every run
+ *          (RTX A1000, device_assign_validation step 1b: scattered writes into materialised
+ *          and compressed chunks mixed): two subsets of one warp, with __activemask() masks
+ *          naming each other, waited for each other, one in a __syncwarp, the other in a
+ *          shuffle. Per lane, the claim's CAS still elects one writer per chunk, the winner
+ *          publishes without waiting for anything, and a waiter polls only the descriptor:
+ *          with independent thread scheduling the winner progresses even when the waiter is a
+ *          lane of its own warp.
+ *
+ *          @p seen: what this lane loaded (nullptr or busy_mark()).
  */
 template <typename T, unsigned int S, Variant V>
 __device__ T* Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, V>& d, T* seen) const noexcept
 {
+#if defined(CHUNK_DEVICE_HIP)
     const LaneMask active = active_lanes();
     LaneMask       group  = 0;
     int            leader = 0;
@@ -702,6 +721,18 @@ __device__ T* Writer<T, S, V>::materialise_grouped(std::int64_t c, ChunkDesc<T, 
         got = wait_claim(d, found);
     }
     return shuffle_ptr(active, got, leader);
+#else
+    T* found = seen;
+    if (seen == nullptr)
+    {
+        found = cas_ptr(&d.buf, static_cast<T*>(nullptr), busy_mark<T>());
+        if (found == nullptr)
+        {
+            return publish(c, d);
+        }
+    }
+    return wait_claim(d, found);
+#endif
 }
 
 /// @details Chunk @p c, just published fresh, into the fresh list: settle() then visits the

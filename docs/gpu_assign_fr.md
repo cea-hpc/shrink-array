@@ -118,6 +118,26 @@ L'agrégation par warp (une réservation par groupe de lanes sur le même chunk,
 conception_gpu_fr.md 6.2 étape 1) est une optimisation : la première écriture en grid-stride est
 son cas (toutes les lanes d'un warp attendent la même réservation), mesuré section 5.
 
+**HIP seulement.** Sur CUDA, la réservation se fait par lane (`Writer::materialise_grouped`).
+Sous l'ordonnancement indépendant des threads (Volta et suivants), les lanes qui arrivent dans
+`assign()` ne sont pas forcément convergentes : celles qui tombent sur un chunk matérialisé
+écrivent et passent à leur itération grid-stride suivante pendant que leurs voisines sont encore
+dans la réservation groupée. Deux sous-ensembles d'un même warp calculaient alors des masques
+`__activemask()` qui se désignaient l'un l'autre, et s'attendaient sans fin, l'un dans un
+`__syncwarp`, l'autre dans un shuffle. Sur la RTX A1000 (sm_86, nvcc 13.3), c'est arrivé à chaque
+exécution d'une dispersion grid-stride de n/4 indices mélangés dans un tableau de 2^20 éléments
+aux chunks en partie matérialisés (`device_assign_validation`, étape 1b), quelle que soit
+l'arène. Les validations précédentes ne dispersaient que dans un tableau compressé. En lockstep
+(AMD), le masque actif est exactement l'ensemble des lanes de l'appel, et le regroupement reste.
+`write_marked` prend le masque complet du warp pour la même raison : tout le bloc l'appelle, et
+une divergence de `f` pourrait réduire `active_lanes()`.
+
+Coût sur CUDA (RTX A1000, 0,5 Gio, `device_bench`) : la première écriture grid-stride par
+`assign()` passe de 5,0x-5,9x à 7,0x-9,9x l'écriture plate (attentes de réservation 9 M ->
+334 M ; ce n'est pas leur compteur : sans lui, les mêmes temps) ; les écritures dispersées ne
+changent pas (4,1x-4,5x). Le chemin aligné sur les chunks n'est pas concerné. À mesurer sur le
+GH200.
+
 ### 3.4 Arène épuisée
 
 `DeviceArena::take` renvoie `nullptr` et rien d'autre dans le noyau ne peut faire de place :

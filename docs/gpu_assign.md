@@ -111,6 +111,23 @@ Warp aggregation (one claim per group of lanes on the same chunk, gpu_design.md 
 optimisation: the grid-stride first write is its case (every lane of a warp polls the same
 claim), measured in section 5.
 
+**HIP only.** On CUDA the claim is per lane (`Writer::materialise_grouped`). Under independent
+thread scheduling (Volta and later) the lanes that reach `assign()` need not be converged: those
+on a materialised chunk write and go on to their next grid-stride iteration while their
+neighbours are still in the grouped claim. Two subsets of one warp then computed
+`__activemask()` masks that named each other and waited for each other, one in a `__syncwarp`,
+the other in a shuffle, for ever. On the RTX A1000 (sm_86, nvcc 13.3) it happened on every run
+of a grid-stride scatter of n/4 shuffled indices into a 2^20-element array whose chunks were
+partly materialised (`device_assign_validation`, step 1b), whatever the arena. The validations
+before it scattered into a compressed array only. In lockstep (AMD) the active mask is exactly
+the lanes of the call, and the grouping stays. `write_marked` takes the full warp mask for the
+same reason: the whole block calls it, and `f`'s divergence could narrow `active_lanes()`.
+
+Cost on CUDA (RTX A1000, 0.5 GiB, `device_bench`): the grid-stride first write by `assign()`
+goes from 5.0x-5.9x to 7.0x-9.9x the flat write (claim waits 9 M -> 334 M; not their counter:
+without it, the same times); the scattered writes do not change (4.1x-4.5x). The chunk-aligned
+path is not concerned. To be measured on the GH200.
+
 ### 3.4 Arena exhausted
 
 `DeviceArena::take` returns `nullptr` and nothing else in the kernel can make room: the write
