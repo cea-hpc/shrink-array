@@ -416,6 +416,37 @@ vol (quelques nanosecondes, sauf préemption). Les passes faites entre deux rég
 besoin : aucune lecture utilisateur ne tourne alors. Au-delà de `CHUNK_READ_RECLAIM_SLOTS`
 (1 024) threads lecteurs, les suivants partagent un compteur `seq_cst`, plus lent mais correct.
 
+**Lectures optimistes** (`chunk_config::optimistic_reads` : `CHUNK_OPTIMISTIC_READS`, actif par
+défaut, effectif sur x86-64 et AArch64 avec le fast allocator, hors ThreadSanitizer). Une lecture
+simple n'annonce alors rien -- ni store, ni barrière -- et vérifie après coup :
+
+- **lecteur** (`ReadSection`) : charge l'époque de récupération (acquire), charge `values` et
+  l'élément, puis recharge l'époque ; si elle a bougé, il relit, en prenant la nouvelle époque en
+  acquire pour charger le pointeur échangé. Le second chargement de l'époque doit venir après
+  celui de l'élément : son adresse dépend de la valeur (`&epoch + (v ^ v)`, le xor caché au
+  compilateur ; chaque mot d'une valeur plus large qu'un registre), ou, pour un bloc, du OU de ses
+  valeurs (AArch64), ou il suit une barrière acquire (x86, où elle ne coûte rien). Sous clang,
+  `element_at` charge aussi l'époque en relaxed et `values` à une adresse qui en dépend
+  (`ReadSection(DepEntry)`) : clang garde en mémoire une variable de réduction OpenMP à travers un
+  chargement acquire ;
+- **récupérateur** : `wait_for_readers()` incrémente l'époque (`seq_cst`) après les échanges de la
+  passe et avant ses libérations. Les balayages du compresseur lui-même (`ScanSection`) gardent
+  l'annonce ci-dessus, et c'est elle que la période de grâce attend encore -- mais ils sont rares,
+  le protocole prend donc sa forme symétrique (section 3) : le balayage, une barrière `seq_cst`
+  après son store impair ; la période de grâce, une barrière `seq_cst` au lieu de
+  `heavy_barrier()`. Plus de `membarrier` par passe : à 72 threads sur Grace il coûtait de 25 à
+  630 µs par passe (des écrivains qui en lançaient en même temps), pendant lesquels chaque tampon
+  libéré par la passe restait retenu ; sans lui, de 1 à 6 µs.
+
+L'argument d'ordre est celui du matériel, pas du C++, comme pour `rcu_dereference()` : une
+dépendance d'adresse ordonne un chargement après un autre sur AArch64 et x86, et le C++ ne promet
+rien là-dessus (`formal/optimistic_read.c` : correct sous ARMv8 et TSO, refusé sous RC11 et IMM --
+section 6.1 de [formal_models_fr.md](formal_models_fr.md)). D'où ces deux architectures seulement.
+Une lecture qui perd la course lit un tampon libéré, peut-être réemployé : elle ne doit pas
+fauter, et les pools de valeurs du fast allocator ne sont jamais démappés (la couche chunk met
+`n_max_block_empty` à -1 ; `MADV_DONTNEED` garde le mapping). D'où le fast allocator seulement. En
+termes C++, la lecture perdante est une course de données : d'où pas de ThreadSanitizer.
+
 ### 5.6 La matérialisation
 
 Matérialiser un chunk (`create_value`) ne demande pas de protocole : le tampon est

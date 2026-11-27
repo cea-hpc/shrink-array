@@ -180,6 +180,35 @@ reads a value the chunk never held, and the grace period terminates.
 The protocol holds, every mutation is refused, and the two lines marked F3 and F4 are the
 library as it was before this work (section 8): refused as it was, passing as it is.
 
+### 6.1 The optimistic readers (`formal/optimistic_read.c`)
+
+The same handshake with the reader of `chunk_config::optimistic_reads` (section 5.5 of
+[synchronisation_dekker.md](synchronisation_dekker.md)): it announces nothing, loads the epoch,
+`values` and the element (NELEMS = 1, or a block of 2 and its fold), and re-checks the epoch with
+an address that depends on the value. The pass steals the buffer, bumps the epoch, and reuses the
+block at once -- poison stores, by its own thread or, with `RECYCLER_THREAD`, by another one
+handed the block through a flag. The block is never freed: the premise of the protocol. The
+property: a read the re-check accepts never returns the poison. Every case names its memory
+model: the argument is the hardware's, so the verdict must differ between them -- correct under
+ARMv8 and TSO, refused under RC11 and IMM, which is the calibration that the model sees the
+difference. GenMC 0.20, 2026-11-25 (on branch exp/optimistic-read, the same protocol):
+
+| case | ARMv8 | TSO | RC11 | IMM |
+|---|---|---|---|---|
+| source: 1 element; a block of 2; 2 readers x 2 reads; the block reused by another thread | pass | pass | fail (block of 2) | fail (block of 2, with or without a release fence in the pass) |
+| `ENTRY_DEP`: the epoch relaxed, `values` at an address that depends on it (clang's entry) | pass | pass | -- | -- |
+| `MUT_ENTRY_NO_DEP`: `values` relaxed without the dependency | fail | pass (TSO keeps load order) | -- | -- |
+| `MUT_NO_RECHECK`; `MUT_BUMP_AFTER_RELEASE` | fail | fail | -- | -- |
+| `MUT_RECHECK_UNORDERED`; `MUT_ENTER_RELAXED` | fail | pass (TSO) | -- | -- |
+| `MUT_FOLD_FIRST_ONLY`: the block's dependency on element 0 only | fail | -- | -- | -- |
+| `SHAPE_FENCE` (an acquire fence before the re-check) alone; with `PASS_RELEASE_FENCE` (the C11 seqlock) | -- | -- | fail; pass | --; pass |
+| the C11 seqlock, the block reused by another thread | -- | -- | fail (its stores need a release too) | -- |
+
+Not run yet: `SHAPE_FENCE` under TSO, the block reads' own shape on x86 (`read_reclaim::fold_block`
+is false there). TSO keeps loads in order, so it should pass; the case belongs in `run_genmc.sh`
+the next time GenMC runs. Its native build (`formal/CMakeLists.txt`) runs on every push, on x86
+and AArch64 (`ctest -L formal`, ci.yml).
+
 ## 7. The model of handshake 4: motif readers against the rewrites of the offset slot
 
 `formal/motif_offset.c` is section 6 of [algo_pattern.md](algo_pattern.md). A chunk of

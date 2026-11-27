@@ -295,7 +295,7 @@ sides pay:
 |---|---|---|---|
 | writers ↔ compressor | writer: `announce_write`, re-check the chunk's `steal_mark_`, write, `end_write` | pass: mark, `hard_inflight_`, `membarrier`, bounded wait on the writers of marked chunks | a writer storing into a buffer the pass is handing back |
 | compressor ↔ flush | flush: `announce_flush`, then waits while `stealing_inflight_` is set; never backs off | pass: after `stealing_inflight_`, a second look at the flushes; backs off if it sees one | a replay into a chunk the pass is folding back to its constant |
-| readers ↔ reclamation | reader: `ReadSection` (odd sequence number during a read) | pass inside a region: `PassScope`, `heavy_barrier()`, wait for odd readers | a reader loading from a buffer already reused |
+| readers ↔ reclamation | reader: `ReadSection` -- optimistic on x86-64 and AArch64 (re-checks the reclaim epoch after its loads, reads again if it moved), otherwise an odd sequence number during a read | pass inside a region: `PassScope`, bumps the epoch, a `seq_cst` fence (`heavy_barrier()` when reads announce), waits for odd (announced) readers | a reader loading from a buffer already reused |
 
 Without `membarrier` (old kernel, seccomp, TSan) both sides fall back to `seq_cst` fences. Every
 wait is bounded and every side has a way out -- a writer defers, a pass gives up, a reader is
@@ -310,7 +310,8 @@ Tests alone do not settle a wrong memory order: on a weakly ordered processor it
 thousands of runs. The design therefore has four levels of evidence:
 
 1. **reduced models** of each handshake (`formal/`), explored exhaustively by GenMC under RC11
-   and IMM, and calibrated by mutations they must refuse ([formal_models.md](formal_models.md));
+   and IMM -- under ARMv8 and TSO for the optimistic reads, whose argument is the hardware's --
+   and calibrated by mutations they must refuse ([formal_models.md](formal_models.md));
 2. **check builds** that assert the protocol invariants at run time (`any_check`);
 3. **ThreadSanitizer** and **AddressSanitizer** builds (the std backend and `CHUNK_STD_ALLOC` make
    both meaningful), and harnesses that force the rare paths (`deferred_path_validation`,
@@ -431,6 +432,7 @@ backend rather than add a TBB backend: a TBB program links TBB, the library does
 | `membarrier` on the rare side | `seq_cst` fences on both sides | the writer pays a full fence on every write; kept as the fallback |
 | deferred writes when a pass holds the chunk | making the writer wait for the end of the pass | a bounded wait plus deferral keeps every wait short and lets a pass give up |
 | grace period per pass for readers | deferring all buffer reuse to the end of the region | a loop that compresses inside a region would reallocate everything |
+| optimistic reads, re-checked against an epoch (x86-64, AArch64) | the announce on every read (a store and a fence) | the announce was half the time of a sequential read on Grace; the re-check costs a dependent load, and a read that loses the race only reads again |
 | compression in batches, by candidate lists | compressing inline at each write | inline needs per-chunk counters, which threaded writes cannot keep exact |
 | chunk size per array, rebuilt by `rechunk_to()` | one global chunk size | arrays of one program want different sizes, and a size must be able to change |
 | reuse pools keyed by geometry | one free list per rank | mixing geometries handed a buffer of one size to a chunk of another |
