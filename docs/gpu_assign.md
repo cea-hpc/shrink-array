@@ -151,7 +151,10 @@ CAS, not a wait. RTX A1000, 0.5 GiB, the same session, grid-stride first write a
 30.2 / 27.9 ms; with the hint 22.8 / 21.2 and 23.4 / 23.4 ms. The scattered writes do not change
 (147-160 ms), the stress that hung the grouping passes 30 runs of 30, the device validations and
 ten `device_assign_validation` runs pass. The claim waits stay counted per lane (about one per
-element, as per lane). To be measured on the GH200.
+element, as per lane). GH200, 8 GiB (`7b835276b`, every device validation and ten
+`device_assign_validation` runs green): 22.0x / 22.2x at S = 256 and 14.3x / 14.5x at S = 1024,
+against 21.0x / 20.3x and 14.1x / 13.8x grouped and 27.4x / 26.8x and 19.9x / 19.3x per lane;
+the scattered writes unchanged, no wait given up.
 
 ### 3.4 Arena exhausted
 

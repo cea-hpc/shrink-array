@@ -163,7 +163,10 @@ et une indication fausse coûte un CAS, pas une attente. RTX A1000, 0,5 Gio, mê
 23,4 / 23,4 ms. Les écritures dispersées ne changent pas (147-160 ms), le test de stress qui
 bloquait le regroupement passe 30 fois sur 30, les validations device et dix exécutions de
 `device_assign_validation` passent. Les attentes de réservation restent comptées par lane (environ
-une par élément, comme par lane). À mesurer sur le GH200.
+une par élément, comme par lane). GH200, 8 Gio (`7b835276b`, toutes les validations device et dix
+exécutions de `device_assign_validation` passent) : 22,0x / 22,2x à S = 256 et 14,3x / 14,5x à
+S = 1024, contre 21,0x / 20,3x et 14,1x / 13,8x avec le regroupement et 27,4x / 26,8x et
+19,9x / 19,3x par lane ; les écritures dispersées inchangées, aucune attente abandonnée.
 
 ### 3.4 Arène épuisée
 
