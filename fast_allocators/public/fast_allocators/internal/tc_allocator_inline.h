@@ -734,16 +734,16 @@ template <unsigned int ElementBytes, unsigned int BlockBytes>
 void* TCAllocatorEB<ElementBytes, BlockBytes>::alloc() noexcept
 {
     ++nn_ref;
-    std::byte* elem_ptr = nullptr;
+    std::byte* elem_ptr = data;
 
     if (first_free != -1)
     {
-        elem_ptr   = data + (first_free * element_size);
+        elem_ptr += first_free * element_size;
         first_free = *(T*)elem_ptr;
     }
     else
     {
-        elem_ptr = data + (used_size * element_size);
+        elem_ptr += used_size * element_size;
         ++used_size;
     }
     return static_cast<void*>(elem_ptr);
@@ -768,15 +768,15 @@ void TCAllocatorEB<ElementBytes, BlockBytes>::free_block(int elem) noexcept
 template <unsigned int ElementBytes, unsigned int BlockBytes>
 int TCAllocatorEB<ElementBytes, BlockBytes>::alloc_block()
 {
-    if (const long ps = fast_alloc::page_size(); ps > 0 && (2 * block_size) % ps == 0)
+    if (const long ps = page_size(); ps > 0 && (2 * block_size) % ps == 0)
     {
         use_mmap_ = true;
 
         const uintptr_t block_bytes = block_size;
 
-        auto* mapping = static_cast<std::byte*>(fast_alloc::map_anonymous(2 * block_size));
+        auto* mapping = static_cast<std::byte*>(map_anonymous(2 * block_size));
 
-        data = mapping + ((0 - fast_alloc::address_bits(mapping)) & (block_bytes - 1)); // align up
+        data = mapping + ((0 - address_bits(mapping)) & (block_bytes - 1)); // align up
 
         const auto lng = static_cast<uintptr_t>(data - mapping);
         if (lng != 0 && munmap(mapping, lng) == -1)
