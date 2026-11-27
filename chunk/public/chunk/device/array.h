@@ -913,7 +913,16 @@ template <typename T, unsigned int S, Variant V>
 unsigned long long Array<T, S, V>::compress()
 {
     synchronize();
-    settle(); // a fresh buffer left by a kernel without finish() would fold on unwritten elements
+    // A fresh buffer left by a kernel without finish() would fold on its unwritten elements:
+    // settled first, from the fresh list. After a finish() there is none (its settle emptied
+    // the count), and the scan of every descriptor that settle() is (GH200, 2^30 elements:
+    // 70 us an array, as much as the pass itself) is not run for nothing.
+    WriteCounters pending{};
+    copy(&pending, counters_, 1);
+    if (pending.fresh != 0)
+    {
+        settle_listed(pending.fresh); // past the list's capacity: settle()'s scan
+    }
     unsigned long long* d = scratch_;
     zero(d, 1);
     arena_.normalise();

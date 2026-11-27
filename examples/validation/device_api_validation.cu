@@ -166,6 +166,24 @@ void run(const char* name)
         expect(!threw && wrong(c, all) == 0 && c.appended() == 0, line);
     }
 
+    // compress() right after a write kernel, no finish(): the fresh buffers it published are
+    // settled first (from the fresh list), so a chunk written on its odd elements only reads
+    // the constant on the even ones and does not fold.
+    {
+        Arr            c(n);
+        std::vector<T> odd(static_cast<std::size_t>(n), T{});
+        for (std::int64_t i = 1; i < n; i += 2)
+        {
+            odd[static_cast<std::size_t>(i)] = T{3};
+        }
+        write_odd<WriterT, T><<<256, 256>>>(c.writer(), 0, n, T{3});
+        const auto folded = c.compress();
+        std::snprintf(line, sizeof line, "compress() with no finish() after the kernel: %llu folded, %llu hold a buffer",
+                      folded, c.written_chunk_count());
+        expect(wrong(c, odd) == 0 && folded == 0 && c.written_chunk_count() == static_cast<unsigned long long>(chunks),
+               line);
+    }
+
     // A ramp over the first half: its chunks materialise.
     a.parallel_for_chunks(0, h, Ramp<T>{});
     for (std::int64_t i = 0; i < h; ++i)
